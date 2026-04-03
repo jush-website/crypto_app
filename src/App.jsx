@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// 1. 內嵌全域 CSS 樣式 (取代 Tailwind)
+// 1. 內嵌全域 CSS 樣式
 // ==========================================
 const injectedCSS = `
   :root {
@@ -38,6 +38,7 @@ const injectedCSS = `
   .flex { display: flex; }
   .flex-col { flex-direction: column; }
   .items-center { align-items: center; }
+  .items-start { align-items: flex-start; }
   .items-end { align-items: flex-end; }
   .justify-between { justify-content: space-between; }
   .justify-center { justify-content: center; }
@@ -103,6 +104,7 @@ const injectedCSS = `
   .mt-1 { margin-top: 0.25rem; }
   .mt-2 { margin-top: 0.5rem; }
   .mt-3 { margin-top: 0.75rem; }
+  .mt-4 { margin-top: 1rem; }
   .pt-3 { padding-top: 0.75rem; }
   
   /* Specific Components */
@@ -144,12 +146,31 @@ const injectedCSS = `
   .rsi-bar-marker { position: absolute; top: 0; width: 1px; height: 100%; background: var(--border); z-index: 10; }
   .rsi-bar-fill { position: absolute; top: 0; left: 0; height: 100%; transition: width 0.3s, background-color 0.3s; }
   
+  /* Tabs UI */
+  .tabs-container { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .tabs-group { display: flex; gap: 6px; }
+  .tab-btn { background: transparent; border: 1px solid transparent; color: var(--text-muted); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.875rem; transition: all 0.2s; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .tab-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.05); }
+  .tab-btn.active { background: var(--bg-card); color: var(--text-main); border-color: var(--border); }
+  .tab-btn.long.active { border-bottom: 2px solid var(--green); color: var(--green); border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+  .tab-btn.short.active { border-bottom: 2px solid var(--red); color: var(--red); border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+  
+  .signal-badge { padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px; }
+  .signal-badge.long { background: rgba(14, 203, 129, 0.1); color: var(--green); border: 1px solid rgba(14, 203, 129, 0.3); }
+  .signal-badge.short { background: rgba(246, 70, 93, 0.1); color: var(--red); border: 1px solid rgba(246, 70, 93, 0.3); }
+  .signal-badge.neutral { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.3); }
+  
+  .btn-scan { display: flex; align-items: center; gap: 6px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: var(--amber); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.875rem; transition: all 0.2s; font-weight: 600; }
+  .btn-scan:hover:not(:disabled) { background: rgba(245, 158, 11, 0.2); }
+  .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; }
+
   .block { display: block; }
   .w-full { width: 100%; }
   .h-full { height: 100%; }
   .relative { position: relative; }
   .absolute { position: absolute; }
   .overflow-hidden { overflow: hidden; }
+  .flex-shrink-0 { flex-shrink: 0; }
 `;
 
 // ==========================================
@@ -399,6 +420,10 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [fundingRates, setFundingRates] = useState({});
+  
+  // 新增：首頁市場掃描狀態
+  const [marketSignals, setMarketSignals] = useState({});
+  const [isScanning, setIsScanning] = useState(false);
 
   const fetchFuturesData = async () => {
     try {
@@ -427,6 +452,39 @@ export default function App() {
     }
   };
 
+  // 背景自動掃描市場 (為前 30 大幣種計算訊號)
+  const runMarketScan = useCallback(async (tickersToScan, frMap) => {
+    if(tickersToScan.length === 0) return;
+    setIsScanning(true);
+    const topTickers = tickersToScan.slice(0, 30); // 為避免觸發限流，僅掃描前 30 大交易量
+    const chunkSize = 5; // 每次批發 5 個請求
+    
+    for (let i = 0; i < topTickers.length; i += chunkSize) {
+      const chunk = topTickers.slice(i, i + chunkSize);
+      const chunkSignals = {};
+      
+      await Promise.all(chunk.map(async (ticker) => {
+        try {
+          const res = await fetch(`/api/binance?action=klines&symbol=${ticker.symbol}`);
+          if (res.ok) {
+            const data = await res.json();
+            const closes = data.map(c => parseFloat(c[4]));
+            const fr = frMap[ticker.symbol];
+            const sig = generateTradingSignal(ticker.lastPrice, closes, fr);
+            if (sig) {
+               chunkSignals[ticker.symbol] = sig;
+            }
+          }
+        } catch(e) {}
+      }));
+      
+      // 分段更新畫面，讓使用者感覺到進度
+      setMarketSignals(prev => ({ ...prev, ...chunkSignals }));
+    }
+    setIsScanning(false);
+  }, []);
+
+  // 1. 初始化資料
   useEffect(() => {
     fetchFuturesData();
     let interval;
@@ -436,13 +494,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [selectedCoin]);
 
+  // 2. 當第一次獲取完資料時，自動觸發背景掃描
+  useEffect(() => {
+    if (allTickers.length > 0 && Object.keys(marketSignals).length === 0 && !isScanning) {
+      runMarketScan(allTickers, fundingRates);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTickers.length]);
+
   const filteredTickers = useMemo(() => {
-    if (!searchTerm) return allTickers.slice(0, 24); 
+    if (!searchTerm) return allTickers.slice(0, 30); 
     const term = searchTerm.toUpperCase();
     return allTickers.filter(t => t.symbol.includes(term)).slice(0, 50); 
   }, [allTickers, searchTerm]);
 
-  // 全螢幕載入畫面 (處理 React 渲染後但等待 API 時的畫面)
   if (loading && allTickers.length === 0) {
     return (
       <div className="bg-main flex flex-col items-center justify-center" style={{ minHeight: '100vh' }}>
@@ -456,7 +521,6 @@ export default function App() {
 
   return (
     <div className="bg-main" style={{ minHeight: '100vh' }}>
-      {/* 注入所有樣式 */}
       <style dangerouslySetInnerHTML={{ __html: injectedCSS }} />
       
       <header className="app-header">
@@ -499,6 +563,9 @@ export default function App() {
           <Dashboard 
             tickers={filteredTickers} 
             fundingRates={fundingRates}
+            marketSignals={marketSignals}
+            isScanning={isScanning}
+            onRescan={() => runMarketScan(allTickers, fundingRates)}
             onSelectCoin={setSelectedCoin}
             searchTerm={searchTerm}
           />
@@ -509,28 +576,77 @@ export default function App() {
 }
 
 // ==========================================
-// 5. 首頁列表組件
+// 5. 首頁列表組件 (新增多空分頁)
 // ==========================================
-function Dashboard({ tickers, fundingRates, onSelectCoin, searchTerm }) {
+function Dashboard({ tickers, fundingRates, marketSignals, isScanning, onRescan, onSelectCoin, searchTerm }) {
+  const [activeTab, setActiveTab] = useState('ALL');
+
+  // 計算分頁數量 (只計算目前已搜尋/過濾的結果中符合的數量)
+  const longCount = tickers.filter(t => marketSignals[t.symbol]?.signal === 'LONG').length;
+  const shortCount = tickers.filter(t => marketSignals[t.symbol]?.signal === 'SHORT').length;
+
+  // 根據目前的分頁過濾幣種
+  const displayedTickers = useMemo(() => {
+    if (activeTab === 'LONG') {
+      return tickers.filter(t => marketSignals[t.symbol]?.signal === 'LONG');
+    }
+    if (activeTab === 'SHORT') {
+      return tickers.filter(t => marketSignals[t.symbol]?.signal === 'SHORT');
+    }
+    return tickers;
+  }, [tickers, activeTab, marketSignals]);
+
   return (
     <div>
-      <div className="mb-4 border-b pb-2">
-        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider">
-          {searchTerm ? 'Search Results' : 'Market Overview'}
-        </h2>
+      {/* 分頁與掃描區塊 */}
+      <div className="tabs-container">
+        <div className="tabs-group">
+          <button 
+            className={`tab-btn ${activeTab === 'ALL' ? 'active' : ''}`} 
+            onClick={() => setActiveTab('ALL')}
+          >
+            全部市場 ({tickers.length})
+          </button>
+          <button 
+            className={`tab-btn long ${activeTab === 'LONG' ? 'active' : ''}`} 
+            onClick={() => setActiveTab('LONG')}
+          >
+            做多 LONG ({longCount})
+          </button>
+          <button 
+            className={`tab-btn short ${activeTab === 'SHORT' ? 'active' : ''}`} 
+            onClick={() => setActiveTab('SHORT')}
+          >
+            做空 SHORT ({shortCount})
+          </button>
+        </div>
+        
+        <button className="btn-scan" onClick={onRescan} disabled={isScanning}>
+          {isScanning ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+          {isScanning ? '正在背景分析市場...' : '更新市場掃描'}
+        </button>
       </div>
 
-      {tickers.length === 0 ? (
-        <div className="text-center py-20 text-dark text-sm">
-          未找到合約「{searchTerm}」
+      {/* 列表顯示 */}
+      {displayedTickers.length === 0 ? (
+        <div className="text-center py-20 text-dark text-sm flex flex-col items-center">
+          {isScanning ? (
+             <>
+                <RefreshCw size={24} className="animate-spin text-amber mb-3" />
+                <p>AI 正在努力分析各幣種指標，請稍候...</p>
+             </>
+          ) : (
+             <p>此分頁目前沒有符合條件的合約</p>
+          )}
         </div>
       ) : (
         <div className="grid-dashboard">
-          {tickers.map((ticker) => {
+          {displayedTickers.map((ticker) => {
             const change = parseFloat(ticker.priceChangePercent);
             const isPositive = change >= 0;
             const baseAsset = ticker.symbol.replace('USDT', '');
             const fr = fundingRates[ticker.symbol];
+            const signalData = marketSignals[ticker.symbol];
             
             let frColor = 'text-muted';
             if (fr > 0.0001) frColor = 'text-amber';
@@ -543,12 +659,17 @@ function Dashboard({ tickers, fundingRates, onSelectCoin, searchTerm }) {
                 className="bg-panel rounded-lg p-4 border card-hover"
               >
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-base font-bold text-white">{baseAsset}</h3>
+                  <div className="flex items-center">
+                    <h3 className="text-base font-bold text-white">{baseAsset}</h3>
+                    {/* 即時策略小標籤 */}
+                    {signalData?.signal === 'LONG' && <span className="signal-badge long">LONG</span>}
+                    {signalData?.signal === 'SHORT' && <span className="signal-badge short">SHORT</span>}
+                  </div>
                   <div className={`text-xs font-semibold ${isPositive ? 'text-green' : 'text-red'}`}>
                     {change > 0 ? '+' : ''}{change.toFixed(2)}%
                   </div>
                 </div>
-                <div className="text-xl font-mono font-semibold text-white mb-3">
+                <div className="text-xl font-mono font-semibold text-white mb-3 flex items-end gap-2">
                   {formatPrice(ticker.lastPrice)}
                 </div>
                 <div className="flex justify-between text-xs border-t pt-2" style={{ color: 'var(--text-dark)' }}>
