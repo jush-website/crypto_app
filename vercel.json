@@ -1,7 +1,3 @@
 {
-  "functions": {
-    "api/**/*": {
-      "region": "tpe1"
-    }
-  }
+  "regions": ["tpe1"]
 }
