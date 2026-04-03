@@ -452,12 +452,12 @@ export default function App() {
     }
   };
 
-  // 背景自動掃描市場 (為前 30 大幣種計算訊號)
+  // 背景自動掃描市場 (擴大到前 150 大幣種)
   const runMarketScan = useCallback(async (tickersToScan, frMap) => {
     if(tickersToScan.length === 0) return;
     setIsScanning(true);
-    const topTickers = tickersToScan.slice(0, 30); // 為避免觸發限流，僅掃描前 30 大交易量
-    const chunkSize = 5; // 每次批發 5 個請求
+    const topTickers = tickersToScan.slice(0, 150); // 擴大掃描範圍至前 150 大市場
+    const chunkSize = 10; // 每次批發 10 個請求以加快掃描速度
     
     for (let i = 0; i < topTickers.length; i += chunkSize) {
       const chunk = topTickers.slice(i, i + chunkSize);
@@ -503,11 +503,12 @@ export default function App() {
   }, [allTickers.length]);
 
   const filteredTickers = useMemo(() => {
-    if (!searchTerm) return allTickers.slice(0, 30); 
+    if (!searchTerm) return allTickers.slice(0, 150); // 預設顯示擴大到 150 個市場
     const term = searchTerm.toUpperCase();
-    return allTickers.filter(t => t.symbol.includes(term)).slice(0, 50); 
+    return allTickers.filter(t => t.symbol.includes(term)).slice(0, 150); // 搜尋結果也擴大限制
   }, [allTickers, searchTerm]);
 
+  // 全螢幕載入畫面 (處理 React 渲染後但等待 API 時的畫面)
   if (loading && allTickers.length === 0) {
     return (
       <div className="bg-main flex flex-col items-center justify-center" style={{ minHeight: '100vh' }}>
