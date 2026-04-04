@@ -455,7 +455,7 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
           
           {signalData && signalData.signal !== 'NEUTRAL' && (
               <div className={`mt-2 text-[10px] p-2 rounded border ${signalData.signal === 'LONG' ? 'bg-[#0ecb81]/10 border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border-[#f6465d]/30 text-[#f6465d]'}`}>
-                  <div className="font-bold mb-1">AI 推薦: {signalData.signal} (勝率 {signalData.confidence}%)</div>
+                  <div className="font-bold mb-1">AI 推薦 ({signalData.timeframe}): {signalData.signal} (勝率 {signalData.confidence}%)</div>
                   <div className="truncate text-slate-400">{signalData.analysisLog[0]}</div>
               </div>
           )}
@@ -792,17 +792,21 @@ function Dashboard({ allTickers, fundingRates, loading }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiSignals, setAiSignals] = useState({});
   const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0); // 新增：掃描進度狀態
+  const [scanProgress, setScanProgress] = useState(0); 
+  const [timeframe, setTimeframe] = useState('15m'); // 新增：控制 AI 掃描的時間級別
+
+  const isTickersLoaded = allTickers.length > 0;
 
   useEffect(() => {
     let isMounted = true;
     const scanMarkets = async () => {
-      if (allTickers.length === 0) return;
+      if (!isTickersLoaded) return;
       setIsScanning(true);
       setScanProgress(0);
+      setAiSignals({}); // 切換時間級別時，清空舊的訊號重新掃描
       
-      const topCoins = allTickers.slice(0, 150); // 改為前 150 大交易量幣種
-      const chunkSize = 15; // 分批發送請求 (每次 15 檔)，避免被 Binance API 封鎖
+      const topCoins = allTickers.slice(0, 150); 
+      const chunkSize = 15; 
       
       for (let i = 0; i < topCoins.length; i += chunkSize) {
         if (!isMounted) return;
@@ -811,28 +815,26 @@ function Dashboard({ allTickers, fundingRates, loading }) {
         
         await Promise.all(chunk.map(async (coin) => {
           try {
-            const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=15m&limit=60`);
+            // 動態帶入選擇的 timeframe (15m, 1h, 4h)
+            const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${timeframe}&limit=60`);
             if (!res.ok) return;
             const data = await res.json();
             const closes = data.map(d => parseFloat(d[4]));
             const currentPrice = parseFloat(coin.lastPrice);
             const sig = generateTradingSignal(currentPrice, closes, fundingRates[coin.symbol]);
             if (sig && sig.signal !== 'NEUTRAL') {
-               chunkSignals[coin.symbol] = sig;
+               chunkSignals[coin.symbol] = { ...sig, timeframe }; // 將時間級別寫入訊號物件供 UI 顯示
             }
           } catch (e) { }
         }));
 
         if (isMounted) {
-           // 逐步更新畫面，讓使用者即時看到掃描出來的訊號
            if (Object.keys(chunkSignals).length > 0) {
                setAiSignals(prev => ({ ...prev, ...chunkSignals }));
            }
-           // 更新進度條百分比
            setScanProgress(Math.min(100, Math.round(((i + chunkSize) / topCoins.length) * 100)));
         }
         
-        // 每次批次請求後暫停 300 毫秒，安全避開 API 頻率限制
         await new Promise(resolve => setTimeout(resolve, 300));
       }
       
@@ -843,7 +845,7 @@ function Dashboard({ allTickers, fundingRates, loading }) {
     
     scanMarkets();
     return () => { isMounted = false; };
-  }, [allTickers.length > 0]); 
+  }, [isTickersLoaded, timeframe]); // 加入 timeframe 作為依賴，一旦切換即重新發送 API 掃描
 
   if (loading && allTickers.length === 0) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-4 text-amber-500" /> Connecting to Binance...</div>;
 
@@ -858,21 +860,32 @@ function Dashboard({ allTickers, fundingRates, loading }) {
       displayTickers = displayTickers.filter(t => t.symbol.includes(searchTerm.toUpperCase()));
   }
 
-  // 設定顯示 150 個幣種
   displayTickers = displayTickers.slice(0, 150);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a]">
-              <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm rounded transition-colors ${activeTab === 'ALL' ? 'bg-[#2a2f3a] text-white font-bold' : 'text-slate-500 hover:text-slate-300'}`}>全部市場</button>
-              <button onClick={() => setActiveTab('LONG')} className={`px-4 py-2 text-sm rounded transition-colors flex items-center gap-1 ${activeTab === 'LONG' ? 'bg-[#0ecb81]/20 text-[#0ecb81] font-bold' : 'text-slate-500 hover:text-[#0ecb81]'}`}>🔥 AI 推薦做多</button>
-              <button onClick={() => setActiveTab('SHORT')} className={`px-4 py-2 text-sm rounded transition-colors flex items-center gap-1 ${activeTab === 'SHORT' ? 'bg-[#f6465d]/20 text-[#f6465d] font-bold' : 'text-slate-500 hover:text-[#f6465d]'}`}>🩸 AI 推薦做空</button>
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+          <div className="flex flex-wrap gap-2">
+              {/* 分類標籤頁 */}
+              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a]">
+                  <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm rounded transition-colors ${activeTab === 'ALL' ? 'bg-[#2a2f3a] text-white font-bold' : 'text-slate-500 hover:text-slate-300'}`}>全部市場</button>
+                  <button onClick={() => setActiveTab('LONG')} className={`px-4 py-2 text-sm rounded transition-colors flex items-center gap-1 ${activeTab === 'LONG' ? 'bg-[#0ecb81]/20 text-[#0ecb81] font-bold' : 'text-slate-500 hover:text-[#0ecb81]'}`}>🔥 AI 推薦做多</button>
+                  <button onClick={() => setActiveTab('SHORT')} className={`px-4 py-2 text-sm rounded transition-colors flex items-center gap-1 ${activeTab === 'SHORT' ? 'bg-[#f6465d]/20 text-[#f6465d] font-bold' : 'text-slate-500 hover:text-[#f6465d]'}`}>🩸 AI 推薦做空</button>
+              </div>
+
+              {/* 時間級別切換 (僅在做多/做空分析時顯示) */}
+              {(activeTab === 'LONG' || activeTab === 'SHORT') && (
+                  <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] animate-in fade-in zoom-in-95 duration-200">
+                      <button onClick={() => setTimeframe('15m')} className={`px-3 py-2 text-xs rounded transition-colors ${timeframe === '15m' ? 'bg-[#2a2f3a] text-blue-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>15m (短線)</button>
+                      <button onClick={() => setTimeframe('1h')} className={`px-3 py-2 text-xs rounded transition-colors ${timeframe === '1h' ? 'bg-[#2a2f3a] text-blue-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>1h (中線)</button>
+                      <button onClick={() => setTimeframe('4h')} className={`px-3 py-2 text-xs rounded transition-colors ${timeframe === '4h' ? 'bg-[#2a2f3a] text-blue-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>4h (長線)</button>
+                  </div>
+              )}
           </div>
           
-          <div className="flex items-center gap-4 w-full sm:w-auto">
-              {isScanning && <div className="flex items-center gap-2 text-xs text-amber-500"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> AI 掃描中 {scanProgress}%...</div>}
-              <div className="relative flex-1 sm:w-64">
+          <div className="flex items-center gap-4 w-full xl:w-auto">
+              {isScanning && <div className="flex items-center gap-2 text-xs text-amber-500 whitespace-nowrap"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> AI 掃描中 {scanProgress}%...</div>}
+              <div className="relative flex-1 xl:w-64">
                   <Search className="absolute left-3 top-2 h-4 w-4 text-slate-500" />
                   <input type="text" placeholder="搜尋合約..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full pl-9 pr-3 py-1.5 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-amber-500/50 outline-none" />
               </div>
