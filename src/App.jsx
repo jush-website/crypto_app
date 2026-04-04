@@ -228,13 +228,12 @@ function TradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
   const [leverage, setLeverage] = useState(10);
   const [marginMode, setMarginMode] = useState('ISOLATED'); 
   const [autoMargin, setAutoMargin] = useState(false); 
-  const [orderMode, setOrderMode] = useState('margin'); 
-  const [inputValue, setInputValue] = useState(100);
+  const [inputValue, setInputValue] = useState(''); // 預設清空
   const [tradeError, setTradeError] = useState('');
 
   const val = parseFloat(inputValue) || 0;
-  const marginReq = orderMode === 'margin' ? val : val / leverage;
-  const notionalSize = orderMode === 'margin' ? val * leverage : val;
+  const marginReq = val; // 只保留依保證金下單
+  const notionalSize = marginReq * leverage;
   const coinSize = currentPrice > 0 ? notionalSize / currentPrice : 0;
 
   let liqLong, liqShort;
@@ -256,6 +255,18 @@ function TradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
       onOpenPosition(symbol, type, marginReq, leverage, coinSize, type === 'LONG' ? liqLong : liqShort, marginMode, autoMargin, currentPrice);
       setInputValue(''); 
   };
+
+  // 處理滑桿變動
+  const handleSliderChange = (e) => {
+      const pct = parseFloat(e.target.value);
+      if (balance > 0) {
+          const newMargin = (balance * (pct / 100)).toFixed(2);
+          setInputValue(newMargin);
+      }
+  };
+
+  // 計算當前輸入金額佔可用餘額的百分比
+  const sliderValue = balance > 0 ? Math.min(100, (val / balance) * 100) : 0;
 
   return (
       <div className="space-y-4">
@@ -279,26 +290,44 @@ function TradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
               </div>
           )}
 
-          <div className="flex gap-2">
-              <button onClick={() => setOrderMode('margin')} className={`text-[10px] px-2 py-1 rounded border ${orderMode === 'margin' ? 'border-blue-500 text-blue-400' : 'border-[#2a2f3a] text-slate-500'}`}>依保證金</button>
-              <button onClick={() => setOrderMode('size')} className={`text-[10px] px-2 py-1 rounded border ${orderMode === 'size' ? 'border-blue-500 text-blue-400' : 'border-[#2a2f3a] text-slate-500'}`}>依名目交易額</button>
-          </div>
-
           <div>
-              <div className="relative">
-                  <input type="number" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder={orderMode === 'margin' ? '輸入投入保證金' : '輸入總交易金額'} className={`w-full bg-[#1a1e27] border ${tradeError ? 'border-red-500/50' : 'border-[#2a2f3a]'} rounded p-2 text-white font-mono text-sm outline-none focus:border-blue-500 transition-all`} />
+              <label className="text-xs text-slate-400 mb-1 block">
+                  投入保證金 (Margin)
+              </label>
+              <div className="relative mb-3">
+                  <input type="number" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="輸入投入保證金" className={`w-full bg-[#1a1e27] border ${tradeError ? 'border-red-500/50' : 'border-[#2a2f3a]'} rounded p-2 text-white font-mono text-sm outline-none focus:border-blue-500 transition-all`} />
                   <span className="absolute right-3 top-2 text-xs text-slate-500">USDT</span>
               </div>
+              
+              {/* 資金比例滑桿 */}
+              <div className="px-1 mb-2">
+                  <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      step="1"
+                      value={sliderValue || 0} 
+                      onChange={handleSliderChange} 
+                      className="w-full accent-blue-500 h-1.5 bg-[#2a2f3a] rounded-lg appearance-none cursor-pointer" 
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-0.5">
+                      <span className="cursor-pointer hover:text-white transition-colors" onClick={() => setInputValue(0)}>0%</span>
+                      <span className="cursor-pointer hover:text-white transition-colors" onClick={() => handleSliderChange({target:{value:25}})}>25%</span>
+                      <span className="cursor-pointer hover:text-white transition-colors" onClick={() => handleSliderChange({target:{value:50}})}>50%</span>
+                      <span className="cursor-pointer hover:text-white transition-colors" onClick={() => handleSliderChange({target:{value:75}})}>75%</span>
+                      <span className="cursor-pointer hover:text-white transition-colors" onClick={() => handleSliderChange({target:{value:100}})}>100%</span>
+                  </div>
+              </div>
+
               {tradeError ? (
                   <div className="text-[10px] text-red-400 mt-1">{tradeError}</div>
               ) : (
-                  <div className="text-right text-[10px] text-slate-500 mt-1">可用: ${balance.toFixed(2)}</div>
+                  <div className="text-right text-[10px] text-slate-500 mt-1">可用餘額: ${balance.toFixed(2)}</div>
               )}
           </div>
 
           <div className="bg-[#0b0e14] rounded p-3 text-xs space-y-1.5 border border-[#1e2330]">
-              <div className="flex justify-between text-slate-400">扣除保證金: <span className="text-white font-mono">{marginReq.toFixed(2)} USDT</span></div>
-              <div className="flex justify-between text-slate-400">開倉數量: <span className="text-white font-mono">{coinSize.toFixed(4)} {symbol.replace('USDT','')}</span></div>
+              <div className="flex justify-between text-slate-400">預估開倉量: <span className="text-white font-mono">{coinSize.toFixed(4)} {symbol.replace('USDT','')}</span></div>
               <div className="border-t border-[#1e2330] my-1"></div>
               <div className="flex justify-between text-[#0ecb81]/80 font-bold">預估多頭強平價: <span className="font-mono bg-[#0ecb81]/10 px-1 rounded">{formatPrice(liqLong)}</span></div>
               <div className="flex justify-between text-[#f6465d]/80 font-bold">預估空頭強平價: <span className="font-mono bg-[#f6465d]/10 px-1 rounded">{formatPrice(liqShort)}</span></div>
