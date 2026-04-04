@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -11,8 +11,7 @@ import {
   Zap,
   Crosshair,
   Wallet,
-  PieChart,
-  XSquare
+  PieChart
 } from 'lucide-react';
 
 // --- 輔助函數 ---
@@ -205,20 +204,19 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const getVolY = (vol) => totalHeight - macdHeight - 5 - (vol / maxVol) * (volHeight - 10);
 
   // MACD Y軸縮放
-  const macdData = macdSeries.slice(-dataLen); // 確保與 klines 長度一致
+  const macdData = macdSeries.slice(-dataLen); 
   let maxMacdAbs = 0.0001;
   macdData.forEach(m => {
     maxMacdAbs = Math.max(maxMacdAbs, Math.abs(m.dif), Math.abs(m.dea), Math.abs(m.hist));
   });
   const getMacdY = (val) => totalHeight - (macdHeight / 2) - (val / maxMacdAbs) * (macdHeight / 2 - 10);
 
-  // 繪製路徑
   let difPath = "";
   let deaPath = "";
 
   return (
     <div className="w-full overflow-x-auto relative" style={{ height: '500px' }}>
-      <svg viewBox={`0 0 ${width} ${totalHeight}`} className="w-full h-full text-xs font-mono">
+      <svg viewBox={`0 0 ${width} ${totalHeight}`} className="w-full h-full text-xs font-mono preserve-3d">
         {/* 背景格線 */}
         <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
         <line x1="0" y1={kLineHeight + volHeight} x2={width} y2={kLineHeight + volHeight} stroke="#2a2f3a" strokeWidth="1" />
@@ -239,11 +237,9 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
           const bodyY = Math.min(openY, closeY);
           const bodyH = Math.max(Math.abs(openY - closeY), 1);
 
-          // 交易量
           const volY = getVolY(k.volume);
           const volH = (totalHeight - macdHeight) - volY;
 
-          // MACD
           const macd = macdData[i];
           if (macd) {
              const cx = x + candleWidth / 2;
@@ -257,13 +253,9 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
 
              return (
                <g key={i}>
-                 {/* K線 上下影線 */}
                  <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
-                 {/* K線 實體 */}
                  <rect x={x} y={bodyY} width={candleWidth} height={bodyH} fill={color} stroke={color} strokeWidth="1" />
-                 {/* 交易量柱 */}
                  <rect x={x} y={volY} width={candleWidth} height={volH} fill={color} opacity="0.4" />
-                 {/* MACD 柱 */}
                  <rect x={x + candleWidth/4} y={macd.hist >= 0 ? histY : histZero} width={candleWidth/2} height={histH} fill={histColor} opacity="0.6" />
                </g>
              );
@@ -271,11 +263,9 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
           return null;
         })}
 
-        {/* MACD 線條繪製在最上層 */}
         <path d={difPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
         <path d={deaPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
 
-        {/* 右側價格標籤提示 (簡單實作) */}
         <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
         <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
       </svg>
@@ -304,18 +294,24 @@ export default function App() {
 
   const fetchFuturesData = async () => {
     try {
+      // 請注意：這裡呼叫的正是你剛才儲存的 /api/binance
       const res = await fetch(`/api/binance?action=overview`);
       if (!res.ok) throw new Error(`API 錯誤: ${res.status}`);
       const data = await res.json();
-      const usdtPairs = data.tickers.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+      
+      const usdtPairs = data.tickers
+        .filter(t => t.symbol.endsWith('USDT'))
+        .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+      
       setAllTickers(usdtPairs);
+
       const frMap = {};
       data.fundingRates.forEach(item => { frMap[item.symbol] = item.lastFundingRate; });
       setFundingRates(frMap);
       setError(null);
     } catch (err) {
       console.error(err);
-      setError('數據獲取失敗。請確認 API 是否已正確部署。');
+      setError('數據獲取失敗。請確認 api/binance.js 是否已正確部署於 Vercel。');
     } finally {
       setLoading(false);
     }
@@ -342,7 +338,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4 w-full sm:w-auto">
-             {/* 模擬帳戶餘額顯示 */}
              <div className="hidden sm:flex items-center gap-2 bg-[#1a1e27] px-3 py-1.5 rounded border border-[#2a2f3a]">
                 <Wallet className="w-4 h-4 text-slate-400" />
                 <span className="text-sm font-mono text-white">${paperAccount.balance.toFixed(2)} USDT</span>
@@ -522,7 +517,7 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
     const newPosition = {
         id: Date.now(),
         symbol: coin.symbol,
-        type, // 'LONG' or 'SHORT'
+        type, 
         margin,
         leverage,
         size,
@@ -539,8 +534,7 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
   };
 
   const handleClosePosition = (pos) => {
-    // 使用最新市場價結算
-    const markPrice = currentPrice; // 簡化：在同一個幣種頁面直接用 currentPrice，若是其他幣種需要另外獲取
+    const markPrice = currentPrice; 
     
     let pnl = 0;
     if(pos.type === 'LONG') pnl = (markPrice - pos.entryPrice) * pos.size;
