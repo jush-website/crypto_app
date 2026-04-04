@@ -22,7 +22,8 @@ import {
   Plus,
   Minus,
   Activity,
-  Briefcase
+  Briefcase,
+  BarChart2
 } from 'lucide-react';
 
 // --- 輔助函數 ---
@@ -416,11 +417,8 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
   return (
       <div onClick={() => onSelectCoin(ticker.symbol)} className="bg-[#121620] rounded-lg p-4 border border-[#2a2f3a] hover:border-[#0ecb81]/50 cursor-pointer transition-all flex flex-col justify-between">
           <div>
-              <div className="flex justify-between items-start mb-2">
-                  <div>
-                      <h3 className="font-bold text-slate-100">{baseAsset}</h3>
-                      <div className="text-[10px] text-slate-400 mt-0.5">Vol: {formatVolume(ticker.quoteVolume)}</div>
-                  </div>
+              <div className="flex justify-between mb-2">
+                  <h3 className="font-bold text-slate-100">{baseAsset}</h3>
                   <div className={`text-xs font-bold ${isPositive ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
               </div>
               <div className="text-lg font-mono font-semibold text-white mb-2">{formatPrice(ticker.lastPrice)}</div>
@@ -432,10 +430,93 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
                   <div className="truncate text-slate-400">{signalData.analysisLog[0]}</div>
               </div>
           )}
-          <div className="flex justify-end text-[11px] text-slate-500 border-t border-[#1e2330] pt-2 mt-2">
-              <span className={frColor}>FR: {fundingRate !== undefined ? formatFundingRate(fundingRate) : '--'}</span>
-          </div>
+          {!signalData && (
+              <div className="flex justify-between text-[11px] text-slate-500 border-t border-[#1e2330] pt-2 mt-2">
+                  <span>Vol: {formatVolume(ticker.quoteVolume)}</span>
+                  <span className={frColor}>FR: {fundingRate !== undefined ? formatFundingRate(fundingRate) : '--'}</span>
+              </div>
+          )}
       </div>
+  );
+}
+
+// --- 資產總覽頁 (Assets Page) ---
+function AssetsPage({ paperAccount, allTickers }) {
+  // 1. 計算未實現盈虧與已用保證金
+  let totalUnrealizedPnL = 0;
+  let usedMargin = 0;
+  
+  paperAccount.positions.forEach(pos => {
+      usedMargin += pos.margin;
+      const currentPrice = parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice);
+      const pnl = pos.type === 'LONG' ? (currentPrice - pos.entryPrice) * pos.size : (pos.entryPrice - currentPrice) * pos.size;
+      totalUnrealizedPnL += pnl;
+  });
+
+  // 2. 計算帳戶總權益
+  const availableBalance = paperAccount.balance;
+  const totalEquity = availableBalance + usedMargin + totalUnrealizedPnL;
+
+  // 3. 計算歷史交易統計
+  const totalTrades = paperAccount.history.length;
+  const winningTrades = paperAccount.history.filter(h => h.pnl > 0).length;
+  const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) : 0;
+  const totalRealizedPnL = paperAccount.history.reduce((sum, h) => sum + h.pnl, 0);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-200">
+      <div>
+        <h2 className="text-xl font-bold text-slate-200 mb-4 flex items-center gap-2">
+            <BarChart2 className="w-6 h-6 text-blue-500" /> 資產中心總覽
+        </h2>
+        
+        {/* 核心資產數據卡片 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 bg-blue-600/20 text-blue-400 text-[10px] px-2 py-0.5 rounded-bl font-bold">TOTAL EQUITY</div>
+                <div className="text-sm text-slate-400 mb-1">帳戶總權益</div>
+                <div className="text-2xl font-mono font-bold text-white">${totalEquity.toFixed(2)}</div>
+            </div>
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">可用餘額 (Available)</div>
+                <div className="text-2xl font-mono font-bold text-blue-400">${availableBalance.toFixed(2)}</div>
+            </div>
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">已用保證金 (Margin)</div>
+                <div className="text-2xl font-mono font-bold text-slate-200">${usedMargin.toFixed(2)}</div>
+            </div>
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">未實現盈虧 (Unrealized PnL)</div>
+                <div className={`text-2xl font-mono font-bold ${totalUnrealizedPnL >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
+                    {totalUnrealizedPnL >= 0 ? '+' : ''}{totalUnrealizedPnL.toFixed(2)}
+                </div>
+            </div>
+        </div>
+
+        <h2 className="text-xl font-bold text-slate-200 mb-4 flex items-center gap-2">
+            <PieChart className="w-6 h-6 text-purple-500" /> 交易績效統計
+        </h2>
+        
+        {/* 交易統計數據 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">總交易次數</div>
+                <div className="text-2xl font-mono font-bold text-white">{totalTrades} <span className="text-sm font-normal text-slate-500">次</span></div>
+            </div>
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">歷史勝率 (Win Rate)</div>
+                <div className="text-2xl font-mono font-bold text-white">{winRate}%</div>
+                <div className="text-xs text-slate-500 mt-1">勝 {winningTrades} / 敗 {totalTrades - winningTrades}</div>
+            </div>
+            <div className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg">
+                <div className="text-sm text-slate-400 mb-1">累計已實現盈虧 (Realized PnL)</div>
+                <div className={`text-2xl font-mono font-bold ${totalRealizedPnL >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
+                    {totalRealizedPnL >= 0 ? '+' : ''}{totalRealizedPnL.toFixed(2)} <span className="text-sm font-normal text-slate-500">USDT</span>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1005,7 +1086,7 @@ export default function App() {
   const [allTickers, setAllTickers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fundingRates, setFundingRates] = useState({});
-  const [currentRoute, setCurrentRoute] = useState('home');
+  const [currentRoute, setCurrentRoute] = useState('home'); // 'home' | 'positions' | 'trade' | 'assets'
   const [selectedCoin, setSelectedCoin] = useState(null);
 
   const [paperAccount, setPaperAccount] = useState(() => {
@@ -1038,6 +1119,9 @@ export default function App() {
           setSelectedCoin(null);
       } else if (hash === 'positions') {
           setCurrentRoute('positions');
+          setSelectedCoin(null);
+      } else if (hash === 'assets') {
+          setCurrentRoute('assets');
           setSelectedCoin(null);
       } else if (hash.startsWith('trade/')) {
           const symbol = hash.replace('trade/', '');
@@ -1117,6 +1201,12 @@ export default function App() {
                       <Briefcase className="w-4 h-4"/> 持倉與管理
                       {paperAccount.positions.length > 0 && <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">{paperAccount.positions.length}</span>}
                   </button>
+                  <button 
+                      onClick={() => window.location.hash = '#/assets'} 
+                      className={`px-3 py-2 text-sm font-bold rounded-lg transition-colors flex items-center gap-2 ${currentRoute === 'assets' ? 'bg-[#2a2f3a] text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a1e27]'}`}
+                  >
+                      <BarChart2 className="w-4 h-4"/> 資產中心
+                  </button>
               </nav>
           </div>
 
@@ -1135,6 +1225,9 @@ export default function App() {
         )}
         {currentRoute === 'positions' && (
             <PositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />
+        )}
+        {currentRoute === 'assets' && (
+            <AssetsPage allTickers={allTickers} paperAccount={paperAccount} />
         )}
         {currentRoute === 'trade' && selectedCoin && (
             <TradingWorkspace coin={selectedCoin} fundingRate={fundingRates[selectedCoin.symbol]} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />
