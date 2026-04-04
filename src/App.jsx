@@ -275,6 +275,16 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
 
 // --- 主應用程序 ---
 export default function App() {
+  // 動態載入 Tailwind CSS (為了在任何環境下都能確保樣式正確顯示)
+  useEffect(() => {
+    if (!document.getElementById('tailwind-cdn')) {
+      const script = document.createElement('script');
+      script.id = 'tailwind-cdn';
+      script.src = 'https://cdn.tailwindcss.com';
+      document.head.appendChild(script);
+    }
+  }, []);
+
   const [allTickers, setAllTickers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -284,8 +294,12 @@ export default function App() {
 
   // 模擬帳戶狀態 (存放於 localStorage)
   const [paperAccount, setPaperAccount] = useState(() => {
-    const saved = localStorage.getItem('paperAccount');
-    return saved ? JSON.parse(saved) : { balance: 10000, positions: [], history: [] };
+    try {
+      const saved = localStorage.getItem('paperAccount');
+      return saved ? JSON.parse(saved) : { balance: 10000, positions: [], history: [] };
+    } catch {
+      return { balance: 10000, positions: [], history: [] };
+    }
   });
 
   useEffect(() => {
@@ -294,24 +308,30 @@ export default function App() {
 
   const fetchFuturesData = async () => {
     try {
-      // 請注意：這裡呼叫的正是你剛才儲存的 /api/binance
-      const res = await fetch(`/api/binance?action=overview`);
-      if (!res.ok) throw new Error(`API 錯誤: ${res.status}`);
-      const data = await res.json();
+      // 修正：直接呼叫 Binance API 解決預覽環境的問題
+      const [tickerRes, fundingRes] = await Promise.all([
+        fetch('https://fapi.binance.com/fapi/v1/ticker/24hr'),
+        fetch('https://fapi.binance.com/fapi/v1/premiumIndex')
+      ]);
+
+      if (!tickerRes.ok || !fundingRes.ok) throw new Error(`API 錯誤`);
       
-      const usdtPairs = data.tickers
+      const tickersData = await tickerRes.json();
+      const fundingData = await fundingRes.json();
+      
+      const usdtPairs = tickersData
         .filter(t => t.symbol.endsWith('USDT'))
         .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
       
       setAllTickers(usdtPairs);
 
       const frMap = {};
-      data.fundingRates.forEach(item => { frMap[item.symbol] = item.lastFundingRate; });
+      fundingData.forEach(item => { frMap[item.symbol] = item.lastFundingRate; });
       setFundingRates(frMap);
       setError(null);
     } catch (err) {
       console.error(err);
-      setError('數據獲取失敗。請確認 api/binance.js 是否已正確部署於 Vercel。');
+      setError('數據獲取失敗。可能受到跨域限制，請稍後重試。');
     } finally {
       setLoading(false);
     }
@@ -391,7 +411,7 @@ function Dashboard({ tickers, fundingRates, loading, onSelectCoin }) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-slate-500">
         <RefreshCw className="w-6 h-6 animate-spin mb-4 text-amber-500" />
-        <p className="text-sm tracking-widest uppercase">Connecting to Server...</p>
+        <p className="text-sm tracking-widest uppercase">Connecting to Binance...</p>
       </div>
     );
   }
@@ -454,7 +474,8 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
     const fetchDetailData = async () => {
       setLoadingHistory(true);
       try {
-        const resKlines = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&limit=120`);
+        // 修正：直接呼叫 Binance API
+        const resKlines = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=15m&limit=120`);
         const dataKlines = await resKlines.json();
         
         if (!isMounted) return;
@@ -479,7 +500,8 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
     
     const interval = setInterval(async () => {
         try {
-            const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
+            // 修正：直接呼叫 Binance API
+            const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
             const data = await res.json();
             if(isMounted) {
                 const latestPrice = parseFloat(data.price);
