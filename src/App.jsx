@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -11,7 +11,11 @@ import {
   Zap,
   Crosshair,
   Wallet,
-  PieChart
+  PieChart,
+  ZoomIn,         // 新增：圖表縮放按鈕圖示
+  ZoomOut,        // 新增：圖表縮小按鈕圖示
+  RotateCcw,      // 新增：圖表重置按鈕圖示
+  MoveHorizontal  // 新增：提示圖示
 } from 'lucide-react';
 
 // --- 輔助函數 ---
@@ -175,10 +179,110 @@ const generateTradingSignal = (currentPrice, historyCloses, fundingRate) => {
   return { signal, rsi, sma7, sma20, macd, boll, score, currentPrice: price, entry: recommendedEntry, takeProfit: signal !== 'NEUTRAL' ? takeProfit : null, stopLoss: signal !== 'NEUTRAL' ? stopLoss : null, confidence: signal !== 'NEUTRAL' ? confidence : 0, analysisLog };
 };
 
-// --- 組件：專業 SVG K線圖表 (包含 MACD 與 Volume) ---
+// --- 組件：專業 SVG K線圖表 (包含互動縮放、MACD 與 Volume) ---
 const AdvancedKLineChart = ({ klines, macdSeries }) => {
+  const containerRef = useRef(null);
+  
+  // 圖表互動狀態
+  const [visibleCount, setVisibleCount] = useState(60); // 預設顯示的 K 棒數量
+  const [endIndexOffset, setEndIndexOffset] = useState(0); // 0 代表靠最右側(最新資料)，大於 0 代表往回看
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
   if (!klines || klines.length === 0) return null;
   
+  const dataLen = klines.length;
+  
+  // 邊界檢查機制
+  const maxOffset = Math.max(0, dataLen - visibleCount);
+  const safeOffset = Math.min(Math.max(0, endIndexOffset), maxOffset);
+  const safeVisibleCount = Math.min(visibleCount, dataLen);
+
+  const startIndex = Math.max(0, dataLen - safeVisibleCount - safeOffset);
+  const endIndex = dataLen - safeOffset;
+
+  // 切割出當前視野範圍內的資料
+  const visibleKlines = klines.slice(startIndex, endIndex);
+  const visibleMacd = macdSeries.slice(startIndex, endIndex);
+
+  // 處理滾輪縮放
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const handleWheel = (e) => {
+      e.preventDefault(); 
+      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+      let newCount = Math.round(visibleCount * zoomFactor);
+      
+      // 限制縮放範圍 (最少 15 根，最多全部)
+      newCount = Math.max(15, Math.min(newCount, dataLen));
+      
+      setVisibleCount(newCount);
+      // 縮放時若平移的距離超過了新的最大距離，需修正以免跑出版面
+      const newMaxOffset = Math.max(0, dataLen - newCount);
+      if (endIndexOffset > newMaxOffset) {
+        setEndIndexOffset(newMaxOffset);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [visibleCount, dataLen, endIndexOffset]);
+
+  // 處理滑鼠平移拖曳與 Hover
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    setDragStartX(e.clientX);
+  };
+  
+  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+    setHoveredIndex(null);
+  };
+  
+  const handleMouseMove = (e) => {
+    if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      const sensitivity = 5; // 滑動靈敏度
+      if (Math.abs(dx) > sensitivity) {
+        const shift = Math.round(dx / sensitivity);
+        // 往右拖曳(dx>0)代表看過去的資料，offset增加
+        setEndIndexOffset(prev => Math.max(0, Math.min(prev + shift, maxOffset)));
+        setDragStartX(e.clientX);
+      }
+    } else {
+      // 處理 Hover 十字線與數據提示
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      
+      // 因為 SVG viewbox 是 800，我們需要將滑鼠座標映射回 viewBox 坐標系
+      const scaleX = 800 / rect.width;
+      const svgX = x * scaleX;
+      
+      const xStep = (800 - 20) / safeVisibleCount; // 減去兩邊 paddingX (10*2)
+      const dataIndex = Math.floor((svgX - 10) / xStep);
+      
+      if (dataIndex >= 0 && dataIndex < visibleKlines.length) {
+        setHoveredIndex(dataIndex);
+      } else {
+        setHoveredIndex(null);
+      }
+    }
+  };
+
+  // 按鈕功能
+  const zoomIn = () => setVisibleCount(prev => Math.max(15, Math.round(prev * 0.8)));
+  const zoomOut = () => setVisibleCount(prev => Math.min(dataLen, Math.round(prev * 1.2)));
+  const resetZoom = () => {
+    setVisibleCount(60);
+    setEndIndexOffset(0);
+  };
+
+  // ---------------- 繪圖比例與座標計算 ----------------
   const width = 800;
   const totalHeight = 500;
   const kLineHeight = 300;
@@ -186,27 +290,28 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const macdHeight = 100;
   
   const paddingX = 10;
-  const dataLen = klines.length;
-  const xStep = (width - paddingX * 2) / dataLen;
+  const xStep = (width - paddingX * 2) / safeVisibleCount;
   const candleWidth = Math.max(xStep * 0.7, 1);
 
-  // K線 Y軸縮放
-  const lows = klines.map(k => k.low);
-  const highs = klines.map(k => k.high);
-  const minPrice = Math.min(...lows);
-  const maxPrice = Math.max(...highs);
+  // K線 Y軸縮放 (自適應：僅計算當前可見資料)
+  const lows = visibleKlines.map(k => k.low);
+  const highs = visibleKlines.map(k => k.high);
+  const minPrice = Math.min(...lows, klines[klines.length-1].close); // 確保下限不出錯
+  const maxPrice = Math.max(...highs, klines[klines.length-1].close);
   const priceRange = (maxPrice - minPrice) || 1;
-  const getPriceY = (price) => kLineHeight - 10 - ((price - minPrice) / priceRange) * (kLineHeight - 20);
+  const paddedMinPrice = minPrice - priceRange * 0.05;
+  const paddedMaxPrice = maxPrice + priceRange * 0.05;
+  const paddedPriceRange = paddedMaxPrice - paddedMinPrice;
+  const getPriceY = (price) => kLineHeight - 10 - ((price - paddedMinPrice) / paddedPriceRange) * (kLineHeight - 20);
 
-  // 交易量 Y軸縮放
-  const vols = klines.map(k => k.volume);
-  const maxVol = Math.max(...vols) || 1;
+  // 交易量 Y軸縮放 (自適應)
+  const vols = visibleKlines.map(k => k.volume);
+  const maxVol = Math.max(...vols, 1);
   const getVolY = (vol) => totalHeight - macdHeight - 5 - (vol / maxVol) * (volHeight - 10);
 
-  // MACD Y軸縮放
-  const macdData = macdSeries.slice(-dataLen); 
+  // MACD Y軸縮放 (自適應)
   let maxMacdAbs = 0.0001;
-  macdData.forEach(m => {
+  visibleMacd.forEach(m => {
     maxMacdAbs = Math.max(maxMacdAbs, Math.abs(m.dif), Math.abs(m.dea), Math.abs(m.hist));
   });
   const getMacdY = (val) => totalHeight - (macdHeight / 2) - (val / maxMacdAbs) * (macdHeight / 2 - 10);
@@ -214,68 +319,122 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   let difPath = "";
   let deaPath = "";
 
+  const hoveredK = hoveredIndex !== null ? visibleKlines[hoveredIndex] : null;
+
   return (
-    <div className="w-full overflow-x-auto relative" style={{ height: '500px' }}>
-      <svg viewBox={`0 0 ${width} ${totalHeight}`} className="w-full h-full text-xs font-mono preserve-3d">
-        {/* 背景格線 */}
-        <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
-        <line x1="0" y1={kLineHeight + volHeight} x2={width} y2={kLineHeight + volHeight} stroke="#2a2f3a" strokeWidth="1" />
-        
-        {/* MACD 零軸 */}
-        <line x1="0" y1={totalHeight - macdHeight/2} x2={width} y2={totalHeight - macdHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" />
+    <div className="w-full relative group touch-none" style={{ height: '500px' }}>
+      
+      {/* 互動按鈕列 (Hover 時顯示) */}
+      <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <button onClick={zoomIn} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded backdrop-blur border border-[#2a2f3a]">
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button onClick={zoomOut} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded backdrop-blur border border-[#2a2f3a]">
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <button onClick={resetZoom} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded backdrop-blur border border-[#2a2f3a]">
+          <RotateCcw className="w-4 h-4" />
+        </button>
+      </div>
 
-        {klines.map((k, i) => {
-          const x = paddingX + i * xStep;
-          const isUp = k.close >= k.open;
-          const color = isUp ? '#0ecb81' : '#f6465d';
+      {/* Hover 資訊顯示 (左上角) */}
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
+        {hoveredK ? (
+          <div className="flex gap-3 bg-[#0b0e14]/80 backdrop-blur px-2 py-1 rounded border border-[#2a2f3a]">
+            <span className="text-slate-400">{new Date(hoveredK.time).toLocaleString(undefined, {hour12:false, month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+            <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
+            <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
+            <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
+            <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-slate-500 bg-[#0b0e14]/50 backdrop-blur px-2 py-1 rounded">
+             <MoveHorizontal className="w-3.5 h-3.5" /> 滾輪縮放 / 拖曳平移
+          </div>
+        )}
+      </div>
+
+      {/* SVG 繪圖容器 */}
+      <div 
+        ref={containerRef}
+        className="w-full h-full cursor-crosshair overflow-hidden"
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onMouseMove={handleMouseMove}
+      >
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          {/* 背景格線 */}
+          <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
+          <line x1="0" y1={kLineHeight + volHeight} x2={width} y2={kLineHeight + volHeight} stroke="#2a2f3a" strokeWidth="1" />
           
-          const openY = getPriceY(k.open);
-          const closeY = getPriceY(k.close);
-          const highY = getPriceY(k.high);
-          const lowY = getPriceY(k.low);
-          
-          const bodyY = Math.min(openY, closeY);
-          const bodyH = Math.max(Math.abs(openY - closeY), 1);
+          {/* MACD 零軸 */}
+          <line x1="0" y1={totalHeight - macdHeight/2} x2={width} y2={totalHeight - macdHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" />
 
-          const volY = getVolY(k.volume);
-          const volH = (totalHeight - macdHeight) - volY;
+          {/* 繪製 K 線資料 */}
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep;
+            const isUp = k.close >= k.open;
+            const color = isUp ? '#0ecb81' : '#f6465d';
+            
+            const openY = getPriceY(k.open);
+            const closeY = getPriceY(k.close);
+            const highY = getPriceY(k.high);
+            const lowY = getPriceY(k.low);
+            
+            const bodyY = Math.min(openY, closeY);
+            const bodyH = Math.max(Math.abs(openY - closeY), 1);
 
-          const macd = macdData[i];
-          if (macd) {
-             const cx = x + candleWidth / 2;
-             difPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dif)} `;
-             deaPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dea)} `;
-             
-             const histY = getMacdY(Math.max(macd.hist, 0));
-             const histZero = getMacdY(0);
-             const histH = Math.abs(getMacdY(macd.hist) - histZero) || 1;
-             const histColor = macd.hist >= 0 ? '#0ecb81' : '#f6465d';
+            const volY = getVolY(k.volume);
+            const volH = (totalHeight - macdHeight) - volY;
 
-             return (
-               <g key={i}>
-                 <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
-                 <rect x={x} y={bodyY} width={candleWidth} height={bodyH} fill={color} stroke={color} strokeWidth="1" />
-                 <rect x={x} y={volY} width={candleWidth} height={volH} fill={color} opacity="0.4" />
-                 <rect x={x + candleWidth/4} y={macd.hist >= 0 ? histY : histZero} width={candleWidth/2} height={histH} fill={histColor} opacity="0.6" />
-               </g>
-             );
-          }
-          return null;
-        })}
+            const macd = visibleMacd[i];
+            if (macd) {
+               const cx = x + candleWidth / 2;
+               difPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dif)} `;
+               deaPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dea)} `;
+               
+               const histY = getMacdY(Math.max(macd.hist, 0));
+               const histZero = getMacdY(0);
+               const histH = Math.abs(getMacdY(macd.hist) - histZero) || 1;
+               const histColor = macd.hist >= 0 ? '#0ecb81' : '#f6465d';
 
-        <path d={difPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
-        <path d={deaPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+               return (
+                 <g key={k.time || i}>
+                   {/* 十字線 (Hover狀態) */}
+                   {hoveredIndex === i && (
+                     <g>
+                       <line x1={cx} y1={0} x2={cx} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+                       <line x1={0} y1={closeY} x2={width} y2={closeY} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+                     </g>
+                   )}
+                   
+                   <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                   <rect x={x} y={bodyY} width={candleWidth} height={bodyH} fill={color} stroke={color} strokeWidth="1" />
+                   <rect x={x} y={volY} width={candleWidth} height={volH} fill={color} opacity={hoveredIndex === i ? "0.7" : "0.4"} />
+                   <rect x={x + candleWidth/4} y={macd.hist >= 0 ? histY : histZero} width={candleWidth/2} height={histH} fill={histColor} opacity="0.6" />
+                 </g>
+               );
+            }
+            return null;
+          })}
 
-        <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
-        <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
-      </svg>
+          {/* MACD 均線 */}
+          <path d={difPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
+          <path d={deaPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+
+          {/* Y軸價格標籤 */}
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMaxPrice)}</text>
+          <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMinPrice)}</text>
+        </svg>
+      </div>
     </div>
   );
 };
 
 // --- 主應用程序 ---
 export default function App() {
-  // 動態載入 Tailwind CSS (為了在任何環境下都能確保樣式正確顯示)
+  // 動態載入 Tailwind CSS
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
       const script = document.createElement('script');
@@ -289,10 +448,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // 狀態改為受 Hash 控制
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [fundingRates, setFundingRates] = useState({});
 
-  // 模擬帳戶狀態 (存放於 localStorage)
+  // 模擬帳戶狀態
   const [paperAccount, setPaperAccount] = useState(() => {
     try {
       const saved = localStorage.getItem('paperAccount');
@@ -308,7 +469,6 @@ export default function App() {
 
   const fetchFuturesData = async () => {
     try {
-      // 修正：直接呼叫 Binance API 解決預覽環境的問題
       const [tickerRes, fundingRes] = await Promise.all([
         fetch('https://fapi.binance.com/fapi/v1/ticker/24hr'),
         fetch('https://fapi.binance.com/fapi/v1/premiumIndex')
@@ -339,9 +499,40 @@ export default function App() {
 
   useEffect(() => {
     fetchFuturesData();
-    const interval = setInterval(fetchFuturesData, 15000); 
+    // 為了避免 Binance API 頻率限制 (Rate Limit) 導致 IP 被封鎖，首頁列表最快建議 5 秒更新一次
+    const interval = setInterval(fetchFuturesData, 5000); 
     return () => clearInterval(interval);
   }, []);
+
+  // ---------------- Hash 路由邏輯 ----------------
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#/', '');
+      if (!hash) {
+        setSelectedCoin(null);
+      } else if (allTickers.length > 0) {
+        const coin = allTickers.find(t => t.symbol === hash);
+        if (coin) setSelectedCoin(coin);
+      }
+    };
+
+    // 如果資料剛載入完畢且網址有帶 Hash，立刻觸發解析
+    if (allTickers.length > 0) {
+      handleHashChange();
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [allTickers]);
+
+  const handleSelectCoin = (coin) => {
+    window.location.hash = `/${coin.symbol}`; // 改變網址自動觸發狀態更新
+  };
+
+  const handleBackToHome = () => {
+    window.location.hash = ''; // 清除網址回首頁
+  };
+  // ---------------------------------------------
 
   const filteredTickers = useMemo(() => {
     if (!searchTerm) return allTickers.slice(0, 24); 
@@ -352,7 +543,7 @@ export default function App() {
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-indigo-500/30">
       <header className="bg-[#121620] border-b border-[#2a2f3a] sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-amber-500">
+          <div className="flex items-center gap-2 text-amber-500 cursor-pointer" onClick={handleBackToHome}>
             <Zap className="w-6 h-6 fill-amber-500/20" />
             <h1 className="text-xl font-bold text-white tracking-wide">ProTrade <span className="font-light text-slate-400">Terminal</span></h1>
           </div>
@@ -395,10 +586,10 @@ export default function App() {
             fundingRate={fundingRates[selectedCoin.symbol]}
             paperAccount={paperAccount}
             setPaperAccount={setPaperAccount}
-            onBack={() => setSelectedCoin(null)} 
+            onBack={handleBackToHome} 
           />
         ) : (
-          <Dashboard tickers={filteredTickers} fundingRates={fundingRates} loading={loading} onSelectCoin={setSelectedCoin} />
+          <Dashboard tickers={filteredTickers} fundingRates={fundingRates} loading={loading} onSelectCoin={handleSelectCoin} />
         )}
       </main>
     </div>
@@ -474,13 +665,13 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
     const fetchDetailData = async () => {
       setLoadingHistory(true);
       try {
-        // 修正：直接呼叫 Binance API
         const resKlines = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=15m&limit=120`);
         const dataKlines = await resKlines.json();
         
         if (!isMounted) return;
 
         const parsedKlines = dataKlines.map(c => ({
+           time: c[0], // 新增保留時間戳，方便圖表 hover 時顯示日期時間
            open: parseFloat(c[1]),
            high: parseFloat(c[2]),
            low: parseFloat(c[3]),
@@ -500,7 +691,6 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
     
     const interval = setInterval(async () => {
         try {
-            // 修正：直接呼叫 Binance API
             const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
             const data = await res.json();
             if(isMounted) {
@@ -512,11 +702,12 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, setPaperAccount, on
                     last.close = latestPrice;
                     last.high = Math.max(last.high, latestPrice);
                     last.low = Math.min(last.low, latestPrice);
+                    // 這裡暫時忽略 volume 的即時跳動，保持圖表順暢
                     return newHist;
                 });
             }
         } catch(e) {}
-    }, 3000);
+    }, 1000); // 將單一幣種報價改為 1000 毫秒 (1秒) 更新一次
 
     return () => { isMounted = false; clearInterval(interval); };
   }, [coin.symbol]);
