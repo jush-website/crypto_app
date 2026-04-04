@@ -15,7 +15,9 @@ import {
   ZoomIn,         // 新增：圖表縮放按鈕圖示
   ZoomOut,        // 新增：圖表縮小按鈕圖示
   RotateCcw,      // 新增：圖表重置按鈕圖示
-  MoveHorizontal  // 新增：提示圖示
+  MoveHorizontal, // 新增：提示圖示
+  Pencil,         // 新增：畫筆工具圖示
+  Trash2          // 新增：垃圾桶圖示
 } from 'lucide-react';
 
 // --- 輔助函數 ---
@@ -190,6 +192,12 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const [dragStartX, setDragStartX] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
+  // 新增：畫線與觸控縮放狀態
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawings, setDrawings] = useState([]);
+  const [currentDrawing, setCurrentDrawing] = useState(null);
+  const [touchDist, setTouchDist] = useState(0);
+
   if (!klines || klines.length === 0) return null;
   
   const dataLen = klines.length;
@@ -206,83 +214,7 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const visibleKlines = klines.slice(startIndex, endIndex);
   const visibleMacd = macdSeries.slice(startIndex, endIndex);
 
-  // 處理滾輪縮放
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const handleWheel = (e) => {
-      e.preventDefault(); 
-      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
-      let newCount = Math.round(visibleCount * zoomFactor);
-      
-      // 限制縮放範圍 (最少 15 根，最多全部)
-      newCount = Math.max(15, Math.min(newCount, dataLen));
-      
-      setVisibleCount(newCount);
-      // 縮放時若平移的距離超過了新的最大距離，需修正以免跑出版面
-      const newMaxOffset = Math.max(0, dataLen - newCount);
-      if (endIndexOffset > newMaxOffset) {
-        setEndIndexOffset(newMaxOffset);
-      }
-    };
-
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [visibleCount, dataLen, endIndexOffset]);
-
-  // 處理滑鼠平移拖曳與 Hover
-  const handleMouseDown = (e) => {
-    setIsDragging(true);
-    setDragStartX(e.clientX);
-  };
-  
-  const handleMouseUp = () => setIsDragging(false);
-  const handleMouseLeave = () => {
-    setIsDragging(false);
-    setHoveredIndex(null);
-  };
-  
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      const dx = e.clientX - dragStartX;
-      const sensitivity = 5; // 滑動靈敏度
-      if (Math.abs(dx) > sensitivity) {
-        const shift = Math.round(dx / sensitivity);
-        // 往右拖曳(dx>0)代表看過去的資料，offset增加
-        setEndIndexOffset(prev => Math.max(0, Math.min(prev + shift, maxOffset)));
-        setDragStartX(e.clientX);
-      }
-    } else {
-      // 處理 Hover 十字線與數據提示
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      
-      // 因為 SVG viewbox 是 800，我們需要將滑鼠座標映射回 viewBox 坐標系
-      const scaleX = 800 / rect.width;
-      const svgX = x * scaleX;
-      
-      const xStep = (800 - 20) / safeVisibleCount; // 減去兩邊 paddingX (10*2)
-      const dataIndex = Math.floor((svgX - 10) / xStep);
-      
-      if (dataIndex >= 0 && dataIndex < visibleKlines.length) {
-        setHoveredIndex(dataIndex);
-      } else {
-        setHoveredIndex(null);
-      }
-    }
-  };
-
-  // 按鈕功能
-  const zoomIn = () => setVisibleCount(prev => Math.max(15, Math.round(prev * 0.8)));
-  const zoomOut = () => setVisibleCount(prev => Math.min(dataLen, Math.round(prev * 1.2)));
-  const resetZoom = () => {
-    setVisibleCount(60);
-    setEndIndexOffset(0);
-  };
-
-  // ---------------- 繪圖比例與座標計算 ----------------
+  // ---------------- 繪圖比例與座標計算 (提前宣告供畫線工具使用) ----------------
   const width = 800;
   const totalHeight = 500;
   const kLineHeight = 300;
@@ -293,10 +225,10 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const xStep = (width - paddingX * 2) / safeVisibleCount;
   const candleWidth = Math.max(xStep * 0.7, 1);
 
-  // K線 Y軸縮放 (自適應：僅計算當前可見資料)
+  // K線 Y軸縮放
   const lows = visibleKlines.map(k => k.low);
   const highs = visibleKlines.map(k => k.high);
-  const minPrice = Math.min(...lows, klines[klines.length-1].close); // 確保下限不出錯
+  const minPrice = Math.min(...lows, klines[klines.length-1].close); 
   const maxPrice = Math.max(...highs, klines[klines.length-1].close);
   const priceRange = (maxPrice - minPrice) || 1;
   const paddedMinPrice = minPrice - priceRange * 0.05;
@@ -304,28 +236,220 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
   const paddedPriceRange = paddedMaxPrice - paddedMinPrice;
   const getPriceY = (price) => kLineHeight - 10 - ((price - paddedMinPrice) / paddedPriceRange) * (kLineHeight - 20);
 
-  // 交易量 Y軸縮放 (自適應)
+  // 交易量 Y軸縮放
   const vols = visibleKlines.map(k => k.volume);
   const maxVol = Math.max(...vols, 1);
   const getVolY = (vol) => totalHeight - macdHeight - 5 - (vol / maxVol) * (volHeight - 10);
 
-  // MACD Y軸縮放 (自適應)
+  // MACD Y軸縮放
   let maxMacdAbs = 0.0001;
   visibleMacd.forEach(m => {
     maxMacdAbs = Math.max(maxMacdAbs, Math.abs(m.dif), Math.abs(m.dea), Math.abs(m.hist));
   });
   const getMacdY = (val) => totalHeight - (macdHeight / 2) - (val / maxMacdAbs) * (macdHeight / 2 - 10);
 
+  // ---------------- 畫圖與互動輔助函數 ----------------
+  const getSvgCoords = (clientX, clientY) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    const rect = containerRef.current.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const scaleY = totalHeight / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  };
+
+  const xToTime = (x) => {
+    const dataIndex = Math.floor((x - paddingX) / xStep);
+    const boundedIndex = Math.max(0, Math.min(dataIndex, safeVisibleCount - 1));
+    return visibleKlines[boundedIndex]?.time;
+  };
+
+  const yToPrice = (y) => paddedMinPrice + ((kLineHeight - 10 - y) / (kLineHeight - 20)) * paddedPriceRange;
+
+  const timeToX = (time) => {
+    const absoluteIndex = klines.findIndex(k => k.time === time);
+    if (absoluteIndex === -1) return -1000;
+    const visibleIndex = absoluteIndex - startIndex;
+    return paddingX + visibleIndex * xStep + candleWidth / 2;
+  };
+
+  const startDrawing = (clientX, clientY) => {
+    if (!drawMode) return;
+    const coords = getSvgCoords(clientX, clientY);
+    const t1 = xToTime(coords.x);
+    const p1 = yToPrice(coords.y);
+    if (t1) setCurrentDrawing({ t1, p1, t2: t1, p2: p1 });
+  };
+
+  const updateDrawing = (clientX, clientY) => {
+    if (!drawMode || !currentDrawing) return;
+    const coords = getSvgCoords(clientX, clientY);
+    const t2 = xToTime(coords.x);
+    const p2 = yToPrice(coords.y);
+    if (t2) setCurrentDrawing(prev => ({ ...prev, t2, p2 }));
+  };
+
+  const finishDrawing = () => {
+    if (!drawMode || !currentDrawing) return;
+    setDrawings(prev => [...prev, currentDrawing]);
+    setCurrentDrawing(null);
+  };
+
+  const updateHover = (clientX) => {
+    const coords = getSvgCoords(clientX, 0);
+    const dataIndex = Math.floor((coords.x - paddingX) / xStep);
+    if (dataIndex >= 0 && dataIndex < visibleKlines.length) {
+        setHoveredIndex(dataIndex);
+    } else {
+        setHoveredIndex(null);
+    }
+  };
+
+  // 處理滾輪縮放
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const handleWheel = (e) => {
+      e.preventDefault(); 
+      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+      let newCount = Math.round(visibleCount * zoomFactor);
+      
+      newCount = Math.max(15, Math.min(newCount, dataLen));
+      
+      setVisibleCount(newCount);
+      const newMaxOffset = Math.max(0, dataLen - newCount);
+      if (endIndexOffset > newMaxOffset) {
+        setEndIndexOffset(newMaxOffset);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [visibleCount, dataLen, endIndexOffset]);
+
+  // 滑鼠事件
+  const handleMouseDown = (e) => {
+    if (drawMode) startDrawing(e.clientX, e.clientY);
+    else {
+      setIsDragging(true);
+      setDragStartX(e.clientX);
+    }
+  };
+  
+  const handleMouseUp = () => {
+    if (drawMode) finishDrawing();
+    else setIsDragging(false);
+  };
+
+  const handleMouseLeave = () => {
+    if (drawMode) finishDrawing();
+    setIsDragging(false);
+    setHoveredIndex(null);
+  };
+  
+  const handleMouseMove = (e) => {
+    if (drawMode) {
+      updateDrawing(e.clientX, e.clientY);
+    } else if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      const sensitivity = 5; 
+      if (Math.abs(dx) > sensitivity) {
+        const shift = Math.round(dx / sensitivity);
+        setEndIndexOffset(prev => Math.max(0, Math.min(prev + shift, maxOffset)));
+        setDragStartX(e.clientX);
+      }
+    } else {
+      updateHover(e.clientX);
+    }
+  };
+
+  // 手機觸控事件 (解決無法縮放平移問題)
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      if (drawMode) {
+        startDrawing(e.touches[0].clientX, e.touches[0].clientY);
+      } else {
+        setIsDragging(true);
+        setDragStartX(e.touches[0].clientX);
+        updateHover(e.touches[0].clientX); // 觸控時顯示資訊
+      }
+    } else if (e.touches.length === 2 && !drawMode) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setTouchDist(dist);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1) {
+      if (drawMode) {
+        updateDrawing(e.touches[0].clientX, e.touches[0].clientY);
+      } else if (isDragging) {
+        const dx = e.touches[0].clientX - dragStartX;
+        const sensitivity = 3; // 手機滑動靈敏度略高
+        if (Math.abs(dx) > sensitivity) {
+          const shift = Math.round(dx / sensitivity);
+          setEndIndexOffset(prev => Math.max(0, Math.min(prev + shift, maxOffset)));
+          setDragStartX(e.touches[0].clientX);
+        }
+      }
+      if (!drawMode) updateHover(e.touches[0].clientX);
+    } else if (e.touches.length === 2 && !drawMode) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (touchDist > 0) {
+        const diff = dist - touchDist;
+        if (Math.abs(diff) > 5) {
+          const zoomFactor = diff > 0 ? 0.95 : 1.05; 
+          let newCount = Math.round(visibleCount * zoomFactor);
+          newCount = Math.max(15, Math.min(newCount, dataLen));
+          setVisibleCount(newCount);
+          const newMaxOffset = Math.max(0, dataLen - newCount);
+          if (endIndexOffset > newMaxOffset) {
+            setEndIndexOffset(newMaxOffset);
+          }
+          setTouchDist(dist);
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (drawMode) finishDrawing();
+    setIsDragging(false);
+    setTouchDist(0);
+  };
+
+  // 按鈕功能
+  const zoomIn = () => setVisibleCount(prev => Math.max(15, Math.round(prev * 0.8)));
+  const zoomOut = () => setVisibleCount(prev => Math.min(dataLen, Math.round(prev * 1.2)));
+  const resetZoom = () => {
+    setVisibleCount(60);
+    setEndIndexOffset(0);
+  };
+
   let difPath = "";
   let deaPath = "";
-
   const hoveredK = hoveredIndex !== null ? visibleKlines[hoveredIndex] : null;
 
   return (
     <div className="w-full relative group touch-none" style={{ height: '500px' }}>
       
-      {/* 互動按鈕列 (Hover 時顯示) */}
-      <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      {/* 互動按鈕列 (加入畫圖工具按鈕，並確保手機版常態可見或半透明) */}
+      <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <button onClick={() => setDrawMode(!drawMode)} className={`p-1.5 rounded backdrop-blur border border-[#2a2f3a] ${drawMode ? 'bg-amber-500/20 text-amber-500' : 'bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300'}`} title="畫線工具">
+          <Pencil className="w-4 h-4" />
+        </button>
+        {drawings.length > 0 && (
+          <button onClick={() => setDrawings([])} className="p-1.5 bg-[#1a1e27]/80 hover:bg-red-500/20 text-red-400 rounded backdrop-blur border border-[#2a2f3a]" title="清除所有畫線">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+        <div className="w-px h-6 bg-[#2a2f3a] mx-1 self-center"></div>
         <button onClick={zoomIn} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded backdrop-blur border border-[#2a2f3a]">
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -357,11 +481,15 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
       {/* SVG 繪圖容器 */}
       <div 
         ref={containerRef}
-        className="w-full h-full cursor-crosshair overflow-hidden"
+        className={`w-full h-full overflow-hidden touch-none ${drawMode ? 'cursor-crosshair' : 'cursor-default'}`}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onMouseMove={handleMouseMove}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       >
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
           {/* 背景格線 */}
@@ -423,6 +551,17 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
           <path d={difPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
           <path d={deaPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
 
+          {/* 繪製使用者畫線 (Trend Lines) */}
+          {drawings.concat(currentDrawing ? [currentDrawing] : []).map((line, idx) => {
+            const x1 = timeToX(line.t1);
+            const y1 = getPriceY(line.p1);
+            const x2 = timeToX(line.t2);
+            const y2 = getPriceY(line.p2);
+            return (
+              <line key={idx} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f59e0b" strokeWidth="2" />
+            );
+          })}
+
           {/* Y軸價格標籤 */}
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMaxPrice)}</text>
           <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMinPrice)}</text>
@@ -434,13 +573,18 @@ const AdvancedKLineChart = ({ klines, macdSeries }) => {
 
 // --- 主應用程序 ---
 export default function App() {
-  // 動態載入 Tailwind CSS
+  // 動態載入 Tailwind CSS 並加上 Loading 遮罩
+  const [isStylesLoaded, setIsStylesLoaded] = useState(false);
+
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
       script.src = 'https://cdn.tailwindcss.com';
+      script.onload = () => setIsStylesLoaded(true);
       document.head.appendChild(script);
+    } else {
+      setIsStylesLoaded(true);
     }
   }, []);
 
@@ -538,6 +682,17 @@ export default function App() {
     if (!searchTerm) return allTickers.slice(0, 24); 
     return allTickers.filter(t => t.symbol.includes(searchTerm.toUpperCase())).slice(0, 50); 
   }, [allTickers, searchTerm]);
+
+  // 在 Tailwind 載入完成前，顯示簡潔的純 CSS 系統載入畫面
+  if (!isStylesLoaded) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: '#0b0e14', color: '#64748b', fontFamily: 'sans-serif' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid #1e293b', borderTop: '3px solid #f59e0b', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '20px' }}></div>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        <div style={{ letterSpacing: '0.1em', fontSize: '14px' }}>系統載入中...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-indigo-500/30">
