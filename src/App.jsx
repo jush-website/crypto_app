@@ -447,6 +447,17 @@ function TwStockWorkspace({ stock }) {
 
   const recommendations = getRecommendations();
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+  const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
+
+  // 格式化為 MM/DD 用於顯示標題
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '';
+    const d = new Date(timestamp);
+    return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+  };
+
+  const latestDateStr = latestData ? formatDate(latestData.time) : '';
+  const prevDateStr = prevData ? formatDate(prevData.time) : '';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -495,7 +506,7 @@ function TwStockWorkspace({ stock }) {
                   </div>
               </div>
 
-              {/* 籌碼面看板 (改為表格比對形式) */}
+              {/* 籌碼面看板 (改為表格比對形式，標題顯示真實交易日) */}
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
@@ -510,8 +521,12 @@ function TwStockWorkspace({ stock }) {
                         <thead>
                           <tr className="border-b border-[#2a2f3a] text-slate-500">
                             <th className="pb-2 font-normal">指標</th>
-                            <th className="pb-2 font-normal text-right">最新單日</th>
-                            <th className="pb-2 font-normal text-right">前一交易日</th>
+                            <th className="pb-2 font-normal text-right whitespace-nowrap">
+                              最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}
+                            </th>
+                            <th className="pb-2 font-normal text-right whitespace-nowrap">
+                              前一交易日 {prevDateStr && <span className="text-[10px] text-slate-600 font-mono">({prevDateStr})</span>}
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#2a2f3a]/50">
