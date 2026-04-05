@@ -227,12 +227,11 @@ const TwKLineChart = ({ klines }) => {
   const visibleCount = 80;
   const visibleKlines = klines.slice(-visibleCount);
   
-  // 增加高度以容納下方的交易量圖表
   const width = 800; const totalHeight = 580;
   const paddingX = 10; const paddingY = 20;
-  const priceHeight = 400; // K線區域高度
-  const volTop = 440;      // 交易量區域起始 Y
-  const volHeight = 120;   // 交易量區域高度
+  const priceHeight = 400; 
+  const volTop = 440;      
+  const volHeight = 120;   
   
   const xStep = (width - paddingX * 2) / Math.max(visibleKlines.length, 1); 
   const candleWidth = Math.max(xStep * 0.6, 1);
@@ -242,7 +241,6 @@ const TwKLineChart = ({ klines }) => {
   const priceRange = (maxPrice - minPrice) || 1;
   const maxVol = Math.max(...visibleKlines.map(k => k.volume || 0));
 
-  // 獨立計算價格與交易量的 Y 座標
   const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2);
   const getVolY = (v) => volTop + volHeight - (v / (maxVol || 1)) * volHeight;
 
@@ -291,9 +289,7 @@ const TwKLineChart = ({ klines }) => {
 
       <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          {/* 價格區格線 */}
           <line x1="0" y1={priceHeight/2} x2={width} y2={priceHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
-          {/* 量價分隔線 */}
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
           
           <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
@@ -303,7 +299,7 @@ const TwKLineChart = ({ klines }) => {
           {visibleKlines.map((k, i) => {
             const x = paddingX + i * xStep; 
             const isUp = k.close >= k.open; 
-            const color = isUp ? '#f6465d' : '#0ecb81'; // 台股紅漲綠跌
+            const color = isUp ? '#f6465d' : '#0ecb81'; 
             
             const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
             const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
@@ -312,16 +308,13 @@ const TwKLineChart = ({ klines }) => {
             return (
               <g key={k.time || i}>
                 {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
-                {/* 繪製 K 線 */}
                 <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                {/* 繪製下方交易量柱狀圖 */}
                 <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
               </g>
             );
           })}
           
-          {/* 刻度文字 */}
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
           <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
           <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol/1000)}K 張</text>
@@ -342,7 +335,6 @@ function TwStockWorkspace({ stock }) {
     const fetchStockData = async () => {
       try {
         setLoading(true);
-        // 1. 抓取歷史K線
         const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`);
         const historyData = await resHistory.json();
         
@@ -366,10 +358,7 @@ function TwStockWorkspace({ stock }) {
           }
         }
         
-        // 2. 計算技術指標
         const processedData = calculateIndicators(klines);
-
-        // 3. 抓取個股新聞
         const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
         const newsData = await resNews.json();
 
@@ -384,7 +373,6 @@ function TwStockWorkspace({ stock }) {
       }
     };
 
-    // 抓取真實盤後籌碼數據 (三大法人、融資券)
     const fetchChipData = async () => {
       try {
         const [t86Res, marginRes] = await Promise.all([
@@ -398,7 +386,6 @@ function TwStockWorkspace({ stock }) {
           const t86Data = await t86Res.json();
           const stockT86 = t86Data.find(item => item.Code === stock.symbol);
           if (stockT86) {
-            // 證交所 T86 預設為股，換算為張
             const parseNet = (val) => val ? Math.round(parseFloat(val.toString().replace(/,/g, '')) / 1000) : 0;
             foreign = parseNet(stockT86.ForeignInvestorNet || stockT86.ForeignDifference);
             trust = parseNet(stockT86.InvestmentTrustNet || stockT86.TrustDifference);
@@ -427,12 +414,10 @@ function TwStockWorkspace({ stock }) {
     return () => { isMounted = false; };
   }, [stock.symbol]);
 
-  // 生成 AI 推薦分析 (短、中、長期)
   const getRecommendations = () => {
     if (!chartData || chartData.length < 2) return null;
     const latest = chartData[chartData.length - 1];
     
-    // 短期 (1-2週): 5日線、KD、RSI
     let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
     let shortScore = 0;
     if (latest.close > latest.ma5) shortScore++;
@@ -442,7 +427,6 @@ function TwStockWorkspace({ stock }) {
     if (shortScore >= 2) shortTerm = { action: '推薦買入', color: 'text-[#f6465d]', desc: '短線動能強勁，站上5日線且指標向上。' };
     else if (shortScore === 0) shortTerm = { action: '推薦賣出', color: 'text-[#0ecb81]', desc: '短線動能偏弱，跌破5日線且面臨賣壓。' };
 
-    // 中期 (1-3個月): 20日線(月線)、MACD
     let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
     let midScore = 0;
     if (latest.close > latest.ma20) midScore++;
@@ -451,7 +435,6 @@ function TwStockWorkspace({ stock }) {
     if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
     else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
 
-    // 長期 (1季以上): 60日線(季線)
     let longTerm = latest.close > latest.ma60 
       ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
       : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
@@ -464,8 +447,6 @@ function TwStockWorkspace({ stock }) {
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
-      
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* 左側：報價與籌碼指標 */}
         <div className="lg:col-span-4 space-y-6">
@@ -562,7 +543,7 @@ function TwStockWorkspace({ stock }) {
             )}
           </div>
 
-          {/* 新增：AI 操作建議區塊 */}
+          {/* AI 操作建議區塊 */}
           {recommendations && (
             <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
@@ -1164,8 +1145,15 @@ function PortalPage() {
 
 function TwStocksDashboard({ twStocks, loading, error }) {
   const [searchTerm, setSearchTerm] = useState('');
-  let filtered = twStocks;
-  if (searchTerm) filtered = filtered.filter(t => t.symbol.includes(searchTerm) || t.name.includes(searchTerm));
+  
+  let filtered = [];
+  if (searchTerm) {
+    // 當有搜尋條件時，跨越全部 1000+ 檔股票搜尋
+    filtered = twStocks.filter(t => t.symbol.includes(searchTerm) || t.name.includes(searchTerm));
+  } else {
+    // 預設只顯示前 200 檔最熱門的股票，避免畫面卡頓
+    filtered = twStocks.slice(0, 200);
+  }
 
   if (loading && !twStocks.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取 TWSE 證交所數據中...</div>;
   if (error) return <div className="text-center py-32 text-red-500"><AlertCircle className="w-8 h-8 mx-auto mb-4" /> 取得台股數據失敗：{error}</div>;
@@ -1175,7 +1163,10 @@ function TwStocksDashboard({ twStocks, loading, error }) {
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500/20 rounded-lg"><LineChart className="w-6 h-6 text-blue-400" /></div>
-          <div><h2 className="text-xl font-bold text-white">台股大盤與熱門個股</h2><p className="text-xs text-slate-400">點擊個股查看 K 線與指標分析</p></div>
+          <div>
+            <h2 className="text-xl font-bold text-white">台股大盤與熱門個股</h2>
+            <p className="text-xs text-slate-400">預設顯示 Top 200 熱門股，可搜尋全台股標的</p>
+          </div>
         </div>
         <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="輸入股號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
       </div>
@@ -1195,6 +1186,7 @@ function TwStocksDashboard({ twStocks, loading, error }) {
             </div>
           );
         })}
+        {filtered.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">找不到符合的股票代號或名稱。</div>}
       </div>
     </div>
   );
@@ -1319,8 +1311,8 @@ export default function App() {
               return { symbol: item.Code, name: item.Name, lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
             })
             .filter(item => item.lastPrice !== '0.00')
-            .sort((a, b) => b.quoteVolume - a.quoteVolume)
-            .slice(0, 200);
+            .sort((a, b) => b.quoteVolume - a.quoteVolume);
+            // 移除原本的 .slice(0, 200)，保留全量數據供跨庫搜尋
           setTwStocks(formatted); setLoadingTw(false);
         }
       } catch (err) { if (isMounted) { setErrorTw(err.message); setLoadingTw(false); } }
@@ -1412,14 +1404,25 @@ export default function App() {
           ) : null}
         </div>
 
+        {/* 左側抽屜式手機版選單 */}
         {isMobileMenuOpen && (
-          <>
+          <div className="sm:hidden z-50 relative">
             <div 
-              className="sm:hidden fixed inset-0 top-16 bg-black/60 backdrop-blur-sm z-40 cursor-pointer" 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm cursor-pointer z-40" 
               onClick={() => setIsMobileMenuOpen(false)} 
-              onTouchStart={() => setIsMobileMenuOpen(false)}
+              onTouchStart={(e) => { e.preventDefault(); setIsMobileMenuOpen(false); }}
             />
-            <div className="sm:hidden absolute top-16 left-0 w-full bg-[#121620] border-b border-[#2a2f3a] shadow-xl flex flex-col p-4 gap-2 z-50 animate-in slide-in-from-top-2 duration-200">
+            <div className="fixed top-0 left-0 h-full w-64 bg-[#121620] border-r border-[#2a2f3a] shadow-2xl flex flex-col p-4 gap-2 z-50 animate-in slide-in-from-left duration-200 overflow-y-auto">
+               <div className="flex items-center justify-between mb-4 pb-4 border-b border-[#2a2f3a]">
+                 <div className="flex items-center gap-2 text-blue-500">
+                    <Globe className="w-6 h-6 text-blue-400" />
+                    <span className="font-bold text-white tracking-tighter">SMC MAX</span>
+                 </div>
+                 <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white p-1">
+                    <X className="w-5 h-5"/>
+                 </button>
+               </div>
+
                <div className="text-xs text-slate-500 mb-1 font-bold">主系統</div>
                <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
                <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('tw_stock') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台灣股市行情</button>
@@ -1427,14 +1430,14 @@ export default function App() {
                
                {isCryptoRoute && (
                   <>
-                   <div className="text-xs text-slate-500 mt-2 mb-1 font-bold border-t border-[#2a2f3a] pt-2">加密貨幣子系統</div>
+                   <div className="text-xs text-slate-500 mt-4 mb-1 font-bold border-t border-[#2a2f3a] pt-4">加密貨幣子系統</div>
                    <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
                    <button onClick={() => { window.location.hash = '#/crypto/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all flex items-center justify-between ${currentRoute === 'crypto_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>持倉與管理 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{paperAccount.positions.length}</span>}</button>
                    <button onClick={() => { window.location.hash = '#/crypto/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>資產帳戶</button>
                   </>
                )}
             </div>
-          </>
+          </div>
         )}
       </header>
       
