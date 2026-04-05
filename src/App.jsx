@@ -335,6 +335,7 @@ function TwStockWorkspace({ stock }) {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginChange: null });
 
   useEffect(() => {
     let isMounted = true;
@@ -382,38 +383,49 @@ function TwStockWorkspace({ stock }) {
         if (isMounted) setLoading(false);
       }
     };
+
+    // 抓取真實盤後籌碼數據 (三大法人、融資券)
+    const fetchChipData = async () => {
+      try {
+        const [t86Res, marginRes] = await Promise.all([
+          fetch('https://openapi.twse.com.tw/v1/fund/T86').catch(()=>null),
+          fetch('https://openapi.twse.com.tw/v1/marginTransaction/MI_MARGN').catch(()=>null)
+        ]);
+
+        let foreign = null, trust = null, dealer = null, marginChange = null;
+
+        if (t86Res && t86Res.ok) {
+          const t86Data = await t86Res.json();
+          const stockT86 = t86Data.find(item => item.Code === stock.symbol);
+          if (stockT86) {
+            // 證交所 T86 預設為股，換算為張
+            const parseNet = (val) => val ? Math.round(parseFloat(val.toString().replace(/,/g, '')) / 1000) : 0;
+            foreign = parseNet(stockT86.ForeignInvestorNet || stockT86.ForeignDifference);
+            trust = parseNet(stockT86.InvestmentTrustNet || stockT86.TrustDifference);
+            dealer = parseNet(stockT86.DealerNet || stockT86.DealerDifference);
+          }
+        }
+
+        if (marginRes && marginRes.ok) {
+          const marginData = await marginRes.json();
+          const stockMargin = marginData.find(item => item.Code === stock.symbol);
+          if (stockMargin) {
+             const today = parseFloat((stockMargin.MarginPurchaseTodayBalance || stockMargin.MarginBalanceToday || '0').toString().replace(/,/g, ''));
+             const yesterday = parseFloat((stockMargin.MarginPurchaseYesterdayBalance || stockMargin.MarginBalanceYesterday || '0').toString().replace(/,/g, ''));
+             marginChange = Math.round((today - yesterday) / 1000);
+          }
+        }
+        
+        if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginChange });
+      } catch (error) {
+        if (isMounted) setChipData(prev => ({ ...prev, loading: false }));
+      }
+    };
+
     fetchStockData();
+    fetchChipData();
     return () => { isMounted = false; };
   }, [stock.symbol]);
-
-  // 擬真推算引擎 (基於真實價量數據生成合理的籌碼面結構，並轉換為「張」)
-  const generateInsights = () => {
-    if (!chartData || chartData.length < 5) return null;
-    const last = chartData[chartData.length - 1];
-    const prev = chartData[chartData.length - 2];
-    const priceDiff = last.close - prev.close;
-    const isUp = priceDiff >= 0;
-    
-    // 將交易量除以 1000，單位轉換為「張」
-    const volLots = Math.floor((last.volume || 0) / 1000); 
-
-    // 以張數為基準去分配三大法人買賣超 (約佔總量 15%)
-    const instBase = volLots * 0.15; 
-    const foreignBuy = Math.floor(isUp ? instBase * (0.8 + Math.random()*0.4) : -instBase * (0.6 + Math.random()*0.4));
-    const trustBuy = Math.floor(isUp ? instBase * 0.3 * Math.random() : -instBase * 0.2 * Math.random());
-    const dealerBuy = Math.floor((foreignBuy + trustBuy) * 0.1 * (Math.random() > 0.5 ? 1 : -1));
-
-    const marginRatio = (Math.abs(priceDiff) / prev.close) * 1000;
-    const marginLong = isUp ? Math.floor(marginRatio * (1 + Math.random())) : -Math.floor(marginRatio);
-    const marginShort = !isUp ? Math.floor(marginRatio * (0.5 + Math.random())) : -Math.floor(marginRatio * 0.5);
-
-    return {
-      foreign: foreignBuy, trust: trustBuy, dealer: dealerBuy,
-      marginLong, marginShort,
-      directorHolding: (15 + (parseInt(stock.symbol)%30)).toFixed(1),
-      mainBranch: isUp ? "台北富邦 - 買超" : "元大證券 - 賣超" 
-    };
-  };
 
   // 生成 AI 推薦分析 (短、中、長期)
   const getRecommendations = () => {
@@ -447,13 +459,12 @@ function TwStockWorkspace({ stock }) {
     return { shortTerm, midTerm, longTerm };
   };
 
-  const insights = generateInsights();
   const recommendations = getRecommendations();
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.history.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
+      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* 左側：報價與籌碼指標 */}
@@ -504,34 +515,32 @@ function TwStockWorkspace({ stock }) {
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
+                    <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">真實盤後數據</span>
                   </h3>
-                  {insights && (
+                  {chipData.loading ? (
+                    <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+                  ) : (chipData.foreign !== null || chipData.marginChange !== null) ? (
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">外資買賣超</span>
-                        <span className={`font-mono font-bold ${insights.foreign >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.foreign >= 0 ? '+' : ''}{insights.foreign.toLocaleString()} 張</span>
+                        <span className={`font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? chipData.foreign.toLocaleString() + ' 張' : '--'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">投信買賣超</span>
-                        <span className={`font-mono font-bold ${insights.trust >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.trust >= 0 ? '+' : ''}{insights.trust.toLocaleString()} 張</span>
+                        <span className={`font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? chipData.trust.toLocaleString() + ' 張' : '--'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">自營商買賣超</span>
-                        <span className={`font-mono font-bold ${insights.dealer >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.dealer >= 0 ? '+' : ''}{insights.dealer.toLocaleString()} 張</span>
+                        <span className={`font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? chipData.dealer.toLocaleString() + ' 張' : '--'}</span>
                       </div>
-                      <div className="flex justify-between items-center text-xs border-b border-[#2a2f3a] pb-2 pt-1">
+                      <div className="flex justify-between items-center text-xs border-t border-[#2a2f3a] pt-2">
                         <span className="text-slate-400">融資餘額變化</span>
-                        <span className={`font-mono font-bold ${insights.marginLong >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{insights.marginLong >= 0 ? '+' : ''}{insights.marginLong} 張</span>
+                        <span className={`font-mono font-bold ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.marginChange > 0 ? '+' : ''}{chipData.marginChange !== null ? chipData.marginChange.toLocaleString() + ' 張' : '--'}</span>
                       </div>
-                      <div className="flex justify-between items-center text-xs pt-1">
-                        <span className="text-slate-400">董監持股比例</span>
-                        <span className="font-mono font-bold text-white">{insights.directorHolding}%</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">近期關鍵分點</span>
-                        <span className="font-bold text-amber-400">{insights.mainBranch}</span>
-                      </div>
+                      <div className="text-[10px] text-slate-500 mt-2 text-right">註：以證交所最新一交易日結算</div>
                     </div>
+                  ) : (
+                    <div className="text-center py-6 text-slate-500 text-xs">尚無當日盤後資料<br/><span className="text-[10px]">(可能為上櫃股票或無交易)</span></div>
                   )}
               </div>
             </>
@@ -1387,7 +1396,11 @@ export default function App() {
 
             {!isCryptoRoute && currentRoute !== 'portal' && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
-                  <button onClick={() => window.location.hash = '#/portal'} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> 返回入口</button>
+                  {currentRoute === 'tw_stock_detail' ? (
+                    <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> 返回台股清單</button>
+                  ) : (
+                    <button onClick={() => window.location.hash = '#/portal'} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> 返回入口</button>
+                  )}
                 </nav>
             )}
           </div>
