@@ -328,7 +328,7 @@ function TwStockWorkspace({ stock }) {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginChange: null });
+  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
 
   useEffect(() => {
     let isMounted = true;
@@ -380,7 +380,8 @@ function TwStockWorkspace({ stock }) {
           fetch('https://openapi.twse.com.tw/v1/marginTransaction/MI_MARGN').catch(()=>null)
         ]);
 
-        let foreign = null, trust = null, dealer = null, marginChange = null;
+        let foreign = null, trust = null, dealer = null;
+        let marginToday = null, marginYest = null, marginChange = null;
 
         if (t86Res && t86Res.ok) {
           const t86Data = await t86Res.json();
@@ -399,11 +400,13 @@ function TwStockWorkspace({ stock }) {
           if (stockMargin) {
              const today = parseFloat((stockMargin.MarginPurchaseTodayBalance || stockMargin.MarginBalanceToday || '0').toString().replace(/,/g, ''));
              const yesterday = parseFloat((stockMargin.MarginPurchaseYesterdayBalance || stockMargin.MarginBalanceYesterday || '0').toString().replace(/,/g, ''));
-             marginChange = Math.round((today - yesterday) / 1000);
+             marginToday = Math.round(today / 1000);
+             marginYest = Math.round(yesterday / 1000);
+             marginChange = marginToday - marginYest;
           }
         }
         
-        if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginChange });
+        if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginToday, marginYest, marginChange });
       } catch (error) {
         if (isMounted) setChipData(prev => ({ ...prev, loading: false }));
       }
@@ -492,33 +495,64 @@ function TwStockWorkspace({ stock }) {
                   </div>
               </div>
 
-              {/* 籌碼面看板 */}
+              {/* 籌碼面看板 (改為表格比對形式) */}
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
                     <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">真實盤後數據</span>
                   </h3>
+                  
                   {chipData.loading ? (
                     <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
-                  ) : (chipData.foreign !== null || chipData.marginChange !== null) ? (
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">外資買賣超</span>
-                        <span className={`font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? chipData.foreign.toLocaleString() + ' 張' : '--'}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">投信買賣超</span>
-                        <span className={`font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? chipData.trust.toLocaleString() + ' 張' : '--'}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">自營商買賣超</span>
-                        <span className={`font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? chipData.dealer.toLocaleString() + ' 張' : '--'}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs border-t border-[#2a2f3a] pt-2">
-                        <span className="text-slate-400">融資餘額變化</span>
-                        <span className={`font-mono font-bold ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.marginChange > 0 ? '+' : ''}{chipData.marginChange !== null ? chipData.marginChange.toLocaleString() + ' 張' : '--'}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-2 text-right">註：以證交所最新一交易日結算</div>
+                  ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b border-[#2a2f3a] text-slate-500">
+                            <th className="pb-2 font-normal">指標</th>
+                            <th className="pb-2 font-normal text-right">最新單日</th>
+                            <th className="pb-2 font-normal text-right">前一交易日</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#2a2f3a]/50">
+                          <tr>
+                            <td className="py-2.5 text-slate-400">外資買賣超</td>
+                            <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>
+                              {chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? chipData.foreign.toLocaleString() + ' 張' : '--'}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-slate-500">--</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2.5 text-slate-400">投信買賣超</td>
+                            <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>
+                              {chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? chipData.trust.toLocaleString() + ' 張' : '--'}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-slate-500">--</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2.5 text-slate-400">自營商買賣超</td>
+                            <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>
+                              {chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? chipData.dealer.toLocaleString() + ' 張' : '--'}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-slate-500">--</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2.5 text-slate-400">融資餘額</td>
+                            <td className="py-2.5 text-right font-mono font-bold text-white">
+                              {chipData.marginToday !== null ? chipData.marginToday.toLocaleString() + ' 張' : '--'}
+                              {chipData.marginChange !== null && (
+                                <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>
+                                  ({chipData.marginChange > 0 ? '+' : ''}{chipData.marginChange})
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-slate-400">
+                               {chipData.marginYest !== null ? chipData.marginYest.toLocaleString() + ' 張' : '--'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="text-[10px] text-slate-500 mt-3 text-right">註：受限公開 API，法人僅提供最新單日結算</div>
                     </div>
                   ) : (
                     <div className="text-center py-6 text-slate-500 text-xs">尚無當日盤後資料<br/><span className="text-[10px]">(可能為上櫃股票或無交易)</span></div>
@@ -1148,10 +1182,8 @@ function TwStocksDashboard({ twStocks, loading, error }) {
   
   let filtered = [];
   if (searchTerm) {
-    // 當有搜尋條件時，跨越全部 1000+ 檔股票搜尋
     filtered = twStocks.filter(t => t.symbol.includes(searchTerm) || t.name.includes(searchTerm));
   } else {
-    // 預設只顯示前 200 檔最熱門的股票，避免畫面卡頓
     filtered = twStocks.slice(0, 200);
   }
 
@@ -1312,7 +1344,6 @@ export default function App() {
             })
             .filter(item => item.lastPrice !== '0.00')
             .sort((a, b) => b.quoteVolume - a.quoteVolume);
-            // 移除原本的 .slice(0, 200)，保留全量數據供跨庫搜尋
           setTwStocks(formatted); setLoadingTw(false);
         }
       } catch (err) { if (isMounted) { setErrorTw(err.message); setLoadingTw(false); } }
