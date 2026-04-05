@@ -515,6 +515,8 @@ const AdvancedKLineChart = ({ klines, signalData }) => {
 function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
   const { activeTab, timeframe, scanLimit, searchTerm, aiSignals, isScanning, scanProgress, initialScanned } = dashState;
 
+  const [isRangeOpen, setIsRangeOpen] = useState(false);
+
   const setActiveTab = (tab) => setDashState(p => ({ ...p, activeTab: tab }));
   const setTimeframe = (tf) => setDashState(p => ({ ...p, timeframe: tf }));
   const setScanLimit = (limit) => setDashState(p => ({ ...p, scanLimit: limit }));
@@ -603,31 +605,47 @@ function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState 
                     </button>
                   ))}
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto animate-in fade-in zoom-in-95 duration-200">
-                  {/* SMC 分析週期切換 */}
-                  {(activeTab === 'LONG' || activeTab === 'SHORT') && (
-                      <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
+              {(activeTab === 'LONG' || activeTab === 'SHORT') && (
+                  <div className="flex items-center gap-2 w-full sm:w-auto animate-in fade-in zoom-in-95 duration-200">
+                      {/* SMC 分析週期切換 */}
+                      <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] flex-1 sm:flex-none">
                           {['15m', '1h', '4h'].map(tf => (
                             <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500 hover:text-white'}`}>{tf}</button>
                           ))}
                       </div>
-                  )}
-                  {/* 交易量範圍選擇器 */}
-                  <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-                      <span className="px-2 py-2 sm:py-1.5 text-xs sm:text-sm text-slate-500 flex items-center"><Filter className="w-3.5 h-3.5 mr-1" /> 範圍</span>
-                      {[50, 100, 150].map(limit => (
-                        <button key={limit} onClick={() => setScanLimit(limit)} className={`flex-1 sm:flex-none px-2 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${scanLimit === limit ? 'bg-blue-600/20 text-blue-400 font-bold' : 'text-slate-500 hover:text-white'}`}>Top {limit}</button>
-                      ))}
+                      {/* 交易量範圍選擇器 (改為收合下拉選單) */}
+                      <div className="relative shrink-0">
+                          <button 
+                              onClick={() => setIsRangeOpen(!isRangeOpen)}
+                              className="flex items-center justify-center gap-1.5 bg-[#121620] px-3 py-2 sm:py-1.5 rounded-lg border border-[#2a2f3a] text-xs sm:text-sm text-slate-300 hover:text-white transition-colors h-full"
+                          >
+                              <Filter className="w-3.5 h-3.5" />
+                              <span>Top {scanLimit}</span>
+                          </button>
+                          {isRangeOpen && (
+                              <div className="absolute top-full mt-1 right-0 sm:left-0 w-24 bg-[#121620] border border-[#2a2f3a] rounded-lg shadow-xl z-50 p-1 flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                  {[50, 100, 150].map(limit => (
+                                      <button 
+                                          key={limit} 
+                                          onClick={() => { setScanLimit(limit); setIsRangeOpen(false); }} 
+                                          className={`px-3 py-2 text-left text-xs sm:text-sm rounded transition-all ${scanLimit === limit ? 'bg-blue-600/20 text-blue-400 font-bold' : 'text-slate-400 hover:bg-[#2a2f3a] hover:text-white'}`}
+                                      >
+                                          Top {limit}
+                                      </button>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+                      <button 
+                        onClick={handleManualScan} 
+                        disabled={isScanning}
+                        className="bg-[#121620] p-2 sm:p-1.5 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0"
+                        title="重新掃描所有週期"
+                      >
+                        <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${isScanning ? 'animate-spin' : ''}`} />
+                      </button>
                   </div>
-                  <button 
-                    onClick={handleManualScan} 
-                    disabled={isScanning}
-                    className="bg-[#121620] p-2 sm:p-1.5 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0"
-                    title="重新掃描所有週期"
-                  >
-                    <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${isScanning ? 'animate-spin' : ''}`} />
-                  </button>
-              </div>
+              )}
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
               {isScanning && <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0"><RefreshCw className="w-3 h-3 animate-spin" /> SMC 深度掃描中 {scanProgress}%</div>}
