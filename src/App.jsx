@@ -24,7 +24,8 @@ import {
   Activity,
   Briefcase,
   BarChart2,
-  Waves 
+  Waves,
+  Menu
 } from 'lucide-react';
 
 // --- 輔助函數 ---
@@ -97,6 +98,38 @@ const analyzeOrderFlow = (klines) => {
   const isAggressiveBuy = lastK.close > lastK.open && upperWick < bodySize * 0.1;
   const isAggressiveSell = lastK.close < lastK.open && lowerWick < bodySize * 0.1;
   return { isAbsorption, isAggressiveBuy, isAggressiveSell };
+};
+
+const calculateMACDSeries = (prices, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) => {
+  if (prices.length < slowPeriod + signalPeriod) return [];
+  const macdData = [];
+  let fastEMA = prices.slice(0, fastPeriod).reduce((a, b) => a + b, 0) / fastPeriod;
+  let slowEMA = prices.slice(0, slowPeriod).reduce((a, b) => a + b, 0) / slowPeriod;
+  const kFast = 2 / (fastPeriod + 1);
+  const kSlow = 2 / (slowPeriod + 1);
+  const difArray = [];
+
+  for(let i = 0; i < prices.length; i++){
+      if(i >= slowPeriod) {
+        fastEMA = (prices[i] - fastEMA) * kFast + fastEMA;
+        slowEMA = (prices[i] - slowEMA) * kSlow + slowEMA;
+      }
+      const dif = fastEMA - slowEMA;
+      difArray.push(dif);
+  }
+
+  let dea = difArray.slice(0, signalPeriod).reduce((a,b)=>a+b,0) / signalPeriod;
+  const kSignal = 2 / (signalPeriod + 1);
+
+  for(let i = 0; i < prices.length; i++){
+      if(i >= slowPeriod + signalPeriod) {
+          dea = (difArray[i] - dea) * kSignal + dea;
+      }
+      const dif = difArray[i];
+      const hist = (dif - dea) * 2;
+      macdData.push({ dif, dea, hist });
+  }
+  return macdData;
 };
 
 const generateAdvancedSignal = (klines, currentPrice, fundingRate) => {
@@ -201,7 +234,10 @@ function PositionCard({ pos, currentPrice, balance, onSelectCoin, onClose, onAdj
     <div className={`bg-[#121620] border ${isProfit ? 'border-[#0ecb81]/30' : 'border-[#f6465d]/30'} rounded-xl p-4 flex flex-col shadow-lg`}>
       <div className="flex justify-between items-start mb-3">
         <div>
-          <h3 className="text-lg font-black text-white cursor-pointer hover:text-blue-400" onClick={() => onSelectCoin({symbol: pos.symbol})}>{pos.symbol}</h3>
+          <h3 className="text-lg font-black text-white cursor-pointer hover:text-blue-400" onClick={() => {
+            sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
+            onSelectCoin({symbol: pos.symbol});
+          }}>{pos.symbol}</h3>
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 inline-block ${pos.type === 'LONG' ? 'bg-[#0ecb81] text-white' : 'bg-[#f6465d] text-white'}`}>{pos.type} {pos.leverage}x</span>
         </div>
         <div className="text-right">
@@ -242,13 +278,18 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
   const change = parseFloat(ticker.priceChangePercent);
   const isPositive = change >= 0;
   return (
-    <div onClick={() => onSelectCoin(ticker.symbol)} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-lg p-4 cursor-pointer transition-all flex flex-col shadow-md">
-      <div className="flex justify-between mb-1">
-        <h3 className="font-bold text-slate-100">{ticker.symbol.replace('USDT', '')}</h3>
+    <div onClick={() => {
+        sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
+        onSelectCoin(ticker.symbol);
+      }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-lg p-4 cursor-pointer transition-all flex flex-col shadow-md">
+      <div className="flex justify-between items-start mb-1">
+        <div>
+          <h3 className="font-bold text-slate-100">{ticker.symbol.replace('USDT', '')}</h3>
+          <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
+        </div>
         <div className={`text-xs font-bold ${isPositive ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
       </div>
-      <div className="text-[10px] text-slate-500 mb-2 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
-      <div className="text-lg font-mono font-semibold text-white mb-2">${formatPrice(ticker.lastPrice)}</div>
+      <div className="text-lg font-mono font-semibold text-white mt-1 mb-2">${formatPrice(ticker.lastPrice)}</div>
       {signalData && signalData.signal !== 'NEUTRAL' && (
         <div className={`mt-2 text-[10px] p-2 rounded border ${signalData.signal === 'LONG' ? 'bg-[#0ecb81]/10 border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border-[#f6465d]/30 text-[#f6465d]'}`}>
           <div className="font-bold flex items-center gap-1"><Target className="w-3 h-3"/> AI {signalData.timeframe}: {signalData.signal}</div>
@@ -259,77 +300,248 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
   );
 }
 
-// --- K線圖組件 (SMC 圖層) ---
-const AdvancedKLineChart = ({ klines, signalData }) => {
+// --- 完整還原：包含 MACD、Volume、SMC 指標的高級 K 線圖表 ---
+const AdvancedKLineChart = ({ klines, macdSeries, signalData }) => {
   const containerRef = useRef(null);
   const [visibleCount, setVisibleCount] = useState(60); 
   const [endIndexOffset, setEndIndexOffset] = useState(0); 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawings, setDrawings] = useState([]);
+  const [currentDrawing, setCurrentDrawing] = useState(null);
+  const [touchDist, setTouchDist] = useState(0);
+
+  const dataLen = klines ? klines.length : 0;
 
   useEffect(() => {
-    const container = containerRef.current; if (!container || !klines?.length) return;
+    const container = containerRef.current; if (!container || dataLen === 0) return;
     const handleWheel = (e) => {
       e.preventDefault(); 
-      let n = Math.max(15, Math.min(Math.round(visibleCount * (e.deltaY > 0 ? 1.1 : 0.9)), klines.length));
-      setVisibleCount(n);
-      setEndIndexOffset(prev => Math.min(prev, klines.length - n));
+      let newCount = Math.round(visibleCount * (e.deltaY > 0 ? 1.1 : 0.9));
+      newCount = Math.max(15, Math.min(newCount, dataLen));
+      setVisibleCount(newCount);
+      const newMaxOffset = Math.max(0, dataLen - newCount);
+      if (endIndexOffset > newMaxOffset) setEndIndexOffset(newMaxOffset);
     };
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [visibleCount, klines?.length]);
+  }, [visibleCount, dataLen, endIndexOffset]);
 
-  if (!klines?.length) return null;
-  const dataLen = klines.length;
-  const safeOffset = Math.min(Math.max(0, endIndexOffset), dataLen - visibleCount);
-  const visibleKlines = klines.slice(Math.max(0, dataLen - visibleCount - safeOffset), dataLen - safeOffset);
-  const width = 800; const totalHeight = 500; const kLineHeight = 350;
-  const paddingX = 10; const xStep = (width - paddingX * 2) / visibleKlines.length;
+  if (!klines || dataLen === 0) return <div className="w-full h-[500px] flex items-center justify-center text-slate-500">正在載入圖表數據...</div>;
+  
+  const maxOffset = Math.max(0, dataLen - visibleCount);
+  const safeOffset = Math.min(Math.max(0, endIndexOffset), maxOffset);
+  const safeVisibleCount = Math.min(visibleCount, dataLen);
+  const startIndex = Math.max(0, dataLen - safeVisibleCount - safeOffset);
+  const endIndex = dataLen - safeOffset;
+  const visibleKlines = klines.slice(startIndex, endIndex);
+  const visibleMacd = macdSeries ? macdSeries.slice(startIndex, endIndex) : [];
+
+  const width = 800; const totalHeight = 500; const kLineHeight = 330; const volHeight = 80; const macdHeight = 80;
+  const paddingX = 10; const xStep = (width - paddingX * 2) / safeVisibleCount; const candleWidth = Math.max(xStep * 0.7, 1);
+  
   const lows = visibleKlines.map(k => k.low); const highs = visibleKlines.map(k => k.high);
   const minPrice = Math.min(...lows); const maxPrice = Math.max(...highs);
-  const getPriceY = (p) => kLineHeight - 20 - ((p - minPrice) / ((maxPrice - minPrice) || 1)) * (kLineHeight - 40);
+  const priceRange = (maxPrice - minPrice) || 1;
+  const paddedMinPrice = minPrice - priceRange * 0.05; const paddedMaxPrice = maxPrice + priceRange * 0.05;
+  const paddedPriceRange = paddedMaxPrice - paddedMinPrice;
+  const getPriceY = (price) => kLineHeight - 10 - ((price - paddedMinPrice) / paddedPriceRange) * (kLineHeight - 20);
+
+  const vols = visibleKlines.map(k => k.volume); const maxVol = Math.max(...vols, 1);
+  const getVolY = (vol) => totalHeight - macdHeight - 5 - (vol / maxVol) * (volHeight - 10);
+
+  let maxMacdAbs = 0.0001;
+  if(visibleMacd.length > 0) {
+    visibleMacd.forEach(m => { maxMacdAbs = Math.max(maxMacdAbs, Math.abs(m.dif), Math.abs(m.dea), Math.abs(m.hist)); });
+  }
+  const getMacdY = (val) => totalHeight - (macdHeight / 2) - (val / maxMacdAbs) * (macdHeight / 2 - 10);
+
+  const getSvgCoords = (clientX, clientY) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    const rect = containerRef.current.getBoundingClientRect();
+    return { x: (clientX - rect.left) * (width / rect.width), y: (clientY - rect.top) * (totalHeight / rect.height) };
+  };
+
+  const xToTime = (x) => visibleKlines[Math.max(0, Math.min(Math.floor((x - paddingX) / xStep), safeVisibleCount - 1))]?.time;
+  const yToPrice = (y) => paddedMinPrice + ((kLineHeight - 10 - y) / (kLineHeight - 20)) * paddedPriceRange;
+  const timeToX = (time) => {
+    const absIdx = klines.findIndex(k => k.time === time);
+    return absIdx === -1 ? -1000 : paddingX + (absIdx - startIndex) * xStep + candleWidth / 2;
+  };
+
+  const updateHover = (clientX) => {
+    const dataIndex = Math.floor((getSvgCoords(clientX, 0).x - paddingX) / xStep);
+    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
+  };
+
+  const handleMouseDown = (e) => {
+    if (drawMode) {
+        const coords = getSvgCoords(e.clientX, e.clientY);
+        const t1 = xToTime(coords.x); const p1 = yToPrice(coords.y);
+        if (t1) setCurrentDrawing({ t1, p1, t2: t1, p2: p1 });
+    } else { setIsDragging(true); setDragStartX(e.clientX); }
+  };
+  
+  const handleMouseUp = () => {
+    if (drawMode && currentDrawing) { setDrawings(prev => [...prev, currentDrawing]); setCurrentDrawing(null); }
+    else setIsDragging(false);
+  };
+
+  const handleMouseLeave = () => {
+    if (drawMode && currentDrawing) { setDrawings(prev => [...prev, currentDrawing]); setCurrentDrawing(null); }
+    setIsDragging(false);
+    setHoveredIndex(null);
+  };
+
+  const handleMouseMove = (e) => {
+    if (drawMode && currentDrawing) {
+      const coords = getSvgCoords(e.clientX, e.clientY);
+      setCurrentDrawing(prev => ({ ...prev, t2: xToTime(coords.x) || prev.t2, p2: yToPrice(coords.y) }));
+    } else if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      if (Math.abs(dx) > 5) {
+        setEndIndexOffset(prev => Math.max(0, Math.min(prev + Math.round(dx / 5), maxOffset)));
+        setDragStartX(e.clientX);
+      }
+    } else updateHover(e.clientX);
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      if (drawMode) {
+        const coords = getSvgCoords(e.touches[0].clientX, e.touches[0].clientY);
+        const t1 = xToTime(coords.x); const p1 = yToPrice(coords.y);
+        if (t1) setCurrentDrawing({ t1, p1, t2: t1, p2: p1 });
+      } else {
+        setIsDragging(true);
+        setDragStartX(e.touches[0].clientX);
+        updateHover(e.touches[0].clientX);
+      }
+    } else if (e.touches.length === 2 && !drawMode) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      setTouchDist(dist);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1) {
+      if (drawMode && currentDrawing) {
+        const coords = getSvgCoords(e.touches[0].clientX, e.touches[0].clientY);
+        setCurrentDrawing(prev => ({ ...prev, t2: xToTime(coords.x) || prev.t2, p2: yToPrice(coords.y) }));
+      } else if (isDragging) {
+        const dx = e.touches[0].clientX - dragStartX;
+        if (Math.abs(dx) > 3) {
+          setEndIndexOffset(prev => Math.max(0, Math.min(prev + Math.round(dx / 3), maxOffset)));
+          setDragStartX(e.touches[0].clientX);
+        }
+      }
+      if (!drawMode) updateHover(e.touches[0].clientX);
+    } else if (e.touches.length === 2 && !drawMode) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (touchDist > 0) {
+        const diff = dist - touchDist;
+        if (Math.abs(diff) > 5) {
+          const zoomFactor = diff > 0 ? 0.95 : 1.05; 
+          let newCount = Math.round(visibleCount * zoomFactor);
+          newCount = Math.max(15, Math.min(newCount, dataLen));
+          setVisibleCount(newCount);
+          const newMaxOffset = Math.max(0, dataLen - newCount);
+          if (endIndexOffset > newMaxOffset) { setEndIndexOffset(newMaxOffset); }
+          setTouchDist(dist);
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (drawMode && currentDrawing) { setDrawings(prev => [...prev, currentDrawing]); setCurrentDrawing(null); }
+    setIsDragging(false); setTouchDist(0);
+  };
+
+  let difPath = ""; let deaPath = "";
+  const hoveredK = hoveredIndex !== null ? visibleKlines[hoveredIndex] : null;
 
   return (
-    <div ref={containerRef} className="w-full h-[500px] overflow-hidden cursor-crosshair relative" onMouseMove={(e) => {
-      if (isDragging) {
-        const dx = e.clientX - dragStartX;
-        if (Math.abs(dx) > 5) { setEndIndexOffset(prev => Math.max(0, Math.min(prev + Math.round(dx / 5), dataLen - visibleCount))); setDragStartX(e.clientX); }
-      } else {
-        const rect = containerRef.current.getBoundingClientRect();
-        setHoveredIndex(Math.floor(((e.clientX - rect.left) * (width / rect.width) - paddingX) / xStep));
-      }
-    }} onMouseDown={(e) => { setIsDragging(true); setDragStartX(e.clientX); }} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setHoveredIndex(null)}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="font-mono">
-        <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" />
-        {signalData?.poc && <><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeDasharray="5 5" opacity="0.5" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></>}
-        {visibleKlines.map((k, i) => {
-          const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
-          return (
-            <g key={i}>
-              <line x1={x + xStep/2} y1={getPriceY(k.high)} x2={x + xStep/2} y2={getPriceY(k.low)} stroke={color} strokeWidth="1" />
-              <rect x={x + xStep*0.1} y={Math.min(getPriceY(k.open), getPriceY(k.close))} width={xStep*0.8} height={Math.max(1, Math.abs(getPriceY(k.open) - getPriceY(k.close)))} fill={color} />
-            </g>
-          );
-        })}
-      </svg>
+    <div className="w-full relative group touch-none" style={{ height: '500px' }}>
+      <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <button onClick={() => setDrawMode(!drawMode)} className={`p-1.5 rounded backdrop-blur border border-[#2a2f3a] ${drawMode ? 'bg-amber-500/20 text-amber-500' : 'bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300'}`}><Pencil className="w-4 h-4" /></button>
+        {drawings.length > 0 && <button onClick={() => setDrawings([])} className="p-1.5 bg-[#1a1e27]/80 hover:bg-red-500/20 text-red-400 rounded backdrop-blur border border-[#2a2f3a]"><Trash2 className="w-4 h-4" /></button>}
+        <div className="w-px h-6 bg-[#2a2f3a] mx-1 self-center"></div>
+        <button onClick={() => setVisibleCount(p => Math.max(15, Math.round(p * 0.8)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomIn className="w-4 h-4" /></button>
+        <button onClick={() => setVisibleCount(p => Math.min(dataLen, Math.round(p * 1.2)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomOut className="w-4 h-4" /></button>
+        <button onClick={() => {setVisibleCount(60); setEndIndexOffset(0);}} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><RotateCcw className="w-4 h-4" /></button>
+      </div>
+
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
+        {hoveredK ? (
+          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
+            <div>TIME: {new Date(hoveredK.time).toLocaleString()}</div>
+            <div className="flex gap-2">
+              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
+              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
+              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-slate-500 bg-[#0b0e14]/50 backdrop-blur px-2 py-1 rounded">
+             <MoveHorizontal className="w-3.5 h-3.5" /> 滾輪縮放 / 拖曳平移
+          </div>
+        )}
+      </div>
+
+      <div ref={containerRef} className={`w-full h-full overflow-hidden touch-none ${drawMode ? 'cursor-crosshair' : 'cursor-default'}`} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} onMouseMove={handleMouseMove} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
+          <line x1="0" y1={kLineHeight + volHeight} x2={width} y2={kLineHeight + volHeight} stroke="#2a2f3a" strokeWidth="1" />
+          <line x1="0" y1={totalHeight - macdHeight/2} x2={width} y2={totalHeight - macdHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" />
+          
+          {signalData?.poc && <><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></>}
+          {signalData?.avwap && <><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></>}
+
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
+            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            const bodyY = Math.min(openY, closeY); const bodyH = Math.max(Math.abs(openY - closeY), 1);
+            const volY = getVolY(k.volume); const volH = (totalHeight - macdHeight) - volY;
+            const macd = visibleMacd[i];
+            if (macd) {
+               const cx = x + candleWidth / 2;
+               difPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dif)} `; deaPath += `${i===0?'M':'L'}${cx},${getMacdY(macd.dea)} `;
+               const histY = getMacdY(Math.max(macd.hist, 0)); const histZero = getMacdY(0); const histH = Math.abs(getMacdY(macd.hist) - histZero) || 1;
+               return (
+                 <g key={k.time || i}>
+                   {hoveredIndex === i && <><line x1={cx} y1={0} x2={cx} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" /><line x1={0} y1={closeY} x2={width} y2={closeY} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" /></>}
+                   <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                   <rect x={x} y={bodyY} width={candleWidth} height={bodyH} fill={color} stroke={color} strokeWidth="1" />
+                   <rect x={x} y={volY} width={candleWidth} height={volH} fill={color} opacity={hoveredIndex === i ? "0.7" : "0.4"} />
+                   <rect x={x + candleWidth/4} y={macd.hist >= 0 ? histY : histZero} width={candleWidth/2} height={histH} fill={macd.hist >= 0 ? '#0ecb81' : '#f6465d'} opacity="0.6" />
+                 </g>
+               );
+            } return null;
+          })}
+          <path d={difPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
+          <path d={deaPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+          {drawings.concat(currentDrawing ? [currentDrawing] : []).map((line, idx) => (
+              <line key={idx} x1={timeToX(line.t1)} y1={getPriceY(line.p1)} x2={timeToX(line.t2)} y2={getPriceY(line.p2)} stroke="#f59e0b" strokeWidth="2" />
+          ))}
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMaxPrice)}</text>
+          <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(paddedMinPrice)}</text>
+        </svg>
+      </div>
     </div>
   );
 };
 
 // --- 市場分析頁 ---
-function Dashboard({ allTickers, fundingRates, loading }) {
-  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('dashboardTab') || 'ALL'); 
-  const [timeframe, setTimeframe] = useState(() => sessionStorage.getItem('dashboardTF') || '15m');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [aiSignals, setAiSignals] = useState({});
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0); 
+function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
+  const { activeTab, timeframe, searchTerm, aiSignals, isScanning, scanProgress } = dashState;
 
-  useEffect(() => {
-    sessionStorage.setItem('dashboardTab', activeTab);
-    sessionStorage.setItem('dashboardTF', timeframe);
-  }, [activeTab, timeframe]);
+  const setActiveTab = (tab) => setDashState(p => ({ ...p, activeTab: tab }));
+  const setTimeframe = (tf) => setDashState(p => ({ ...p, timeframe: tf }));
+  const setSearchTerm = (term) => setDashState(p => ({ ...p, searchTerm: term }));
 
   useEffect(() => {
     if (!loading && allTickers.length > 0) {
@@ -338,10 +550,19 @@ function Dashboard({ allTickers, fundingRates, loading }) {
     }
   }, [loading, allTickers.length]);
 
+  const prevTfRef = useRef(timeframe);
+
   useEffect(() => {
     let isMounted = true; if (!allTickers.length) return;
+    
+    // 如果切換了時間週期，就清空舊訊號重新掃描
+    if (prevTfRef.current !== timeframe) {
+        setDashState(p => ({ ...p, aiSignals: {} }));
+        prevTfRef.current = timeframe;
+    }
+
     const scan = async () => {
-      setIsScanning(true); setScanProgress(0); setAiSignals({});
+      setDashState(p => ({ ...p, isScanning: true, scanProgress: 0 }));
       const targets = allTickers.slice(0, 150); const batch = 15;
       for (let i = 0; i < targets.length; i += batch) {
         if (!isMounted) return;
@@ -357,15 +578,20 @@ function Dashboard({ allTickers, fundingRates, loading }) {
         }));
         if (isMounted) {
           const valid = results.filter(r => r);
-          if (valid.length) setAiSignals(prev => { 
-            const n = {...prev}; valid.forEach(v => n[v.s] = v.sig); return n; 
-          });
-          setScanProgress(Math.min(100, Math.round(((i + batch) / targets.length) * 100)));
+          if (valid.length) {
+              setDashState(prev => {
+                  const n = {...prev.aiSignals}; 
+                  valid.forEach(v => n[v.s] = v.sig); 
+                  return { ...prev, aiSignals: n };
+              });
+          }
+          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round(((i + batch) / targets.length) * 100)) }));
         }
         await new Promise(r => setTimeout(r, 200));
       }
-      if (isMounted) setIsScanning(false);
+      if (isMounted) setDashState(p => ({ ...p, isScanning: false }));
     };
+    
     scan(); return () => { isMounted = false; };
   }, [allTickers.length > 0, timeframe]);
 
@@ -380,47 +606,27 @@ function Dashboard({ allTickers, fundingRates, loading }) {
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:sticky sm:top-[72px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
-          
-          {/* 左側過濾按鈕區塊 */}
           <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
               <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
                   {['ALL', 'LONG', 'SHORT'].map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>
-                      {t === 'ALL' ? '全部' : t === 'LONG' ? '做多推薦' : '做空推薦'}
+                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>
+                      {t === 'ALL' ? '全部' : t === 'LONG' ? '🔥 推薦做多' : '🩸 推薦做空'}
                     </button>
                   ))}
               </div>
-              
               {(activeTab === 'LONG' || activeTab === 'SHORT') && (
                   <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
                       {['15m', '1h', '4h'].map(tf => (
-                        <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500'}`}>{tf}</button>
+                        <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500 hover:text-white'}`}>{tf}</button>
                       ))}
                   </div>
               )}
           </div>
-
-          {/* 右側搜尋與掃描狀態區塊 */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
-              {isScanning && (
-                <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0">
-                  <RefreshCw className="w-3 h-3 animate-spin" /> {timeframe} 掃描中 {scanProgress}%
-                </div>
-              )}
-              <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                  <input 
-                    type="text" 
-                    placeholder="搜尋幣種..." 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" 
-                  />
-              </div>
+              {isScanning && <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0"><RefreshCw className="w-3 h-3 animate-spin" /> {timeframe} 掃描中 {scanProgress}%</div>}
+              <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋幣種..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
           </div>
-
       </div>
-      
       <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {filtered.map(t => <MarketCard key={t.symbol} ticker={t} signalData={aiSignals[t.symbol]} onSelectCoin={(s) => window.location.hash = `#/trade/${s}`} />)}
       </div>
@@ -466,6 +672,7 @@ function AssetsPage({ paperAccount, allTickers }) {
 // --- 交易詳情頁 (多週期分析) ---
 function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition }) {
   const [klines, setKlines] = useState([]);
+  const [macdSeries, setMacdSeries] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(coin.lastPrice));
   const [multiSignals, setMultiSignals] = useState({ '15m': null, '1h': null, '4h': null });
 
@@ -476,10 +683,13 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, close
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=100`);
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), time: d[0] }));
-          if (tf === '15m') setKlines(parsed);
+          if (tf === '15m') {
+              setKlines(parsed);
+              setMacdSeries(calculateMACDSeries(parsed.map(k => k.close)));
+          }
           signals[tf] = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRate);
         } catch(e) {}
       }));
@@ -498,7 +708,8 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, close
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.location.hash = '#/home'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回市場</button>
+      {/* 點擊返回使用瀏覽器歷史紀錄，可搭配 Hash Router 自動恢復狀態 */}
+      <button onClick={() => window.history.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回市場</button>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg">
@@ -524,7 +735,7 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, close
           </div>
         </div>
         <div className="lg:col-span-8 space-y-6">
-          <div className="bg-[#121620] rounded-xl p-1 border border-[#2a2f3a] shadow-lg"><AdvancedKLineChart klines={klines} signalData={multiSignals['15m']} /></div>
+          <div className="bg-[#121620] rounded-xl p-1 border border-[#2a2f3a] shadow-lg"><AdvancedKLineChart klines={klines} macdSeries={macdSeries} signalData={multiSignals['15m']} /></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {paperAccount.positions.filter(p => p.symbol === coin.symbol).map(pos => <PositionCard key={pos.id} pos={pos} currentPrice={currentPrice} balance={paperAccount.balance} onClose={() => closePosition(pos.id, currentPrice)} onAdjust={(t,v) => adjustPosition(pos.id,t,v,currentPrice)} />)}
           </div>
@@ -537,11 +748,23 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, close
 // --- 應用程式進入點與 Router ---
 export default function App() {
   const [isStylesLoaded, setIsStylesLoaded] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
   const [allTickers, setAllTickers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fundingRates, setFundingRates] = useState({});
   const [currentRoute, setCurrentRoute] = useState('home');
   const [selectedCoin, setSelectedCoin] = useState(null);
+
+  // 狀態提升：將首頁的 Tab 與搜尋狀態保留在 App 層級，就不會因為切換頁面而消失
+  const [dashState, setDashState] = useState({
+    activeTab: 'ALL',
+    timeframe: '15m',
+    searchTerm: '',
+    aiSignals: {},
+    isScanning: false,
+    scanProgress: 0
+  });
+
   const [paperAccount, setPaperAccount] = useState(() => { try { const s = localStorage.getItem('paperAccount'); return s ? JSON.parse(s) : { balance: 10000, positions: [], history: [] }; } catch(e) { return { balance: 10000, positions: [], history: [] }; } });
 
   useEffect(() => {
@@ -607,22 +830,33 @@ export default function App() {
   if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-blue-500/30 pb-10">
       <header className="bg-[#121620]/95 backdrop-blur border-b border-[#2a2f3a] sticky top-0 z-20 h-16 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 h-full flex justify-between items-center">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-blue-500 cursor-pointer" onClick={() => window.location.hash = '#/home'}><Zap className="w-6 h-6 fill-blue-500/20" /><h1 className="text-xl font-bold text-white tracking-tighter">SMC PRO</h1></div>
-            <nav className="flex gap-1 text-sm font-bold">
+        <div className="max-w-7xl mx-auto px-4 h-full flex justify-between items-center relative">
+          
+          <div className="flex items-center gap-4 sm:gap-6">
+            <button className="sm:hidden text-slate-300 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu className="w-6 h-6" /></button>
+            <div className="flex items-center gap-2 text-blue-500 cursor-pointer" onClick={() => window.location.hash = '#/home'}><Zap className="w-6 h-6 fill-blue-500/20" /><h1 className="text-xl font-bold text-white tracking-tighter hidden sm:block">SMC PRO</h1></div>
+            <nav className="hidden sm:flex gap-1 text-sm font-bold">
               <button onClick={() => window.location.hash = '#/home'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'home' || currentRoute === 'trade' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>市場</button>
               <button onClick={() => window.location.hash = '#/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>持倉 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{paperAccount.positions.length}</span>}</button>
               <button onClick={() => window.location.hash = '#/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>帳戶</button>
             </nav>
           </div>
-          <div className="bg-[#1a1e27] px-4 py-2 rounded border border-[#2a2f3a] flex items-center gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${paperAccount.balance.toFixed(2)}</span></div>
+          <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${paperAccount.balance.toFixed(2)}</span></div>
         </div>
+        {isMobileMenuOpen && (
+          <div className="sm:hidden absolute top-16 left-0 w-full bg-[#121620] border-b border-[#2a2f3a] shadow-xl flex flex-col p-4 gap-2 z-50">
+             <button onClick={() => { window.location.hash = '#/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'home' || currentRoute === 'trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>市場分析</button>
+             <button onClick={() => { window.location.hash = '#/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all flex items-center justify-between ${currentRoute === 'positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
+                持倉與管理 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{paperAccount.positions.length}</span>}
+             </button>
+             <button onClick={() => { window.location.hash = '#/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>帳戶資產</button>
+          </div>
+        )}
       </header>
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {currentRoute === 'home' && <Dashboard allTickers={allTickers} fundingRates={fundingRates} loading={loading} />}
+        {currentRoute === 'home' && <Dashboard allTickers={allTickers} fundingRates={fundingRates} loading={loading} dashState={dashState} setDashState={setDashState} />}
         {currentRoute === 'positions' && <PositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
         {currentRoute === 'assets' && <AssetsPage allTickers={allTickers} paperAccount={paperAccount} />}
         {currentRoute === 'trade' && selectedCoin && <TradingWorkspace coin={selectedCoin} fundingRate={fundingRates[selectedCoin.symbol]} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
