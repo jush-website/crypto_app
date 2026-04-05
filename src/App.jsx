@@ -379,28 +379,48 @@ function Dashboard({ allTickers, fundingRates, loading }) {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 sticky top-[64px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
-          <div className="flex flex-wrap gap-2">
-              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a]">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:sticky sm:top-[72px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
+          
+          {/* 左側過濾按鈕區塊 */}
+          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
                   {['ALL', 'LONG', 'SHORT'].map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-1.5 text-xs rounded transition-all ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>
+                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>
                       {t === 'ALL' ? '全部' : t === 'LONG' ? '做多推薦' : '做空推薦'}
                     </button>
                   ))}
               </div>
+              
               {(activeTab === 'LONG' || activeTab === 'SHORT') && (
-                  <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a]">
+                  <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
                       {['15m', '1h', '4h'].map(tf => (
-                        <button key={tf} onClick={() => setTimeframe(tf)} className={`px-3 py-1.5 text-xs rounded transition-all ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500'}`}>{tf}</button>
+                        <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500'}`}>{tf}</button>
                       ))}
                   </div>
               )}
           </div>
-          <div className="flex items-center gap-4 w-full xl:w-auto">
-              {isScanning && <div className="text-xs text-blue-400 flex items-center gap-2"><RefreshCw className="w-3 h-3 animate-spin" /> {timeframe} 掃描中 {scanProgress}%</div>}
-              <div className="relative flex-1 xl:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋幣種..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+
+          {/* 右側搜尋與掃描狀態區塊 */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
+              {isScanning && (
+                <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> {timeframe} 掃描中 {scanProgress}%
+                </div>
+              )}
+              <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <input 
+                    type="text" 
+                    placeholder="搜尋幣種..." 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)} 
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" 
+                  />
+              </div>
           </div>
+
       </div>
+      
       <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {filtered.map(t => <MarketCard key={t.symbol} ticker={t} signalData={aiSignals[t.symbol]} onSelectCoin={(s) => window.location.hash = `#/trade/${s}`} />)}
       </div>
