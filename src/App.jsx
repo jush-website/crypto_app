@@ -1401,7 +1401,11 @@ export default function App() {
 
         {isMobileMenuOpen && (
           <>
-            <div className="sm:hidden fixed inset-0 top-16 bg-black/60 backdrop-blur-sm z-40" onClick={() => setIsMobileMenuOpen(false)} />
+            <div 
+              className="sm:hidden fixed inset-0 top-16 bg-black/60 backdrop-blur-sm z-40 cursor-pointer" 
+              onClick={() => setIsMobileMenuOpen(false)} 
+              onTouchStart={() => setIsMobileMenuOpen(false)}
+            />
             <div className="sm:hidden absolute top-16 left-0 w-full bg-[#121620] border-b border-[#2a2f3a] shadow-xl flex flex-col p-4 gap-2 z-50 animate-in slide-in-from-top-2 duration-200">
                <div className="text-xs text-slate-500 mb-1 font-bold">主系統</div>
                <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
