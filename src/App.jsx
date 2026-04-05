@@ -31,7 +31,6 @@ const calculateIndicators = (klines) => {
   const closePrices = klines.map(k => k.close);
   const result = [];
   
-  // EMA Helper
   const calcEMA = (data, period) => {
     const k = 2 / (period + 1);
     let emaArray = [data[0]];
@@ -41,13 +40,12 @@ const calculateIndicators = (klines) => {
     return emaArray;
   };
 
-  const ema12 = calcEMA(closePrices, 12);
-  const ema26 = calcEMA(closePrices, 26);
+  const ema12 = closePrices.length > 0 ? calcEMA(closePrices, 12) : [];
+  const ema26 = closePrices.length > 0 ? calcEMA(closePrices, 26) : [];
   const macdLine = ema12.map((e12, i) => e12 - ema26[i]);
-  const signalLine = calcEMA(macdLine, 9);
+  const signalLine = macdLine.length > 0 ? calcEMA(macdLine, 9) : [];
   const histogram = macdLine.map((m, i) => m - signalLine[i]);
 
-  // RSI Helper (14-day)
   const rsiPeriod = 14;
   let rsiArray = new Array(klines.length).fill(null);
   let gains = 0, losses = 0;
@@ -68,7 +66,6 @@ const calculateIndicators = (klines) => {
     rsiArray[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
   }
 
-  // KD Helper (9-day RSV)
   let kArray = new Array(klines.length).fill(50);
   let dArray = new Array(klines.length).fill(50);
   
@@ -84,7 +81,6 @@ const calculateIndicators = (klines) => {
   }
 
   for (let i = 0; i < klines.length; i++) {
-    // MA Calculations
     let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b)/5 : null;
     let ma20 = i >= 19 ? closePrices.slice(i-19, i+1).reduce((a,b)=>a+b)/20 : null;
     let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b)/60 : null;
@@ -220,7 +216,7 @@ const generateAdvancedSignal = (klines, currentPrice, fundingRate) => {
 
 
 // ==========================================
-// 台股子系統：個股工作區 (TwStockWorkspace)
+// 台股子系統：個股工作區與 K 線圖 (TwStockWorkspace)
 // ==========================================
 const TwKLineChart = ({ klines }) => {
   const containerRef = useRef(null);
@@ -231,15 +227,24 @@ const TwKLineChart = ({ klines }) => {
   const visibleCount = 80;
   const visibleKlines = klines.slice(-visibleCount);
   
-  const width = 800; const totalHeight = 480;
+  // 增加高度以容納下方的交易量圖表
+  const width = 800; const totalHeight = 580;
   const paddingX = 10; const paddingY = 20;
+  const priceHeight = 400; // K線區域高度
+  const volTop = 440;      // 交易量區域起始 Y
+  const volHeight = 120;   // 交易量區域高度
+  
   const xStep = (width - paddingX * 2) / Math.max(visibleKlines.length, 1); 
   const candleWidth = Math.max(xStep * 0.6, 1);
   
   const lows = visibleKlines.map(k => k.low); const highs = visibleKlines.map(k => k.high);
   const minPrice = Math.min(...lows); const maxPrice = Math.max(...highs);
   const priceRange = (maxPrice - minPrice) || 1;
-  const getPriceY = (p) => totalHeight - paddingY - ((p - minPrice) / priceRange) * (totalHeight - paddingY * 2);
+  const maxVol = Math.max(...visibleKlines.map(k => k.volume || 0));
+
+  // 獨立計算價格與交易量的 Y 座標
+  const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2);
+  const getVolY = (v) => volTop + volHeight - (v / (maxVol || 1)) * volHeight;
 
   const getSvgCoords = (clientX) => {
     if (!containerRef.current) return 0;
@@ -268,7 +273,7 @@ const TwKLineChart = ({ klines }) => {
   };
 
   return (
-    <div className="w-full relative group" style={{ height: '480px' }}>
+    <div className="w-full relative group" style={{ height: '580px' }}>
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
         {hoveredK && (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
@@ -278,6 +283,7 @@ const TwKLineChart = ({ klines }) => {
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
               <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d] ml-1" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume||0)/1000).toLocaleString()} 張</span></span>
             </div>
           </div>
         )}
@@ -285,7 +291,10 @@ const TwKLineChart = ({ klines }) => {
 
       <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          <line x1="0" y1={totalHeight/2} x2={width} y2={totalHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
+          {/* 價格區格線 */}
+          <line x1="0" y1={priceHeight/2} x2={width} y2={priceHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
+          {/* 量價分隔線 */}
+          <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
           
           <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
           <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
@@ -298,18 +307,24 @@ const TwKLineChart = ({ klines }) => {
             
             const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
             const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            const volY = getVolY(k.volume || 0);
             
             return (
               <g key={k.time || i}>
                 {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                {/* 繪製 K 線 */}
                 <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
+                {/* 繪製下方交易量柱狀圖 */}
+                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
               </g>
             );
           })}
           
+          {/* 刻度文字 */}
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
-          <text x={width - 5} y={totalHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol/1000)}K 張</text>
         </svg>
       </div>
     </div>
@@ -371,19 +386,22 @@ function TwStockWorkspace({ stock }) {
     return () => { isMounted = false; };
   }, [stock.symbol]);
 
-  // 擬真推算引擎 (基於真實價量數據生成合理的籌碼面結構)
+  // 擬真推算引擎 (基於真實價量數據生成合理的籌碼面結構，並轉換為「張」)
   const generateInsights = () => {
     if (!chartData || chartData.length < 5) return null;
     const last = chartData[chartData.length - 1];
     const prev = chartData[chartData.length - 2];
     const priceDiff = last.close - prev.close;
     const isUp = priceDiff >= 0;
-    const volRatio = last.volume / ((chartData.slice(-6, -1).reduce((sum, k) => sum + k.volume, 0)) / 5);
+    
+    // 將交易量除以 1000，單位轉換為「張」
+    const volLots = Math.floor((last.volume || 0) / 1000); 
 
-    const instBase = last.volume * 0.15; 
-    const foreignBuy = isUp ? instBase * (0.8 + Math.random()*0.4) : -instBase * (0.6 + Math.random()*0.4);
-    const trustBuy = isUp ? instBase * 0.3 * Math.random() : -instBase * 0.2 * Math.random();
-    const dealerBuy = (foreignBuy + trustBuy) * 0.1 * (Math.random() > 0.5 ? 1 : -1);
+    // 以張數為基準去分配三大法人買賣超 (約佔總量 15%)
+    const instBase = volLots * 0.15; 
+    const foreignBuy = Math.floor(isUp ? instBase * (0.8 + Math.random()*0.4) : -instBase * (0.6 + Math.random()*0.4));
+    const trustBuy = Math.floor(isUp ? instBase * 0.3 * Math.random() : -instBase * 0.2 * Math.random());
+    const dealerBuy = Math.floor((foreignBuy + trustBuy) * 0.1 * (Math.random() > 0.5 ? 1 : -1));
 
     const marginRatio = (Math.abs(priceDiff) / prev.close) * 1000;
     const marginLong = isUp ? Math.floor(marginRatio * (1 + Math.random())) : -Math.floor(marginRatio);
@@ -397,7 +415,40 @@ function TwStockWorkspace({ stock }) {
     };
   };
 
+  // 生成 AI 推薦分析 (短、中、長期)
+  const getRecommendations = () => {
+    if (!chartData || chartData.length < 2) return null;
+    const latest = chartData[chartData.length - 1];
+    
+    // 短期 (1-2週): 5日線、KD、RSI
+    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
+    let shortScore = 0;
+    if (latest.close > latest.ma5) shortScore++;
+    if (latest.kd.k > latest.kd.d) shortScore++;
+    if (latest.rsi > 50) shortScore++;
+    
+    if (shortScore >= 2) shortTerm = { action: '推薦買入', color: 'text-[#f6465d]', desc: '短線動能強勁，站上5日線且指標向上。' };
+    else if (shortScore === 0) shortTerm = { action: '推薦賣出', color: 'text-[#0ecb81]', desc: '短線動能偏弱，跌破5日線且面臨賣壓。' };
+
+    // 中期 (1-3個月): 20日線(月線)、MACD
+    let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
+    let midScore = 0;
+    if (latest.close > latest.ma20) midScore++;
+    if (latest.macd.hist > 0) midScore++;
+    
+    if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
+    else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
+
+    // 長期 (1季以上): 60日線(季線)
+    let longTerm = latest.close > latest.ma60 
+      ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
+      : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
+
+    return { shortTerm, midTerm, longTerm };
+  };
+
   const insights = generateInsights();
+  const recommendations = getRecommendations();
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
 
   return (
@@ -452,24 +503,27 @@ function TwStockWorkspace({ stock }) {
               {/* 籌碼面看板 */}
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-amber-500" /> 籌碼動向 
-                    <span className="text-[9px] px-1.5 py-0.5 bg-[#2a2f3a] text-slate-400 rounded ml-auto">AI 推算</span>
+                    <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
                   </h3>
                   {insights && (
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">外資買賣超</span>
-                        <span className={`font-mono font-bold ${insights.foreign >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.foreign >= 0 ? '+' : ''}{formatVolume(insights.foreign)}</span>
+                        <span className={`font-mono font-bold ${insights.foreign >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.foreign >= 0 ? '+' : ''}{insights.foreign.toLocaleString()} 張</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">投信買賣超</span>
-                        <span className={`font-mono font-bold ${insights.trust >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.trust >= 0 ? '+' : ''}{formatVolume(insights.trust)}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs border-b border-[#2a2f3a] pb-2">
-                        <span className="text-slate-400">融資餘額變化</span>
-                        <span className={`font-mono font-bold ${insights.marginLong >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.marginLong >= 0 ? '+' : ''}{insights.marginLong} 張</span>
+                        <span className={`font-mono font-bold ${insights.trust >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.trust >= 0 ? '+' : ''}{insights.trust.toLocaleString()} 張</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">自營商買賣超</span>
+                        <span className={`font-mono font-bold ${insights.dealer >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{insights.dealer >= 0 ? '+' : ''}{insights.dealer.toLocaleString()} 張</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs border-b border-[#2a2f3a] pb-2 pt-1">
+                        <span className="text-slate-400">融資餘額變化</span>
+                        <span className={`font-mono font-bold ${insights.marginLong >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{insights.marginLong >= 0 ? '+' : ''}{insights.marginLong} 張</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs pt-1">
                         <span className="text-slate-400">董監持股比例</span>
                         <span className="font-mono font-bold text-white">{insights.directorHolding}%</span>
                       </div>
@@ -493,11 +547,35 @@ function TwStockWorkspace({ stock }) {
               <span className="text-emerald-500 font-bold">MA60 (季線)</span>
             </div>
             {loading ? (
-               <div className="w-full h-[500px] flex items-center justify-center text-slate-500"><RefreshCw className="w-8 h-8 animate-spin" /></div>
+               <div className="w-full h-[580px] flex items-center justify-center text-slate-500"><RefreshCw className="w-8 h-8 animate-spin" /></div>
             ) : (
                <TwKLineChart klines={chartData} />
             )}
           </div>
+
+          {/* 新增：AI 操作建議區塊 */}
+          {recommendations && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                     <div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div>
+                     <div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{recommendations.shortTerm.action}</div>
+                     <div className="text-xs text-slate-500 leading-relaxed">{recommendations.shortTerm.desc}</div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                     <div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div>
+                     <div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{recommendations.midTerm.action}</div>
+                     <div className="text-xs text-slate-500 leading-relaxed">{recommendations.midTerm.desc}</div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                     <div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div>
+                     <div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{recommendations.longTerm.action}</div>
+                     <div className="text-xs text-slate-500 leading-relaxed">{recommendations.longTerm.desc}</div>
+                  </div>
+               </div>
+            </div>
+          )}
 
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Newspaper className="w-5 h-5 text-emerald-500" /> 個股相關新聞</h3>
