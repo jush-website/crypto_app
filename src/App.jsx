@@ -52,7 +52,6 @@ const formatFundingRate = (rate) => {
 };
 
 // --- 進階量化分析計算 (SMC / Order Flow / Volume Profile) ---
-
 const calculateVolumeProfile = (klines, bins = 20) => {
   if (!klines || klines.length === 0) return { poc: 0, bins: [] };
   const lows = klines.map(k => k.low);
@@ -281,15 +280,18 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
     <div onClick={() => {
         sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
         onSelectCoin(ticker.symbol);
-      }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-lg p-4 cursor-pointer transition-all flex flex-col shadow-md">
-      <div className="flex justify-between items-start mb-1">
-        <div>
-          <h3 className="font-bold text-slate-100">{ticker.symbol.replace('USDT', '')}</h3>
-          <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
+      }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-lg p-4 cursor-pointer transition-all flex flex-col justify-between shadow-md">
+      <div>
+        <div className="flex justify-between items-start mb-1">
+          <div>
+            <h3 className="font-bold text-slate-100">{ticker.symbol.replace('USDT', '')}</h3>
+            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
+          </div>
+          <div className={`text-xs font-bold ${isPositive ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
         </div>
-        <div className={`text-xs font-bold ${isPositive ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
+        <div className="text-lg font-mono font-semibold text-white mt-1 mb-2">${formatPrice(ticker.lastPrice)}</div>
       </div>
-      <div className="text-lg font-mono font-semibold text-white mt-1 mb-2">${formatPrice(ticker.lastPrice)}</div>
+      
       {signalData && signalData.signal !== 'NEUTRAL' && (
         <div className={`mt-2 text-[10px] p-2 rounded border ${signalData.signal === 'LONG' ? 'bg-[#0ecb81]/10 border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border-[#f6465d]/30 text-[#f6465d]'}`}>
           <div className="font-bold flex items-center gap-1"><Target className="w-3 h-3"/> AI {signalData.timeframe}: {signalData.signal}</div>
@@ -300,7 +302,7 @@ function MarketCard({ ticker, fundingRate, signalData, onSelectCoin }) {
   );
 }
 
-// --- 完整還原：包含 MACD、Volume、SMC 指標的高級 K 線圖表 ---
+// --- K線圖組件 (SMC 圖層) ---
 const AdvancedKLineChart = ({ klines, macdSeries, signalData }) => {
   const containerRef = useRef(null);
   const [visibleCount, setVisibleCount] = useState(60); 
@@ -537,7 +539,7 @@ const AdvancedKLineChart = ({ klines, macdSeries, signalData }) => {
 
 // --- 市場分析頁 ---
 function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
-  const { activeTab, timeframe, searchTerm, aiSignals, isScanning, scanProgress } = dashState;
+  const { activeTab, timeframe, searchTerm, aiSignals, isScanning, scanProgress, initialScanned } = dashState;
 
   const setActiveTab = (tab) => setDashState(p => ({ ...p, activeTab: tab }));
   const setTimeframe = (tf) => setDashState(p => ({ ...p, timeframe: tf }));
@@ -550,56 +552,64 @@ function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState 
     }
   }, [loading, allTickers.length]);
 
-  const prevTfRef = useRef(timeframe);
-
-  useEffect(() => {
-    let isMounted = true; if (!allTickers.length) return;
+  const handleManualScan = async (tfToScan) => {
+    if (isScanning || allTickers.length === 0) return;
+    setDashState(p => ({ ...p, isScanning: true, scanProgress: 0, initialScanned: true }));
     
-    // 如果切換了時間週期，就清空舊訊號重新掃描
-    if (prevTfRef.current !== timeframe) {
-        setDashState(p => ({ ...p, aiSignals: {} }));
-        prevTfRef.current = timeframe;
-    }
+    // 清空當前選擇週期的舊訊號
+    setDashState(p => ({ 
+        ...p, 
+        aiSignals: { ...p.aiSignals, [tfToScan]: {} } 
+    }));
 
-    const scan = async () => {
-      setDashState(p => ({ ...p, isScanning: true, scanProgress: 0 }));
-      const targets = allTickers.slice(0, 150); const batch = 15;
-      for (let i = 0; i < targets.length; i += batch) {
-        if (!isMounted) return;
-        const chunk = targets.slice(i, i + batch);
-        const results = await Promise.all(chunk.map(async (coin) => {
-          try {
-            const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${timeframe}&limit=80`);
-            const data = await res.json();
-            const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]) }));
-            const sig = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
-            return sig && sig.signal !== 'NEUTRAL' ? { s: coin.symbol, sig: {...sig, timeframe} } : null;
-          } catch(e) { return null; }
-        }));
-        if (isMounted) {
-          const valid = results.filter(r => r);
-          if (valid.length) {
-              setDashState(prev => {
-                  const n = {...prev.aiSignals}; 
-                  valid.forEach(v => n[v.s] = v.sig); 
-                  return { ...prev, aiSignals: n };
-              });
+    const targets = allTickers.slice(0, 150); 
+    const batch = 15;
+    for (let i = 0; i < targets.length; i += batch) {
+      const chunk = targets.slice(i, i + batch);
+      const chunkSignals = {};
+      await Promise.all(chunk.map(async (coin) => {
+        try {
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tfToScan}&limit=80`);
+          if(!res.ok) return;
+          const data = await res.json();
+          const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]) }));
+          const sig = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
+          if (sig && sig.signal !== 'NEUTRAL') {
+             chunkSignals[coin.symbol] = { ...sig, timeframe: tfToScan };
           }
-          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round(((i + batch) / targets.length) * 100)) }));
-        }
-        await new Promise(r => setTimeout(r, 200));
+        } catch(e) { }
+      }));
+      
+      if (Object.keys(chunkSignals).length > 0) {
+         setDashState(prev => ({
+             ...prev,
+             aiSignals: {
+                 ...prev.aiSignals,
+                 [tfToScan]: { ...prev.aiSignals[tfToScan], ...chunkSignals }
+             }
+         }));
       }
-      if (isMounted) setDashState(p => ({ ...p, isScanning: false }));
-    };
-    
-    scan(); return () => { isMounted = false; };
-  }, [allTickers.length > 0, timeframe]);
+      setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round(((i + batch) / targets.length) * 100)) }));
+      await new Promise(r => setTimeout(r, 200));
+    }
+    setDashState(p => ({ ...p, isScanning: false }));
+  };
+
+  // 僅在第一次載入網頁時自動掃描，切換 Tabs 不會重新觸發
+  useEffect(() => {
+    if (allTickers.length > 0 && !initialScanned && !isScanning) {
+        handleManualScan(timeframe);
+    }
+  }, [allTickers.length, initialScanned, isScanning, timeframe]);
 
   if (loading && !allTickers.length) return <div className="text-center py-32 text-slate-500 animate-pulse"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 初始化市場數據...</div>;
 
   let filtered = allTickers;
-  if (activeTab === 'LONG') filtered = allTickers.filter(t => aiSignals[t.symbol]?.signal === 'LONG');
-  else if (activeTab === 'SHORT') filtered = allTickers.filter(t => aiSignals[t.symbol]?.signal === 'SHORT');
+  const currentSignals = aiSignals[timeframe] || {};
+  
+  if (activeTab === 'LONG') filtered = allTickers.filter(t => currentSignals[t.symbol]?.signal === 'LONG');
+  else if (activeTab === 'SHORT') filtered = allTickers.filter(t => currentSignals[t.symbol]?.signal === 'SHORT');
+  
   if (searchTerm) filtered = filtered.filter(t => t.symbol.includes(searchTerm.toUpperCase()));
   filtered = filtered.slice(0, 150);
 
@@ -615,10 +625,20 @@ function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState 
                   ))}
               </div>
               {(activeTab === 'LONG' || activeTab === 'SHORT') && (
-                  <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-                      {['15m', '1h', '4h'].map(tf => (
-                        <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500 hover:text-white'}`}>{tf}</button>
-                      ))}
+                  <div className="flex items-center gap-2 w-full sm:w-auto animate-in fade-in zoom-in-95 duration-200">
+                      <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
+                          {['15m', '1h', '4h'].map(tf => (
+                            <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500 hover:text-white'}`}>{tf}</button>
+                          ))}
+                      </div>
+                      <button 
+                        onClick={() => handleManualScan(timeframe)} 
+                        disabled={isScanning}
+                        className="bg-[#121620] p-2 sm:p-1.5 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0"
+                        title="手動更新分析結果"
+                      >
+                        <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${isScanning ? 'animate-spin' : ''}`} />
+                      </button>
                   </div>
               )}
           </div>
@@ -628,7 +648,7 @@ function Dashboard({ allTickers, fundingRates, loading, dashState, setDashState 
           </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          {filtered.map(t => <MarketCard key={t.symbol} ticker={t} signalData={aiSignals[t.symbol]} onSelectCoin={(s) => window.location.hash = `#/trade/${s}`} />)}
+          {filtered.map(t => <MarketCard key={t.symbol} ticker={t} signalData={currentSignals[t.symbol]} onSelectCoin={(s) => window.location.hash = `#/trade/${s}`} />)}
       </div>
     </div>
   );
@@ -708,7 +728,6 @@ function TradingWorkspace({ coin, fundingRate, paperAccount, openPosition, close
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* 點擊返回使用瀏覽器歷史紀錄，可搭配 Hash Router 自動恢復狀態 */}
       <button onClick={() => window.history.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回市場</button>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
@@ -755,15 +774,23 @@ export default function App() {
   const [currentRoute, setCurrentRoute] = useState('home');
   const [selectedCoin, setSelectedCoin] = useState(null);
 
-  // 狀態提升：將首頁的 Tab 與搜尋狀態保留在 App 層級，就不會因為切換頁面而消失
-  const [dashState, setDashState] = useState({
-    activeTab: 'ALL',
-    timeframe: '15m',
-    searchTerm: '',
-    aiSignals: {},
-    isScanning: false,
-    scanProgress: 0
+  const [dashState, setDashState] = useState(() => {
+    try {
+      const s = sessionStorage.getItem('protrade_dashState');
+      if (s) {
+         const parsed = JSON.parse(s);
+         if (!parsed.aiSignals || !parsed.aiSignals['15m']) {
+             parsed.aiSignals = { '15m': {}, '1h': {}, '4h': {} };
+         }
+         return { ...parsed, isScanning: false, scanProgress: 0 };
+      }
+    } catch(e) {}
+    return { activeTab: 'ALL', timeframe: '15m', searchTerm: '', aiSignals: { '15m': {}, '1h': {}, '4h': {} }, isScanning: false, scanProgress: 0, initialScanned: false };
   });
+
+  useEffect(() => {
+    sessionStorage.setItem('protrade_dashState', JSON.stringify(dashState));
+  }, [dashState]);
 
   const [paperAccount, setPaperAccount] = useState(() => { try { const s = localStorage.getItem('paperAccount'); return s ? JSON.parse(s) : { balance: 10000, positions: [], history: [] }; } catch(e) { return { balance: 10000, positions: [], history: [] }; } });
 
