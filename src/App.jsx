@@ -5,6 +5,7 @@ import {
   ArrowLeft, 
   Search,
   Target,
+  AlertCircle,
   Zap,
   Wallet,
   ZoomIn,         
@@ -244,32 +245,30 @@ function TwStocksDashboard() {
     const fetchTwStocks = async () => {
       try {
         setLoading(true);
-        // 使用證交所公開 API (CORS Friendly) 獲取當日真實收盤數據
-        const res = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
+        // 改用您的 Vercel API 代理，徹底解決前端 CORS 阻擋問題
+        const res = await fetch('/api/binance?action=tw-stocks');
         if (!res.ok) throw new Error('無法取得證交所數據');
         const data = await res.json();
         
         if (isMounted) {
           const formatted = data
-            // 過濾掉權證 (代號大於4碼) 以及一些非普通股
-            .filter(item => item.Code.length === 4 && !isNaN(parseInt(item.Code)))
+            // 過濾掉權證 (代號大於4碼) 以及一些非普通股，增加資料安全性
+            .filter(item => item && item.Code && item.Code.length === 4 && !isNaN(parseInt(item.Code)))
             .map(item => {
               const current = parseFloat(item.ClosingPrice);
-              const changeAmt = parseFloat(item.Change.replace('+', ''));
+              // 增加安全防護：若 API 漏給 Change 欄位，預設為 '0'
+              const changeStr = item.Change ? item.Change.toString().replace('+', '').trim() : '0';
+              const changeAmt = parseFloat(changeStr) || 0;
               let percent = 0;
               let isUp = false;
               
-              if (!isNaN(current) && !isNaN(changeAmt)) {
-                  // 如果 item.Change 有帶符號，但有時 TWSE 會省略符號，這裡簡化處理：
-                  // API 裡的 Change 通常是絕對值，需搭配前一日收盤價判斷，但 openapi 有時直接給漲跌。
-                  // 為求保險，如果無法精確取得前一日，以 current - changeAmt 估算。
+              if (!isNaN(current) && !isNaN(changeAmt) && current !== 0) {
                   const prevClose = current - changeAmt; 
                   if (prevClose > 0) percent = (changeAmt / prevClose) * 100;
                   
-                  // TWSE API 特性：漲跌符號有時是另外的欄位，若無，我們依賴 Change 字串本身有沒有 '-'
-                  if (item.Change.includes('-')) {
+                  if (changeStr.includes('-')) {
                       percent = -Math.abs(percent);
-                  } else if (item.Change !== '0.00' && item.Change !== '0') {
+                  } else if (changeStr !== '0.00' && changeStr !== '0') {
                       percent = Math.abs(percent);
                   }
               }
@@ -283,7 +282,7 @@ function TwStocksDashboard() {
                 rawChange: item.Change
               };
             })
-            // 過濾無效價格，並依據真實成交量排序 (取前 200 名熱門股)
+            // 過濾無效價格，並依據真實成交量排序
             .filter(item => item.lastPrice !== '0.00')
             .sort((a, b) => b.quoteVolume - a.quoteVolume)
             .slice(0, 200);
@@ -374,34 +373,13 @@ function NewsDashboard() {
     const fetchRealNews = async () => {
       try {
         setLoading(true);
-        // 使用 RSS2JSON 服務抓取真實 RSS 新聞 (Yahoo台股 & Cointelegraph)
-        const feeds = [
-            { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
-            { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
-        ];
-
-        let allArticles = [];
-        for (const feed of feeds) {
-            const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
-            const data = await res.json();
-            if (data.status === 'ok') {
-                const items = data.items.map(item => ({
-                    id: item.guid || item.link,
-                    title: item.title,
-                    link: item.link,
-                    time: new Date(item.pubDate).toLocaleString(),
-                    rawDate: new Date(item.pubDate),
-                    source: feed.category === '加密貨幣' ? 'Cointelegraph' : 'Yahoo 股市',
-                    category: feed.category
-                }));
-                allArticles = [...allArticles, ...items];
-            }
-        }
+        // 使用您的 Vercel API 代理抓取新聞，避免免費 API 的次數限制與 CORS
+        const res = await fetch('/api/binance?action=news');
+        if (!res.ok) throw new Error('無法取得新聞數據');
+        const data = await res.json();
         
         if (isMounted) {
-            // 依時間降冪排序
-            allArticles.sort((a, b) => b.rawDate - a.rawDate);
-            setNews(allArticles);
+            setNews(data);
             setLoading(false);
         }
       } catch (error) {
