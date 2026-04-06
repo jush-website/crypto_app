@@ -233,8 +233,8 @@ const generateBranchData = (symbol, price, change, vol) => {
     return {
         isDayTradeTarget,
         branches: [
-            { name: String(mainBuyer), netBuy: buyVol1, estCost: estCost1.toFixed(2), type: isDayTradeTarget ? '隔日沖主力' : '波段主力' },
-            { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: '外資/波段' }
+            { name: mainBuyer, netBuy: buyVol1, estCost: estCost1.toFixed(2), type: isDayTradeTarget ? '隔日沖主力' : '波段主力' },
+            { name: secondBuyer, netBuy: buyVol2, estCost: estCost2.toFixed(2), type: '外資/波段' }
         ],
         advice: isDayTradeTarget 
             ? `⚠️ 【隔日沖警示】「${mainBuyer}」等典型隔日沖分點已大量進駐，佔總成交量約 ${(buyVol1/(volNum||1)*100).toFixed(1)}%。預估成本 ${estCost1.toFixed(2)} 元。明日早盤極可能出現獲利了結賣壓，空手者【切勿追高】。` 
@@ -307,7 +307,7 @@ function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashSta
       {showManualEntry && (
         <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
             <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
-            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{String(searchTerm)}」 的深度分析系統。</p>
+            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{searchTerm}」 的深度分析系統。</p>
             <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
         </div>
       )}
@@ -322,10 +322,10 @@ function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashSta
               <div className="flex justify-between items-start mb-2">
                 <div>
                    <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors flex items-center gap-2">
-                     {String(stock.name)} 
+                     {stock.name} 
                      {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30">隔日沖</span>}
                    </h3>
-                   <div className="text-xs text-slate-500 mt-0.5 font-mono">{String(stock.symbol)}</div>
+                   <div className="text-xs text-slate-500 mt-0.5 font-mono">{stock.symbol}</div>
                 </div>
                 <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
               </div>
@@ -362,7 +362,7 @@ function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
     if (type === 'LONG' && totalRequired > balance) return setTradeError("可用餘額不足");
     if (type === 'SHORT' && cost * 0.9 > balance) return setTradeError("可用餘額不足以放空");
 
-    onOpenPosition(String(symbol), String(name), type, numSize, currentPrice);
+    onOpenPosition(symbol, name, type, numSize, currentPrice);
     setSize('');
   };
 
@@ -408,7 +408,7 @@ function TwPositionCard({ pos, currentPrice, onClose }) {
     <div className={`bg-[#121620] border ${isProfit ? 'border-[#f6465d]/30' : 'border-[#0ecb81]/30'} rounded-xl p-5 shadow-lg flex flex-col`}>
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{String(pos.name)} <span className="text-sm font-normal text-slate-500">{String(pos.symbol)}</span></h3>
+          <h3 className="text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{pos.name} <span className="text-sm font-normal text-slate-500">{pos.symbol}</span></h3>
           <span className={`text-[10px] px-2 py-0.5 rounded font-bold mt-1 inline-block ${isLong ? 'bg-[#f6465d] text-white' : 'bg-[#0ecb81] text-white'}`}>{isLong ? '做多' : '做空'} {pos.size} 張</span>
         </div>
         <div className="text-right">
@@ -600,7 +600,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
         const arrTseT86 = Array.isArray(tseT86) ? tseT86 : [];
         const arrTpexT86 = Array.isArray(tpexT86) ? tpexT86 : [];
-        const t86Item = arrTseT86.find(i => String(i.Code) === String(stock.symbol)) || arrTpexT86.find(i => String(i.SecuritiesCompanyCode) === String(stock.symbol));
+        const t86Item = arrTseT86.find(i => i.Code === stock.symbol) || arrTpexT86.find(i => i.SecuritiesCompanyCode === stock.symbol);
         
         if (t86Item) {
             const parseNet = (val) => val ? Math.round(parseFloat(String(val).replace(/,/g, '')) / 1000) : 0;
@@ -611,7 +611,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
         const arrTseMargin = Array.isArray(tseMargin) ? tseMargin : [];
         const arrTpexMargin = Array.isArray(tpexMargin) ? tpexMargin : [];
-        const marginItem = arrTseMargin.find(i => String(i.Code) === String(stock.symbol)) || arrTpexMargin.find(i => String(i.SecuritiesCompanyCode) === String(stock.symbol));
+        const marginItem = arrTseMargin.find(i => i.Code === stock.symbol) || arrTpexMargin.find(i => i.SecuritiesCompanyCode === stock.symbol);
 
         if (marginItem) {
              const today = parseFloat(String(marginItem.MarginPurchaseTodayBalance || marginItem.MarginBalanceToday || marginItem.TodayBalance || '0').replace(/,/g, ''));
@@ -674,7 +674,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
-            <h2 className="text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
+            <h2 className="text-3xl font-black text-white mb-1">{stock.name} <span className="text-lg font-normal text-slate-500 ml-1">{stock.symbol}</span></h2>
             <div className="flex items-end gap-3 mt-4">
               <div className={`text-4xl font-mono font-bold ${parseFloat(stock.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{stock.lastPrice}</div>
               <div className={`text-lg font-bold pb-1 ${parseFloat(stock.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(stock.priceChangePercent) >= 0 ? '+' : ''}{stock.priceChangePercent}%</div>
@@ -705,17 +705,17 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                     <tbody className="divide-y divide-[#2a2f3a]/50 font-mono">
                       {branchData.branches.map((b, i) => (
                          <tr key={i}>
-                           <td className="py-2.5 text-white">{String(b.name)}</td>
+                           <td className="py-2.5 text-white">{b.name}</td>
                            <td className="py-2.5 text-right text-[#f6465d] font-bold">+{b.netBuy.toLocaleString()}</td>
                            <td className="py-2.5 text-right">{b.estCost}</td>
-                           <td className={`py-2.5 text-right text-[10px] ${String(b.type).includes('隔日沖') ? 'text-amber-400' : 'text-blue-400'}`}>{String(b.type)}</td>
+                           <td className={`py-2.5 text-right text-[10px] ${String(b.type).includes('隔日沖') ? 'text-amber-400' : 'text-blue-400'}`}>{b.type}</td>
                          </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] mt-2">
-                    <div className="text-xs text-slate-300 leading-relaxed">{String(branchData.advice)}</div>
+                    <div className="text-xs text-slate-300 leading-relaxed">{branchData.advice}</div>
                 </div>
             </div>
           )}
@@ -777,9 +777,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{String(recommendations.midTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.midTerm.desc)}</div></div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{String(recommendations.longTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.longTerm.desc)}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{recommendations.shortTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.shortTerm.desc}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{recommendations.midTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.midTerm.desc}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{recommendations.longTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.longTerm.desc}</div></div>
                </div>
             </div>
           )}
@@ -790,9 +790,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 <div className="space-y-3">
                   {news.slice(0, 5).map((item, idx) => (
                     <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
+                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{item.title}</h4>
                       <div className="flex justify-between items-center text-[10px] text-slate-500">
-                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
+                        <span>{item.publisher || 'Yahoo Finance'}</span>
                         <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
                       </div>
                     </a>
@@ -815,7 +815,7 @@ function TwPositionsPage({ twStocks, twAccount, closeTwPosition }) {
       <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (台股)</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {Array.isArray(twAccount.positions) && twAccount.positions.map(pos => {
-            const t = activeTickers.find(x => String(x.symbol) === String(pos.symbol));
+            const t = activeTickers.find(x => x.symbol === pos.symbol);
             const currentPrice = t ? parseFloat(t.lastPrice) : pos.entryPrice;
             return <TwPositionCard key={pos.id} pos={pos} currentPrice={currentPrice} onClose={() => closeTwPosition(pos.id, currentPrice)} />;
         })}
@@ -887,9 +887,9 @@ function NewsDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filteredNews.map((item, idx) => (
           <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="bg-[#121620] border border-[#2a2f3a] hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group">
-            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{String(item.category)}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(item.time)}</span></div>
-            <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{String(item.title)}</h3>
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{String(item.source)}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
+            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{item.category}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {item.time}</span></div>
+            <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{item.title}</h3>
+            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{item.source}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
           </a>
         ))}
         {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
@@ -937,7 +937,7 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
                   <div className="text-[#0ecb81]">TP {formatPrice(sig.tp)}</div>
                   <div className="text-red-400">SL {formatPrice(sig.sl)}</div>
                </div>
-               <div className="text-[9px] mt-1 opacity-70 truncate" title={sig.logs && sig.logs[0] ? String(sig.logs[0]) : ''}>{sig.logs && sig.logs[0] ? String(sig.logs[0]) : ''}</div>
+               <div className="text-[9px] mt-1 opacity-70 truncate" title={sig.logs && sig.logs[0] ? sig.logs[0] : ''}>{sig.logs && sig.logs[0] ? String(sig.logs[0]) : ''}</div>
              </div>
           );
         }) : (
@@ -1052,11 +1052,10 @@ function CryptoPositionsPage({ allTickers, paperAccount, openPosition, closePosi
       <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (虛擬貨幣)</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {Array.isArray(paperAccount.positions) && paperAccount.positions.map(pos => <CryptoPositionCard key={pos.id} pos={pos} currentPrice={parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice)} balance={paperAccount.balance} onSelectCoin={s => window.location.hash = `#/crypto/trade/${s}`} onClose={() => closePosition(pos.id, parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice))} onAdjust={(t, v) => adjustPosition(pos.id, t, v, parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice))} />)}
-        {(!paperAccount.positions || paperAccount.positions.length === 0) && <div className="col-span-full py-10 text-center text-slate-500">目前無任何加密貨幣持倉</div>}
       </div>
       {activeTickers.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {activeTickers.map(t => <div key={t.symbol} className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg"><h3 className="font-bold text-white mb-4">{String(t.symbol)} 快捷下單</h3><CryptoTradeForm symbol={t.symbol} currentPrice={parseFloat(t.lastPrice)} balance={paperAccount.balance} onOpenPosition={openPosition} /></div>)}
+          {activeTickers.map(t => <div key={t.symbol} className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg"><h3 className="font-bold text-white mb-4">{t.symbol} 快捷下單</h3><CryptoTradeForm symbol={t.symbol} currentPrice={parseFloat(t.lastPrice)} balance={paperAccount.balance} onOpenPosition={openPosition} /></div>)}
         </div>
       )}
     </div>
@@ -1115,7 +1114,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       } catch(e) {}
     }, 1500);
     return () => { isMounted = false; clearInterval(interval); };
-  }, [coin.symbol, coin.lastPrice, fundingRate]);
+  }, [coin.symbol]);
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -1164,120 +1163,6 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
-  const [leverage, setLeverage] = useState(10);
-  const [marginMode, setMarginMode] = useState('ISOLATED'); 
-  const [inputValue, setInputValue] = useState(''); 
-  const [tradeError, setTradeError] = useState('');
-
-  const val = parseFloat(inputValue) || 0;
-  const coinSize = currentPrice > 0 ? (val * leverage) / currentPrice : 0;
-  let liqLong = currentPrice * (1 - 1/leverage + 0.004);
-  let liqShort = currentPrice * (1 + 1/leverage - 0.004);
-
-  const handleSliderChange = (e) => {
-    const pct = parseFloat(e.target.value);
-    setInputValue(balance > 0 ? (balance * (pct / 100)).toFixed(2) : '0');
-  };
-
-  const handleSubmit = (type) => {
-    setTradeError('');
-    if(val > balance) return setTradeError("可用餘額不足！");
-    if(val <= 0) return setTradeError("金額必須大於 0");
-    onOpenPosition(symbol, type, val, leverage, coinSize, type === 'LONG' ? liqLong : liqShort, marginMode, false, currentPrice);
-    setInputValue(''); 
-  };
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="flex justify-between text-xs text-slate-400 mb-1"><label>槓桿倍數</label><span className="text-white font-bold">{leverage}x</span></div>
-        <input type="range" min="1" max="100" value={leverage} onChange={(e) => setLeverage(e.target.value)} className="w-full accent-blue-500" />
-      </div>
-      <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] mb-2">
-        <button onClick={() => setMarginMode('CROSS')} className={`flex-1 text-xs py-1.5 rounded ${marginMode === 'CROSS' ? 'bg-[#2a2f3a] text-white font-bold' : 'text-slate-500'}`}>全倉</button>
-        <button onClick={() => setMarginMode('ISOLATED')} className={`flex-1 text-xs py-1.5 rounded ${marginMode === 'ISOLATED' ? 'bg-[#2a2f3a] text-white font-bold' : 'text-slate-500'}`}>逐倉</button>
-      </div>
-      <div>
-        <div className="relative mb-3">
-          <input type="number" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="投入保證金" className="w-full bg-[#1a1e27] border border-[#2a2f3a] rounded p-2 text-white font-mono text-sm outline-none" />
-          <span className="absolute right-3 top-2 text-xs text-slate-500">USDT</span>
-        </div>
-        <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-          {[25, 50, 75, 100].map(p => <span key={p} className="cursor-pointer" onClick={() => setInputValue(balance > 0 ? (balance * (p / 100)).toFixed(2) : '0')}>{p}%</span>)}
-        </div>
-        {tradeError && <div className="text-[10px] text-red-400 mt-1">{tradeError}</div>}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => handleSubmit('LONG')} className="bg-[#0ecb81]/20 hover:bg-[#0ecb81]/30 text-[#0ecb81] border border-[#0ecb81]/30 py-2 rounded font-bold">做多</button>
-        <button onClick={() => handleSubmit('SHORT')} className="bg-[#f6465d]/20 hover:bg-[#f6465d]/30 text-[#f6465d] border border-[#f6465d]/30 py-2 rounded font-bold">做空</button>
-      </div>
-    </div>
-  );
-}
-
-function CryptoPositionCard({ pos, currentPrice, balance, onSelectCoin, onClose, onAdjust }) {
-  const [activeModal, setActiveModal] = useState(null); 
-  const [adjustInput, setAdjustInput] = useState('');
-  const [modalError, setModalError] = useState('');
-  const pnl = pos.type === 'LONG' ? (currentPrice - pos.entryPrice) * pos.size : (pos.entryPrice - currentPrice) * pos.size;
-  const roe = (pnl / pos.margin) * 100;
-  const isProfit = pnl >= 0;
-
-  const handleAdjustSubmit = () => {
-      setModalError('');
-      const val = parseFloat(adjustInput);
-      if(isNaN(val) || val <= 0) return setModalError('請輸入有效金額');
-      if(activeModal === 'add' && val > balance) return setModalError('可用餘額不足');
-      onAdjust(activeModal, val);
-      setActiveModal(null);
-      setAdjustInput('');
-  };
-
-  return (
-    <div className={`bg-[#121620] border ${isProfit ? 'border-[#0ecb81]/30' : 'border-[#f6465d]/30'} rounded-xl p-4 flex flex-col shadow-lg`}>
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <h3 className="text-lg font-black text-white cursor-pointer hover:text-blue-400" onClick={() => {
-            sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
-            onSelectCoin(String(pos.symbol));
-          }}>{String(pos.symbol)}</h3>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 inline-block ${pos.type === 'LONG' ? 'bg-[#0ecb81] text-white' : 'bg-[#f6465d] text-white'}`}>{pos.type} {pos.leverage}x</span>
-        </div>
-        <div className="text-right">
-          <div className={`text-lg font-mono font-black ${isProfit ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isProfit ? '+' : ''}{pnl.toFixed(2)}</div>
-          <div className={`text-xs ${isProfit ? 'text-[#0ecb81]/70' : 'text-[#f6465d]/70'}`}>{roe.toFixed(2)}%</div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400 mb-4 bg-[#0b0e14] p-3 rounded">
-        <div>數量: <span className="text-white">{pos.size.toFixed(4)}</span></div>
-        <div>保證金: <span className="text-white">${pos.margin.toFixed(2)}</span></div>
-        <div>開倉價: <span className="text-white">${formatPrice(pos.entryPrice)}</span></div>
-        <div>強平價: <span className="text-amber-400">${formatPrice(pos.liqPrice)}</span></div>
-      </div>
-      {activeModal ? (
-        <div className="bg-[#1a1e27] p-2 rounded border border-blue-500/50 mt-auto animate-in fade-in zoom-in-95 duration-200">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-xs font-bold text-white">{activeModal === 'add' ? '加碼' : '減倉'}</span>
-            <X className="w-4 h-4 text-slate-400 cursor-pointer" onClick={() => setActiveModal(null)} />
-          </div>
-          <div className="flex gap-2">
-            <input type="number" value={adjustInput} onChange={e => setAdjustInput(e.target.value)} placeholder="USDT" className="flex-1 bg-[#0b0e14] border border-[#2a2f3a] rounded px-2 text-xs text-white outline-none" />
-            <button onClick={handleAdjustSubmit} className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded">確認</button>
-          </div>
-          {modalError && <div className="text-[10px] text-red-400 mt-1">{modalError}</div>}
-        </div>
-      ) : (
-        <div className="flex gap-2 mt-auto">
-          <button onClick={() => setActiveModal('add')} className="flex-1 bg-[#2a2f3a] text-slate-200 text-xs py-2 rounded">加碼</button>
-          <button onClick={() => setActiveModal('reduce')} className="flex-1 bg-[#2a2f3a] text-slate-200 text-xs py-2 rounded">減倉</button>
-          <button onClick={onClose} className="flex-1 bg-[#f6465d]/20 text-[#f6465d] text-xs py-2 rounded">平倉</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1387,13 +1272,15 @@ export default function App() {
 
   const fetchCryptoMarkets = async () => {
     try {
-      const res = await fetch('/api/binance?action=overview');
-      const data = await res.json();
-      if (data && Array.isArray(data.tickers)) {
-        setAllTickers(data.tickers.filter(t => String(t.symbol).endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
+      const tickerRes = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
+      const data = await tickerRes.json();
+      if (data && Array.isArray(data)) {
+        setAllTickers(data.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
       }
-      if (data && Array.isArray(data.fundingRates)) {
-        const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      const fundRes = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+      const fundData = await fundRes.json();
+      if (fundData && Array.isArray(fundData)) {
+        const frMap = {}; fundData.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
       }
     } catch(e) {} finally { setLoadingCrypto(false); }
   };
@@ -1430,7 +1317,7 @@ export default function App() {
     handleHash(); window.addEventListener('hashchange', handleHash); return () => window.removeEventListener('hashchange', handleHash);
   }, [twStocks, allTickers]);
 
-  const openPosition = (symbol, type, margin, leverage, size, liq, mode, auto, price) => { setPaperAccount(prev => ({ ...prev, balance: prev.balance - margin, positions: [...prev.positions, { id: Date.now(), symbol: String(symbol), type, margin, leverage, size, entryPrice: price, liqPrice: liq, marginMode: mode, autoMargin: auto }] })); };
+  const openPosition = (symbol, type, margin, leverage, size, liq, mode, auto, price) => { setPaperAccount(prev => ({ ...prev, balance: prev.balance - margin, positions: [...prev.positions, { id: Date.now(), symbol, type, margin, leverage, size, entryPrice: price, liqPrice: liq, marginMode: mode, autoMargin: auto }] })); };
   const closePosition = (id, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; const pnl = p.type === 'LONG' ? (price - p.entryPrice) * p.size : (p.entryPrice - price) * p.size; return { ...prev, balance: prev.balance + p.margin + pnl, positions: prev.positions.filter(x => x.id !== id), history: [{ ...p, closePrice: price, pnl, closeTime: new Date().toLocaleString() }, ...prev.history].slice(0, 50) }; }); };
   const adjustPosition = (id, type, amount, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; if (type === 'add') { const sz = (amount * p.leverage) / price; return { ...prev, balance: prev.balance - amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size + sz, margin: x.margin + amount, entryPrice: ((x.size * x.entryPrice) + (sz * price)) / (x.size + sz) } : x) }; } else { const r = amount / p.margin; return { ...prev, balance: prev.balance + amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size * (1 - r), margin: x.margin - amount } : x) }; } }); };
   const resetCryptoAccount = () => setPaperAccount({ balance: 10000, positions: [], history: [] });
@@ -1440,7 +1327,7 @@ export default function App() {
     const cost = price * shares;
     const fee = Math.floor(cost * 0.001425);
     const required = type === 'LONG' ? cost + fee : fee;
-    setTwAccount(prev => ({ ...prev, balance: prev.balance - required, positions: [...prev.positions, { id: Date.now(), symbol: String(symbol), name: String(name), type, size, shares, entryPrice: price, fee }] }));
+    setTwAccount(prev => ({ ...prev, balance: prev.balance - required, positions: [...prev.positions, { id: Date.now(), symbol, name, type, size, shares, entryPrice: price, fee }] }));
   };
   const closeTwPosition = (id, currentPrice) => {
     setTwAccount(prev => {
