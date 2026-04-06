@@ -144,8 +144,11 @@ const detectLiquiditySweep = (klines) => {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 };
 
+// 整合 SMC 與動能指標的最新演算法
 const analyzeCryptoSignal = (klinesRaw, currentPrice, fundingRate) => {
   if (!klinesRaw || klinesRaw.length < 50) return null;
+  
+  // 計算全部指標
   const klines = calculateIndicators(klinesRaw);
   const latest = klines[klines.length - 1];
   const prev = klines[klines.length - 2];
@@ -157,143 +160,121 @@ const analyzeCryptoSignal = (klinesRaw, currentPrice, fundingRate) => {
   let score = 0;
   let logs = [];
 
-  // 1. 移動平均線 (MA & EMA)
-  if (latest.close > latest.ema12 && latest.close > latest.ma20) { score += 1.5; logs.push("均線: 站上 EMA12/MA20，短線偏多"); }
-  else if (latest.close < latest.ema12 && latest.close < latest.ma20) { score -= 1.5; logs.push("均線: 跌破 EMA12/MA20，短線偏空"); }
+  // 1. 移動平均線 (EMA)
+  if (latest.close > latest.ema12 && latest.close > latest.ma20) { score += 1.5; logs.push("均線: 站上 EMA12/MA20，偏多"); }
+  else if (latest.close < latest.ema12 && latest.close < latest.ma20) { score -= 1.5; logs.push("均線: 跌破 EMA12/MA20，偏空"); }
 
-  // 2. MACD 動能與背離/交叉
-  if (latest.macd.hist > 0 && prev.macd.hist <= 0) { score += 2; logs.push("MACD: 零軸黃金交叉，多頭啟動"); }
-  else if (latest.macd.hist < 0 && prev.macd.hist >= 0) { score -= 2; logs.push("MACD: 零軸死亡交叉，空頭發力"); }
-  else if (latest.macd.hist > 0) { score += 0.5; }
+  // 2. MACD 動能與交叉
+  if (latest.macd?.hist > 0 && prev.macd?.hist <= 0) { score += 2; logs.push("MACD: 零軸黃金交叉，多頭啟動"); }
+  else if (latest.macd?.hist < 0 && prev.macd?.hist >= 0) { score -= 2; logs.push("MACD: 零軸死亡交叉，空頭發力"); }
+  else if (latest.macd?.hist > 0) { score += 0.5; }
   else { score -= 0.5; }
 
   // 3. RSI 情緒指標
-  if (latest.rsi < 30) { score += 2; logs.push("RSI: 低於 30 極度超賣，醞釀反彈"); }
-  else if (latest.rsi > 70) { score -= 2; logs.push("RSI: 高於 70 極度超買，回調風險"); }
+  if (latest.rsi < 30) { score += 2; logs.push("RSI: 低於 30 極度超賣，有反彈機會"); }
+  else if (latest.rsi > 70) { score -= 2; logs.push("RSI: 高於 70 極度超買，有回調風險"); }
 
   // 4. 布林通道 (Bollinger Bands)
-  if (latest.bb.lower && latest.close < latest.bb.lower) { score += 1.5; logs.push("布林: 刺穿下軌，具強力支撐"); }
-  if (latest.bb.upper && latest.close > latest.bb.upper) { score -= 1.5; logs.push("布林: 突破上軌，面臨極大阻力"); }
+  if (latest.bb?.lower && latest.close < latest.bb.lower) { score += 1.5; logs.push("布林: 跌穿下軌，具備支撐"); }
+  if (latest.bb?.upper && latest.close > latest.bb.upper) { score -= 1.5; logs.push("布林: 突破上軌，面臨阻力"); }
 
-  // 5. Order Flow (主動買賣量 Delta) 與 Volume
+  // 5. Order Flow (主動買賣量 Delta) 與 成交量
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
-  if (delta > latest.volume * 0.2) { score += 2; logs.push("Delta: 主動買盤(Taker)爆發介入"); }
-  else if (delta < -latest.volume * 0.2) { score -= 2; logs.push("Delta: 主動賣盤大舉砸盤"); }
+  const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) / 10;
+  
+  if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 主動買盤大舉湧入"); }
+  else if (delta < -latest.volume * 0.2 && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 主動賣盤放量砸盤"); }
 
   // 6. FVG 缺口
   const k1 = klines[klines.length - 3];
-  if (latest.low > k1.high) { score += 1.5; logs.push("FVG: 形成多頭合理價值缺口"); }
-  if (latest.high < k1.low) { score -= 1.5; logs.push("FVG: 形成空頭合理價值缺口"); }
+  if (k1 && latest.low > k1.high) { score += 1.5; logs.push("FVG: 形成多頭合理價值缺口"); }
+  if (k1 && latest.high < k1.low) { score -= 1.5; logs.push("FVG: 形成空頭合理價值缺口"); }
 
   // 7. Liquidity Sweep (流動性獵取)
-  if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵殺近期低點後拉回 (主力吸籌)"); }
-  if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵殺近期高點後壓回 (主力派發)"); }
+  if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵殺近期低點後強力拉回 (主力吸籌)"); }
+  if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵殺近期高點後迅速壓回 (主力派發)"); }
 
-  // 決策門檻
+  // 判定信號
   let signal = 'NEUTRAL';
-  if (score >= 5) signal = 'LONG';
-  else if (score <= -5) signal = 'SHORT';
+  if (score >= 4) signal = 'LONG';
+  else if (score <= -4) signal = 'SHORT';
 
   // -------------------------
-  // 進場、止盈、止損 點位計算
+  // 進場、止盈、止損點位計算
   // -------------------------
   let entry = currentPrice;
   let sl = 0, tp = 0;
   
-  // 抓取近 15 根 K 線的波段高低點
+  // 取近 15 根 K 線的波段高低點
   const recentLows = klines.slice(-15).map(k => k.low);
   const recentHighs = klines.slice(-15).map(k => k.high);
   const swingLow = Math.min(...recentLows);
   const swingHigh = Math.max(...recentHighs);
 
   if (signal === 'LONG') {
-      entry = currentPrice;
-      // 止損設在波段低點或布林下軌下方，確保至少 1% 空間
-      sl = Math.min(swingLow, latest.bb.lower || currentPrice) * 0.995;
-      if ((entry - sl) / entry < 0.01) sl = entry * 0.985;
-      // 止盈：盈虧比 1:2
-      tp = entry + (entry - sl) * 2;
+      sl = Math.min(swingLow, latest.bb?.lower || currentPrice) * 0.995;
+      if ((entry - sl) / entry < 0.005) sl = entry * 0.985; // 強制至少 1.5% 止損空間
+      tp = entry + (entry - sl) * 2; // 1:2 盈虧比
   } else if (signal === 'SHORT') {
-      entry = currentPrice;
-      // 止損設在波段高點或布林上軌上方
-      sl = Math.max(swingHigh, latest.bb.upper || currentPrice) * 1.005;
-      if ((sl - entry) / entry < 0.01) sl = entry * 1.015;
-      // 止盈：盈虧比 1:2
+      sl = Math.max(swingHigh, latest.bb?.upper || currentPrice) * 1.005;
+      if ((sl - entry) / entry < 0.005) sl = entry * 1.015;
       tp = entry - (sl - entry) * 2;
   }
 
-  return { signal, score, logs, entry, tp, sl };
+  if (logs.length === 0) logs.push("市場動能不足，處於區間盤整");
+
+  return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
 };
 
 // ==========================================
-// 台股子系統：K 線圖元件
+// 台股子系統：K 線圖
 // ==========================================
 const TwKLineChart = ({ klines }) => {
   const containerRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
   if (!klines || klines.length === 0) return <div className="h-[500px] flex items-center justify-center text-slate-500">圖表載入中...</div>;
-  const visibleCount = 80;
-  const visibleKlines = klines.slice(-visibleCount);
-  const width = 800, totalHeight = 580, paddingX = 10, paddingY = 20, priceHeight = 400, volTop = 440, volHeight = 120;
+  const visibleCount = 80, visibleKlines = klines.slice(-visibleCount);
+  const width = 800, totalHeight = 580, priceHeight = 400, volTop = 440, volHeight = 120, paddingX = 10, paddingY = 20;
   const xStep = (width - paddingX * 2) / Math.max(visibleKlines.length, 1), candleWidth = Math.max(xStep * 0.6, 1);
-  const lows = visibleKlines.map(k => k.low), highs = visibleKlines.map(k => k.high);
-  const minPrice = Math.min(...lows), maxPrice = Math.max(...highs);
+  const minPrice = Math.min(...visibleKlines.map(k => k.low)), maxPrice = Math.max(...visibleKlines.map(k => k.high));
   const priceRange = (maxPrice - minPrice) || 1, maxVol = Math.max(...visibleKlines.map(k => k.volume || 0));
-
   const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2);
   const getVolY = (v) => volTop + volHeight - (v / (maxVol || 1)) * volHeight;
-
-  const handleMouseMove = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (width / rect.width);
-    const dataIndex = Math.floor((x - paddingX) / xStep);
-    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
-  };
-
-  const getMAPath = (maKey) => {
-    let path = "";
-    visibleKlines.forEach((k, i) => {
-      if (k[maKey] !== null && k[maKey] >= minPrice && k[maKey] <= maxPrice) {
-        const x = paddingX + i * xStep + candleWidth / 2, y = getPriceY(k[maKey]);
-        path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
-      }
-    });
-    return path;
-  };
-
-  const hoveredK = hoveredIndex !== null ? visibleKlines[hoveredIndex] : null;
 
   return (
     <div className="w-full relative group" style={{ height: '580px' }}>
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
-        {hoveredK && (
+        {hoveredIndex !== null && visibleKlines[hoveredIndex] && (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleDateString()}</div>
+            <div>DATE: {new Date(visibleKlines[hoveredIndex].time).toLocaleDateString()}</div>
             <div className="flex gap-2">
-              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
-              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
-              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d] ml-1" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
-              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume||0)/1000).toLocaleString()} 張</span></span>
+              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(visibleKlines[hoveredIndex].open)}</span></span>
+              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(visibleKlines[hoveredIndex].high)}</span></span>
+              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(visibleKlines[hoveredIndex].low)}</span></span>
+              <span className="text-slate-500">C:<span className={visibleKlines[hoveredIndex].close >= visibleKlines[hoveredIndex].open ? "text-[#f6465d] ml-1" : "text-[#0ecb81] ml-1"}>{formatPrice(visibleKlines[hoveredIndex].close)}</span></span>
+              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((visibleKlines[hoveredIndex].volume||0)/1000).toLocaleString()} 張</span></span>
             </div>
           </div>
         )}
       </div>
-
-      <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
+      <div ref={containerRef} className="w-full h-full cursor-crosshair" onMouseMove={(e) => {
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (width / rect.width);
+        const idx = Math.floor((x - paddingX) / xStep);
+        setHoveredIndex((idx >= 0 && idx < visibleKlines.length) ? idx : null);
+      }} onMouseLeave={() => setHoveredIndex(null)}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
           <line x1="0" y1={priceHeight/2} x2={width} y2={priceHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
           
-          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
+          <path d={visibleKlines.reduce((path, k, i) => k.ma5 !== null ? path + (path===""?`M ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma5)} `:`L ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma5)} `) : path, "")} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
+          <path d={visibleKlines.reduce((path, k, i) => k.ma20 !== null ? path + (path===""?`M ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma20)} `:`L ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma20)} `) : path, "")} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
+          <path d={visibleKlines.reduce((path, k, i) => k.ma60 !== null ? path + (path===""?`M ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma60)} `:`L ${paddingX+i*xStep+candleWidth/2} ${getPriceY(k.ma60)} `) : path, "")} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
 
           {visibleKlines.map((k, i) => {
-            const x = paddingX + i * xStep, isUp = k.close >= k.open, color = isUp ? '#f6465d' : '#0ecb81'; 
+            const x = paddingX + i * xStep, isUp = k.close >= k.open, color = isUp ? '#f6465d' : '#0ecb81';
             const openY = getPriceY(k.open), closeY = getPriceY(k.close), highY = getPriceY(k.high), lowY = getPriceY(k.low), volY = getVolY(k.volume || 0);
             return (
               <g key={i}>
@@ -304,18 +285,15 @@ const TwKLineChart = ({ klines }) => {
               </g>
             );
           })}
-          
-          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
-          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end">{formatPrice(maxPrice)}</text>
+          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end">{Math.floor(maxVol/1000)}K 張</text>
         </svg>
       </div>
     </div>
   );
 };
 
-// ==========================================
-// 台股子系統：個股分析工作區
-// ==========================================
 function TwStockWorkspace({ stock }) {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
@@ -324,7 +302,7 @@ function TwStockWorkspace({ stock }) {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchStockData = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`);
@@ -333,26 +311,23 @@ function TwStockWorkspace({ stock }) {
         if (historyData?.chart?.result?.[0]) {
           const result = historyData.chart.result[0], timestamps = result.timestamp || [], quote = result.indicators.quote[0] || {};
           for (let i = 0; i < timestamps.length; i++) {
-            if (quote.close[i] !== null) {
-              klines.push({ time: timestamps[i] * 1000, open: quote.open[i], high: quote.high[i], low: quote.low[i], close: quote.close[i], volume: quote.volume[i] });
-            }
+            if (quote.close[i]) klines.push({ time: timestamps[i] * 1000, open: quote.open[i], high: quote.high[i], low: quote.low[i], close: quote.close[i], volume: quote.volume[i] });
           }
         }
+        if (isMounted) { 
+          setChartData(calculateIndicators(klines)); 
+          setLoading(false); 
+        }
         
-        const processedData = calculateIndicators(klines);
-        
-        let newsData = [];
         try {
            const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
            const nData = await resNews.json();
-           if (Array.isArray(nData)) newsData = nData;
+           if (isMounted && Array.isArray(nData)) setNews(nData);
         } catch(e) {}
-
-        if (isMounted) { setChartData(processedData); setNews(newsData); setLoading(false); }
-      } catch (err) { if (isMounted) setLoading(false); }
+      } catch (e) { if (isMounted) setLoading(false); }
     };
 
-    const fetchChipData = async () => {
+    const fetchChips = async () => {
       try {
         const [tseT86, tseMargin, tpexT86, tpexMargin] = await Promise.all([
           fetch('https://openapi.twse.com.tw/v1/fund/T86').then(r=>r.json()).catch(()=>[]),
@@ -361,8 +336,7 @@ function TwStockWorkspace({ stock }) {
           fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r=>r.json()).catch(()=>[])
         ]);
 
-        let foreign = null, trust = null, dealer = null;
-        let marginToday = null, marginYest = null, marginChange = null;
+        let foreign = null, trust = null, dealer = null, marginToday = null, marginYest = null, marginChange = null;
 
         const arrTseT86 = Array.isArray(tseT86) ? tseT86 : [];
         const arrTpexT86 = Array.isArray(tpexT86) ? tpexT86 : [];
@@ -384,25 +358,49 @@ function TwStockWorkspace({ stock }) {
              const yesterday = parseFloat((marginItem.MarginPurchaseYesterdayBalance || marginItem.MarginBalanceYesterday || marginItem.YesterdayBalance || '0').toString().replace(/,/g, ''));
              marginToday = Math.round(today / 1000); marginYest = Math.round(yesterday / 1000); marginChange = marginToday - marginYest;
         }
-        
         if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginToday, marginYest, marginChange });
       } catch (error) { if (isMounted) setChipData(prev => ({ ...prev, loading: false })); }
     };
-    fetchStockData(); fetchChipData(); return () => { isMounted = false; };
+
+    fetchData(); fetchChips(); return () => { isMounted = false; };
   }, [stock.symbol]);
 
+  const getRecommendations = () => {
+    if (!chartData || chartData.length < 2) return null;
+    const latest = chartData[chartData.length - 1];
+    
+    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
+    let shortScore = 0;
+    if (latest.close > latest.ma5) shortScore++;
+    if (latest.kd && latest.kd.k > latest.kd.d) shortScore++;
+    if (latest.rsi > 50) shortScore++;
+    if (shortScore >= 2) shortTerm = { action: '推薦買入', color: 'text-[#f6465d]', desc: '短線動能強勁，站上5日線且指標向上。' };
+    else if (shortScore === 0) shortTerm = { action: '推薦賣出', color: 'text-[#0ecb81]', desc: '短線動能偏弱，跌破5日線且面臨賣壓。' };
+
+    let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
+    let midScore = 0;
+    if (latest.close > latest.ma20) midScore++;
+    if (latest.macd && latest.macd.hist > 0) midScore++;
+    if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
+    else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
+
+    let longTerm = latest.close > latest.ma60 
+      ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
+      : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
+    return { shortTerm, midTerm, longTerm };
+  };
+
+  const recommendations = getRecommendations();
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
-  const formatDate = (timestamp) => timestamp ? `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()}` : '';
+  const formatDate = (ts) => ts ? `${new Date(ts).getMonth() + 1}/${new Date(ts).getDate()}` : '';
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
-      
+      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
             <h2 className="text-3xl font-black text-white mb-1">{stock.name} <span className="text-lg font-normal text-slate-500 ml-1">{stock.symbol}</span></h2>
             <div className="flex items-end gap-3 mt-4">
               <div className={`text-4xl font-mono font-bold ${parseFloat(stock.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{stock.lastPrice}</div>
@@ -414,7 +412,7 @@ function TwStockWorkspace({ stock }) {
           {!loading && (
             <>
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2"><Target className="w-4 h-4 text-blue-500" /> 核心技術指標</h3>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2"><Target className="w-4 h-4 text-blue-500" /> 技術指標分析</h3>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
                       <div className="text-[10px] text-slate-500 font-bold mb-1">RSI (14)</div>
@@ -425,60 +423,55 @@ function TwStockWorkspace({ stock }) {
                       <div className={`text-lg font-mono font-black ${latestData?.macd?.hist > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{latestData?.macd?.hist?.toFixed(2) || '--'}</div>
                     </div>
                     <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
-                      <div className="text-[10px] text-slate-500 font-bold mb-1">KD (K值)</div>
+                      <div className="text-[10px] text-slate-500 font-bold mb-1">KD (K)</div>
                       <div className="text-lg font-mono font-black text-amber-400">{latestData?.kd?.k?.toFixed(1) || '--'}</div>
                     </div>
                   </div>
               </div>
 
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向</h3>
-                  {chipData.loading ? (
-                    <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
-                  ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與融資券</h3>
+                  {chipData.loading ? <div className="py-6 flex justify-center"><RefreshCw className="animate-spin text-slate-600" /></div> : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="border-b border-[#2a2f3a] text-slate-500">
-                            <th className="pb-2 font-normal">指標</th>
-                            <th className="pb-2 font-normal text-right whitespace-nowrap">今日 {latestData ? `(${formatDate(latestData.time)})` : ''}</th>
-                            <th className="pb-2 font-normal text-right whitespace-nowrap">前日 {prevData ? `(${formatDate(prevData.time)})` : ''}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#2a2f3a]/50">
-                          <tr><td className="py-2.5 text-slate-400">外資</td><td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? chipData.foreign.toLocaleString() + ' 張' : '--'}</td><td className="py-2.5 text-right font-mono text-slate-500">--</td></tr>
-                          <tr><td className="py-2.5 text-slate-400">投信</td><td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? chipData.trust.toLocaleString() + ' 張' : '--'}</td><td className="py-2.5 text-right font-mono text-slate-500">--</td></tr>
-                          <tr><td className="py-2.5 text-slate-400">自營商</td><td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? chipData.dealer.toLocaleString() + ' 張' : '--'}</td><td className="py-2.5 text-right font-mono text-slate-500">--</td></tr>
-                          <tr><td className="py-2.5 text-slate-400">融資餘額</td><td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? chipData.marginToday.toLocaleString() + ' 張' : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{chipData.marginChange})</span>}</td><td className="py-2.5 text-right font-mono text-slate-400">{chipData.marginYest !== null ? chipData.marginYest.toLocaleString() + ' 張' : '--'}</td></tr>
+                        <thead><tr className="text-slate-500 border-b border-[#2a2f3a]"><th className="pb-2">指標 (張)</th><th className="pb-2 text-right">今日 {latestData?`(${formatDate(latestData.time)})`:''}</th><th className="pb-2 text-right">前日 {prevData?`(${formatDate(prevData.time)})`:''}</th></tr></thead>
+                        <tbody className="divide-y divide-[#2a2f3a]/50 text-white font-mono">
+                          <tr><td className="py-2.5 text-slate-400">外資</td><td className={`py-2.5 text-right ${chipData.foreign>0?'text-[#f6465d] font-bold':chipData.foreign<0?'text-[#0ecb81] font-bold':''}`}>{chipData.foreign>0?'+':''}{chipData.foreign??'--'}</td><td className="py-2.5 text-right text-slate-600">--</td></tr>
+                          <tr><td className="py-2.5 text-slate-400">投信</td><td className={`py-2.5 text-right ${chipData.trust>0?'text-[#f6465d] font-bold':chipData.trust<0?'text-[#0ecb81] font-bold':''}`}>{chipData.trust>0?'+':''}{chipData.trust??'--'}</td><td className="py-2.5 text-right text-slate-600">--</td></tr>
+                          <tr><td className="py-2.5 text-slate-400">自營商</td><td className={`py-2.5 text-right ${chipData.dealer>0?'text-[#f6465d] font-bold':chipData.dealer<0?'text-[#0ecb81] font-bold':''}`}>{chipData.dealer>0?'+':''}{chipData.dealer??'--'}</td><td className="py-2.5 text-right text-slate-600">--</td></tr>
+                          <tr><td className="py-2.5 text-slate-400">融資</td><td className="py-2.5 text-right">{chipData.marginToday??'--'} {chipData.marginChange!==null && <span className={chipData.marginChange>0?'text-[#f6465d]':'text-[#0ecb81]'}>({chipData.marginChange>0?'+':''}{chipData.marginChange})</span>}</td><td className="py-2.5 text-right text-slate-400">{chipData.marginYest??'--'}</td></tr>
                         </tbody>
                       </table>
                     </div>
-                  ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
+                  )}
               </div>
             </>
           )}
         </div>
-
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
-            <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
-              <span className="text-amber-500 font-bold">MA5 (周線)</span><span className="text-fuchsia-400 font-bold">MA20 (月線)</span><span className="text-emerald-500 font-bold">MA60 (季線)</span>
-            </div>
-            {loading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="animate-spin text-slate-500" /></div> : <TwKLineChart klines={chartData} />}
+             {loading ? <div className="h-[580px] flex items-center justify-center"><RefreshCw className="animate-spin" /></div> : <TwKLineChart klines={chartData} />}
           </div>
+          
+          {recommendations && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{recommendations.shortTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.shortTerm.desc}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{recommendations.midTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.midTerm.desc}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{recommendations.longTerm.action}</div><div className="text-xs text-slate-500 leading-relaxed">{recommendations.longTerm.desc}</div></div>
+               </div>
+            </div>
+          )}
 
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
-             <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Newspaper className="w-5 h-5 text-emerald-500" /> 個股相關新聞</h3>
-             {loading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : news.length > 0 ? (
-                <div className="space-y-3">
-                  {news.slice(0, 5).map((item, idx) => (
-                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{item.title}</h4>
-                      <div className="flex justify-between items-center text-[10px] text-slate-500"><span>{item.publisher || 'Yahoo Finance'}</span><span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
-                    </a>
-                  ))}
-                </div>
-             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
+             <h3 className="text-lg font-bold text-white mb-4">個股新聞</h3>
+             <div className="space-y-3">{news.slice(0,5).map((n, i) => (
+               <a key={i} href={n.link} target="_blank" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-[#2a2f3a]/50 hover:border-emerald-500/50 transition-all group">
+                 <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 line-clamp-1 mb-1">{n.title}</h4>
+                 <div className="text-[10px] text-slate-500">{n.publisher || 'Yahoo'}</div>
+               </a>
+             ))}</div>
           </div>
         </div>
       </div>
@@ -487,12 +480,12 @@ function TwStockWorkspace({ stock }) {
 }
 
 // ==========================================
-// 虛擬貨幣子系統 (Crypto Components)
+// 虛擬貨幣市場列表卡片 (並列 15m, 1h, 4h 分析)
 // ==========================================
-
 function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
   const change = parseFloat(ticker.priceChangePercent);
   const isPositive = change >= 0;
+  // 找出有產生強烈訊號的週期
   const activeSignals = ['15m', '1h', '4h'].filter(tf => multiSignals?.[tf] && multiSignals[tf].signal !== 'NEUTRAL');
 
   return (
@@ -500,22 +493,23 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
         sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
         onSelectCoin(ticker.symbol);
       }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col shadow-md group">
-      
       <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400">{ticker.symbol.replace('USDT', '')} <span className="text-xs text-slate-500">USDT</span></h3>
           <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
         </div>
-        <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
+        <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>
+          {isPositive ? '+' : ''}{change.toFixed(2)}%
+        </div>
       </div>
-      <div className="text-2xl font-mono font-semibold text-white mb-3">${formatPrice(ticker.lastPrice)}</div>
+      <div className="text-2xl font-mono font-semibold text-white mb-2">${formatPrice(ticker.lastPrice)}</div>
       
-      <div className="mt-auto flex flex-col gap-2 pt-3 border-t border-[#2a2f3a]/50">
+      <div className="mt-auto flex flex-col gap-1.5 pt-3 border-t border-[#2a2f3a]/50">
         {activeSignals.length > 0 ? activeSignals.map(tf => {
           const sig = multiSignals[tf];
           const isLong = sig.signal === 'LONG';
           return (
-             <div key={tf} className={`text-[10px] p-2 rounded flex flex-col gap-1 ${isLong ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>
+             <div key={tf} className={`text-[10px] p-2 rounded flex flex-col gap-1 ${isLong ? 'bg-[#0ecb81]/10 border border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border border-[#f6465d]/30 text-[#f6465d]'}`}>
                <div className="font-bold flex items-center justify-between">
                   <span className="flex items-center gap-1"><Target className="w-3 h-3"/> {tf} {isLong ? '🔥 推薦做多' : '🩸 推薦做空'}</span>
                </div>
@@ -524,138 +518,22 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
                   <div className="text-[#0ecb81]">TP {formatPrice(sig.tp)}</div>
                   <div className="text-red-400">SL {formatPrice(sig.sl)}</div>
                </div>
-               <div className="text-[9px] mt-1 opacity-70 truncate">{sig.logs[0]}</div>
+               <div className="text-[9px] mt-1 opacity-70 truncate">{sig.logs && sig.logs[0] ? sig.logs[0] : ''}</div>
              </div>
           );
         }) : (
-          <div className="text-[10px] px-2 py-3 rounded flex items-center justify-center bg-white/5 text-slate-500 border border-white/5">各週期均處於盤整，無強烈訊號</div>
+          <div className="text-[10px] px-2 py-3 rounded flex items-center justify-center bg-white/5 text-slate-500 border border-white/5">
+            各週期均處於盤整，無強烈訊號
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
-  const { activeTab, timeframe, scanLimit, searchTerm, aiSignals, isScanning, scanProgress, initialScanned } = dashState;
-  const [isRangeOpen, setIsRangeOpen] = useState(false);
-
-  const setActiveTab = (tab) => setDashState(p => ({ ...p, activeTab: tab }));
-  const setScanLimit = (limit) => setDashState(p => ({ ...p, scanLimit: limit }));
-  const setSearchTerm = (term) => setDashState(p => ({ ...p, searchTerm: term }));
-
-  useEffect(() => {
-    if (!loading && allTickers.length > 0) {
-      const savedPos = sessionStorage.getItem('dashboardScroll');
-      if (savedPos) { setTimeout(() => { window.scrollTo({ top: parseInt(savedPos), behavior: 'auto' }); sessionStorage.removeItem('dashboardScroll'); }, 150); }
-    }
-  }, [loading, allTickers.length]);
-
-  const handleManualScan = async () => {
-    if (isScanning || allTickers.length === 0) return;
-    setDashState(p => ({ ...p, isScanning: true, scanProgress: 0, initialScanned: true }));
-    setDashState(p => ({ ...p, aiSignals: { '15m': {}, '1h': {}, '4h': {} } }));
-
-    const tfs = ['15m', '1h', '4h'];
-    const targets = allTickers.slice(0, scanLimit);
-    const batch = 10;
-    const totalOps = tfs.length * targets.length;
-    let completed = 0;
-
-    for (const tf of tfs) {
-        for (let i = 0; i < targets.length; i += batch) {
-          const chunk = targets.slice(i, i + batch);
-          const chunkSignals = {};
-          await Promise.all(chunk.map(async (coin) => {
-            try {
-              const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=80`);
-              if(!res.ok) return;
-              const data = await res.json();
-              if (Array.isArray(data)) {
-                  // Binance Kline Index: 1=Open, 2=High, 3=Low, 4=Close, 5=Volume, 9=TakerBuyVolume
-                  const parsed = data.map(d => ({ 
-                      open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), 
-                      close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]) 
-                  }));
-                  const sig = analyzeCryptoSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
-                  if (sig) chunkSignals[coin.symbol] = sig;
-              }
-            } catch(e) { }
-          }));
-          
-          if (Object.keys(chunkSignals).length > 0) {
-             setDashState(prev => ({ ...prev, aiSignals: { ...prev.aiSignals, [tf]: { ...prev.aiSignals[tf], ...chunkSignals } } }));
-          }
-          completed += chunk.length;
-          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / totalOps) * 100)) }));
-          await new Promise(r => setTimeout(r, 200));
-        }
-    }
-    setDashState(p => ({ ...p, isScanning: false }));
-  };
-
-  useEffect(() => {
-    if (allTickers.length > 0 && !initialScanned && !isScanning) handleManualScan();
-  }, [allTickers.length, initialScanned, isScanning]);
-
-  if (loading && !allTickers.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取幣安真實數據中...</div>;
-
-  let filtered = allTickers.slice(0, scanLimit);
-  
-  if (searchTerm) {
-      filtered = filtered.filter(t => t.symbol.includes(searchTerm.toUpperCase()));
-  } else if (activeTab === 'LONG') {
-      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'LONG' || aiSignals['1h']?.[t.symbol]?.signal === 'LONG' || aiSignals['4h']?.[t.symbol]?.signal === 'LONG');
-  } else if (activeTab === 'SHORT') {
-      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'SHORT' || aiSignals['1h']?.[t.symbol]?.signal === 'SHORT' || aiSignals['4h']?.[t.symbol]?.signal === 'SHORT');
-  }
-
-  return (
-    <div className="space-y-6 pb-20">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:sticky sm:top-[64px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
-          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-                  {['ALL', 'LONG', 'SHORT'].map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>
-                      {t === 'ALL' ? '全部' : t === 'LONG' ? '🔥 做多機會' : '🩸 做空機會'}
-                    </button>
-                  ))}
-              </div>
-              <div className="flex items-center gap-2">
-                  <div className="relative shrink-0">
-                      <button onClick={() => setIsRangeOpen(!isRangeOpen)} className="flex items-center justify-center gap-1.5 bg-[#121620] px-3 py-2 sm:py-1.5 rounded-lg border border-[#2a2f3a] text-xs sm:text-sm text-slate-300 hover:text-white transition-colors h-full">
-                          <Filter className="w-3.5 h-3.5" /> <span>Top {scanLimit}</span>
-                      </button>
-                      {isRangeOpen && (
-                          <div className="absolute top-full mt-1 right-0 sm:left-0 w-24 bg-[#121620] border border-[#2a2f3a] rounded-lg shadow-xl z-50 p-1 flex flex-col animate-in fade-in zoom-in-95 duration-100">
-                              {[50, 100, 150].map(limit => (
-                                  <button key={limit} onClick={() => { setScanLimit(limit); setIsRangeOpen(false); }} className={`px-3 py-2 text-left text-xs sm:text-sm rounded transition-all ${scanLimit === limit ? 'bg-blue-600/20 text-blue-400 font-bold' : 'text-slate-400 hover:bg-[#2a2f3a] hover:text-white'}`}>
-                                      Top {limit}
-                                  </button>
-                              ))}
-                          </div>
-                      )}
-                  </div>
-                  <button onClick={handleManualScan} disabled={isScanning} className="bg-[#121620] p-2 sm:p-1.5 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0">
-                    <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${isScanning ? 'animate-spin' : ''}`} />
-                  </button>
-              </div>
-          </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
-              {isScanning && <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0"><RefreshCw className="w-3 h-3 animate-spin" /> SMC 矩陣分析中 {scanProgress}%</div>}
-              <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋幣種..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
-          </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map(t => {
-            const coinSignals = { '15m': aiSignals['15m']?.[t.symbol], '1h': aiSignals['1h']?.[t.symbol], '4h': aiSignals['4h']?.[t.symbol] };
-            return <CryptoMarketCard key={t.symbol} ticker={t} multiSignals={coinSignals} onSelectCoin={(s) => window.location.hash = `#/crypto/trade/${s}`} />;
-          })}
-          {filtered.length === 0 && <div className="col-span-full py-20 text-center text-slate-500">無符合條件之標的</div>}
-      </div>
-    </div>
-  );
-}
-
+// ==========================================
+// 虛擬貨幣分析與下單儀表板
+// ==========================================
 function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition }) {
   const [klines, setKlines] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(coin.lastPrice));
@@ -668,7 +546,8 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          // 直接從幣安公有 API 拉取，避免 Vercel 卡 interval
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -682,7 +561,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
     fetchAll();
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
+        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
         const data = await res.json();
         if (isMounted) setCurrentPrice(parseFloat(data.price));
       } catch(e) {}
@@ -729,8 +608,237 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
         </div>
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-[#121620] rounded-xl p-1 border border-[#2a2f3a] shadow-lg"><CryptoAdvancedKLineChart klines={klines} signalData={multiSignals['15m']} /></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {paperAccount.positions.filter(p => p.symbol === coin.symbol).map(pos => <CryptoPositionCard key={pos.id} pos={pos} currentPrice={currentPrice} balance={paperAccount.balance} onClose={() => closePosition(pos.id, currentPrice)} onAdjust={(t,v) => adjustPosition(pos.id,t,v,currentPrice)} />)}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// K 線圖 (縮小版，保留原有)
+const CryptoAdvancedKLineChart = ({ klines, signalData }) => {
+  const containerRef = useRef(null);
+  const [visibleCount, setVisibleCount] = useState(60); 
+  const [endIndexOffset, setEndIndexOffset] = useState(0); 
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  const dataLen = klines ? klines.length : 0;
+
+  useEffect(() => {
+    const container = containerRef.current; if (!container || dataLen === 0) return;
+    const handleWheel = (e) => {
+      e.preventDefault(); 
+      let newCount = Math.round(visibleCount * (e.deltaY > 0 ? 1.1 : 0.9));
+      newCount = Math.max(15, Math.min(newCount, dataLen));
+      setVisibleCount(newCount);
+      const newMaxOffset = Math.max(0, dataLen - newCount);
+      if (endIndexOffset > newMaxOffset) setEndIndexOffset(newMaxOffset);
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [visibleCount, dataLen, endIndexOffset]);
+
+  if (!klines || dataLen === 0) return <div className="w-full h-[500px] flex items-center justify-center text-slate-500">正在載入圖表數據...</div>;
+  
+  const maxOffset = Math.max(0, dataLen - visibleCount);
+  const safeOffset = Math.min(Math.max(0, endIndexOffset), maxOffset);
+  const safeVisibleCount = Math.min(visibleCount, dataLen);
+  const startIndex = Math.max(0, dataLen - safeVisibleCount - safeOffset);
+  const endIndex = dataLen - safeOffset;
+  const visibleKlines = klines.slice(startIndex, endIndex);
+
+  const width = 800; const totalHeight = 500; const kLineHeight = 380;
+  const paddingX = 10; const xStep = (width - paddingX * 2) / safeVisibleCount; const candleWidth = Math.max(xStep * 0.7, 1);
+  
+  const lows = visibleKlines.map(k => k.low); const highs = visibleKlines.map(k => k.high);
+  const minPrice = Math.min(...lows); const maxPrice = Math.max(...highs);
+  const priceRange = (maxPrice - minPrice) || 1;
+  const getPriceY = (p) => kLineHeight - 20 - ((p - minPrice) / priceRange) * (kLineHeight - 40);
+
+  const getSvgCoords = (clientX, clientY) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    const rect = containerRef.current.getBoundingClientRect();
+    return { x: (clientX - rect.left) * (width / rect.width), y: (clientY - rect.top) * (totalHeight / rect.height) };
+  };
+
+  const updateHover = (clientX) => {
+    const dataIndex = Math.floor((getSvgCoords(clientX, 0).x - paddingX) / xStep);
+    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
+  };
+
+  const handleMouseDown = (e) => { setIsDragging(true); setDragStartX(e.clientX); };
+  const handleMouseUp = () => { setIsDragging(false); };
+  const handleMouseMove = (e) => {
+    if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      if (Math.abs(dx) > 5) {
+        setEndIndexOffset(prev => Math.max(0, Math.min(prev + Math.round(dx / 5), maxOffset)));
+        setDragStartX(e.clientX);
+      }
+    } else updateHover(e.clientX);
+  };
+
+  const hoveredK = hoveredIndex !== null ? visibleKlines[hoveredIndex] : null;
+
+  return (
+    <div className="w-full relative group touch-none" style={{ height: '500px' }}>
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
+        {hoveredK ? (
+          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
+            <div>TIME: {new Date(hoveredK.time).toLocaleString()}</div>
+            <div className="flex gap-2">
+              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
+              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
+              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-slate-500 bg-[#0b0e14]/50 backdrop-blur px-2 py-1 rounded">
+             <MoveHorizontal className="w-3.5 h-3.5" /> 滾輪縮放 / 拖曳平移
+          </div>
+        )}
+      </div>
+
+      <div ref={containerRef} className="w-full h-full overflow-hidden touch-none cursor-crosshair" onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={() => {setIsDragging(false); setHoveredIndex(null);}} onMouseMove={handleMouseMove}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
+          
+          {signalData?.poc && <><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></>}
+          {signalData?.avwap && <><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></>}
+
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
+            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            
+            return (
+              <g key={k.time || i}>
+                {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={color} />
+              </g>
+            );
+          })}
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end">{formatPrice(maxPrice)}</text>
+          <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end">{formatPrice(minPrice)}</text>
+        </svg>
+      </div>
+    </div>
+  );
+};
+
+function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
+  const { activeTab, timeframe, scanLimit, searchTerm, aiSignals, isScanning, scanProgress, initialScanned } = dashState;
+
+  useEffect(() => {
+    if (!loading && allTickers.length > 0) {
+      const savedPos = sessionStorage.getItem('dashboardScroll');
+      if (savedPos) { setTimeout(() => { window.scrollTo({ top: parseInt(savedPos), behavior: 'auto' }); sessionStorage.removeItem('dashboardScroll'); }, 150); }
+    }
+  }, [loading, allTickers.length]);
+
+  const handleManualScan = async () => {
+    if (isScanning || allTickers.length === 0) return;
+    setDashState(p => ({ ...p, isScanning: true, scanProgress: 0, initialScanned: true }));
+    setDashState(p => ({ ...p, aiSignals: { '15m': {}, '1h': {}, '4h': {} } }));
+
+    const tfs = ['15m', '1h', '4h'];
+    const targets = allTickers.slice(0, scanLimit);
+    const batch = 10;
+    const totalOps = tfs.length * targets.length;
+    let completed = 0;
+
+    for (const tf of tfs) {
+        for (let i = 0; i < targets.length; i += batch) {
+          const chunk = targets.slice(i, i + batch);
+          const chunkSignals = {};
+          await Promise.all(chunk.map(async (coin) => {
+            try {
+              const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
+              const data = await res.json();
+              if (Array.isArray(data)) {
+                  const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]) }));
+                  const sig = analyzeCryptoSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
+                  if (sig) chunkSignals[coin.symbol] = sig;
+              }
+            } catch(e) { }
+          }));
+          
+          if (Object.keys(chunkSignals).length > 0) {
+             setDashState(prev => ({ ...prev, aiSignals: { ...prev.aiSignals, [tf]: { ...prev.aiSignals[tf], ...chunkSignals } } }));
+          }
+          completed += chunk.length;
+          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / totalOps) * 100)) }));
+          await new Promise(r => setTimeout(r, 200));
+        }
+    }
+    setDashState(p => ({ ...p, isScanning: false }));
+  };
+
+  useEffect(() => {
+    if (allTickers.length > 0 && !initialScanned && !isScanning) handleManualScan();
+  }, [allTickers.length, initialScanned, isScanning]);
+
+  if (loading && !allTickers.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取幣安真實數據中...</div>;
+
+  let filtered = allTickers.slice(0, scanLimit);
+  if (searchTerm) {
+      filtered = filtered.filter(t => t.symbol.includes(searchTerm.toUpperCase()));
+  } else if (activeTab === 'LONG') {
+      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'LONG' || aiSignals['1h']?.[t.symbol]?.signal === 'LONG' || aiSignals['4h']?.[t.symbol]?.signal === 'LONG');
+  } else if (activeTab === 'SHORT') {
+      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'SHORT' || aiSignals['1h']?.[t.symbol]?.signal === 'SHORT' || aiSignals['4h']?.[t.symbol]?.signal === 'SHORT');
+  }
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:sticky sm:top-[64px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
+          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
+                  {['ALL', 'LONG', 'SHORT'].map(t => (
+                    <button key={t} onClick={() => setDashState(p=>({ ...p, activeTab: t }))} className={`flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>
+                      {t === 'ALL' ? '全部' : t === 'LONG' ? '🔥 做多機會' : '🩸 做空機會'}
+                    </button>
+                  ))}
+              </div>
+              <button onClick={handleManualScan} disabled={isScanning} className="bg-[#121620] px-4 py-2 sm:py-1.5 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0 text-sm">
+                <RefreshCw className={`w-4 h-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} /> 重新掃描 SMC
+              </button>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
+              {isScanning && <div className="text-xs text-blue-400 flex items-center gap-2 justify-start sm:justify-end shrink-0"><RefreshCw className="w-3 h-3 animate-spin" /> 計算多週期中 {scanProgress}%</div>}
+              <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋幣種..." value={searchTerm} onChange={e => setDashState(p => ({ ...p, searchTerm: e.target.value }))} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+          </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map(t => {
+            const coinSignals = { '15m': aiSignals['15m']?.[t.symbol], '1h': aiSignals['1h']?.[t.symbol], '4h': aiSignals['4h']?.[t.symbol] };
+            return <CryptoMarketCard key={t.symbol} ticker={t} multiSignals={coinSignals} onSelectCoin={(s) => window.location.hash = `#/crypto/trade/${s}`} />;
+          })}
+          {filtered.length === 0 && <div className="col-span-full py-20 text-center text-slate-500">無符合條件之標的</div>}
+      </div>
+    </div>
+  );
+}
+
+function CryptoPositionsPage({ allTickers, paperAccount, openPosition, closePosition, adjustPosition }) {
+  const activeSymbols = [...new Set(paperAccount.positions.map(p => p.symbol))];
+  const activeTickers = allTickers.filter(t => activeSymbols.includes(t.symbol));
+  return (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (虛擬貨幣)</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {paperAccount.positions.map(pos => <CryptoPositionCard key={pos.id} pos={pos} currentPrice={parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice)} balance={paperAccount.balance} onSelectCoin={c => window.location.hash = `#/crypto/trade/${c.symbol}`} onClose={() => closePosition(pos.id, parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice))} onAdjust={(t, v) => adjustPosition(pos.id, t, v, parseFloat(allTickers.find(t => t.symbol === pos.symbol)?.lastPrice || pos.entryPrice))} />)}
+      </div>
+      {activeTickers.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {activeTickers.map(t => <div key={t.symbol} className="bg-[#121620] border border-[#2a2f3a] rounded-xl p-5 shadow-lg"><h3 className="font-bold text-white mb-4">{t.symbol} 快捷下單</h3><CryptoTradeForm symbol={t.symbol} currentPrice={parseFloat(t.lastPrice)} balance={paperAccount.balance} onOpenPosition={openPosition} /></div>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -757,7 +865,9 @@ function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
   return (
     <div className="space-y-4">
       <div>
-        <div className="flex justify-between text-xs text-slate-400 mb-1"><label>槓桿倍數</label><span className="text-white font-bold">{leverage}x</span></div>
+        <div className="flex justify-between text-xs text-slate-400 mb-1">
+          <label>槓桿倍數</label><span className="text-white font-bold">{leverage}x</span>
+        </div>
         <input type="range" min="1" max="100" value={leverage} onChange={(e) => setLeverage(e.target.value)} className="w-full accent-blue-500" />
       </div>
       <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] mb-2">
@@ -782,116 +892,78 @@ function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
   );
 }
 
-// 由於版面限制，此處省略 PositionsPage 與 AssetsPage 的完整重複代碼
-// 您可直接沿用先前版本的 CryptoPositionsPage 與 CryptoAssetsPage。
-// 我將焦點放在台股與首頁。
+function CryptoPositionCard({ pos, currentPrice, balance, onSelectCoin, onClose, onAdjust }) {
+  const [activeModal, setActiveModal] = useState(null); 
+  const [adjustInput, setAdjustInput] = useState('');
+  const [modalError, setModalError] = useState('');
+  const pnl = pos.type === 'LONG' ? (currentPrice - pos.entryPrice) * pos.size : (pos.entryPrice - currentPrice) * pos.size;
+  const roe = (pnl / pos.margin) * 100;
+  const isProfit = pnl >= 0;
 
-// ==========================================
-// 台股列表 Dashboard
-// ==========================================
-function TwStocksDashboard({ twStocks, loading, error }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const filtered = useMemo(() => {
-    const s = searchTerm.toUpperCase();
-    if (!s) return twStocks.slice(0, 100);
-    return twStocks.filter(t => t.symbol.includes(s) || t.name.includes(s)).slice(0, 200);
-  }, [twStocks, searchTerm]);
-
-  const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm);
-  const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
-
-  if (loading && !twStocks.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取全台股資料中...</div>;
+  const handleAdjustSubmit = () => {
+      setModalError('');
+      const val = parseFloat(adjustInput);
+      if(isNaN(val) || val <= 0) return setModalError('請輸入有效金額');
+      if(activeModal === 'add' && val > balance) return setModalError('可用餘額不足');
+      onAdjust(activeModal, val);
+      setActiveModal(null);
+      setAdjustInput('');
+  };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg"><LineChart className="w-6 h-6 text-blue-400" /></div>
-          <div><h2 className="text-xl font-bold text-white">台灣股市與 ETF</h2><p className="text-xs text-slate-400">上市、上櫃與全台 ETF 深度解析</p></div>
+    <div className={`bg-[#121620] border ${isProfit ? 'border-[#0ecb81]/30' : 'border-[#f6465d]/30'} rounded-xl p-4 flex flex-col shadow-lg`}>
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <h3 className="text-lg font-black text-white cursor-pointer hover:text-blue-400" onClick={() => {
+            sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
+            onSelectCoin({symbol: pos.symbol});
+          }}>{pos.symbol}</h3>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 inline-block ${pos.type === 'LONG' ? 'bg-[#0ecb81] text-white' : 'bg-[#f6465d] text-white'}`}>{pos.type} {pos.leverage}x</span>
         </div>
-        <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
+        <div className="text-right">
+          <div className={`text-lg font-mono font-black ${isProfit ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>{isProfit ? '+' : ''}{pnl.toFixed(2)}</div>
+          <div className={`text-xs ${isProfit ? 'text-[#0ecb81]/70' : 'text-[#f6465d]/70'}`}>{roe.toFixed(2)}%</div>
+        </div>
       </div>
-
-      {showManualEntry && (
-        <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
-            <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
-            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{searchTerm}」 的深度分析系統。</p>
-            <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
+      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400 mb-4 bg-[#0b0e14] p-3 rounded">
+        <div>數量: <span className="text-white">{pos.size.toFixed(4)}</span></div>
+        <div>保證金: <span className="text-white">${pos.margin.toFixed(2)}</span></div>
+        <div>開倉價: <span className="text-white">${formatPrice(pos.entryPrice)}</span></div>
+        <div>強平價: <span className="text-amber-400">${formatPrice(pos.liqPrice)}</span></div>
+      </div>
+      {activeModal ? (
+        <div className="bg-[#1a1e27] p-2 rounded border border-blue-500/50 mt-auto animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs font-bold text-white">{activeModal === 'add' ? '加碼' : '減倉'}</span>
+            <X className="w-4 h-4 text-slate-400 cursor-pointer" onClick={() => setActiveModal(null)} />
+          </div>
+          <div className="flex gap-2">
+            <input type="number" value={adjustInput} onChange={e => setAdjustInput(e.target.value)} placeholder="USDT" className="flex-1 bg-[#0b0e14] border border-[#2a2f3a] rounded px-2 text-xs text-white outline-none" />
+            <button onClick={handleAdjustSubmit} className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded">確認</button>
+          </div>
+          {modalError && <div className="text-[10px] text-red-400 mt-1">{modalError}</div>}
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-auto">
+          <button onClick={() => setActiveModal('add')} className="flex-1 bg-[#2a2f3a] text-slate-200 text-xs py-2 rounded">加碼</button>
+          <button onClick={() => setActiveModal('reduce')} className="flex-1 bg-[#2a2f3a] text-slate-200 text-xs py-2 rounded">減倉</button>
+          <button onClick={onClose} className="flex-1 bg-[#f6465d]/20 text-[#f6465d] text-xs py-2 rounded">平倉</button>
         </div>
       )}
-
-      {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {filtered.map(stock => {
-          const change = parseFloat(stock.priceChangePercent); const isPositive = change >= 0;
-          return (
-            <div key={stock.symbol} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
-              <div className="flex justify-between items-start mb-2">
-                <div><h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors">{stock.name}</h3><div className="text-xs text-slate-500 mt-0.5 font-mono">{stock.symbol}</div></div>
-                <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
-              </div>
-              <div className="mt-4">
-                <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{stock.lastPrice}</div>
-                <div className="text-[10px] text-slate-500 mt-1">量: {formatVolume(stock.quoteVolume)}</div>
-              </div>
-            </div>
-          );
-        })}
-        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">找不到符合的股票代號或名稱。</div>}
-      </div>
     </div>
   );
 }
 
-// ==========================================
-// 財經新聞 Dashboard
-// ==========================================
-function NewsDashboard() {
-  const [news, setNews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState('全部');
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchRealNews = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch('/api/binance?action=news');
-        const data = await res.json();
-        if (isMounted) { setNews(Array.isArray(data) ? data : []); setLoading(false); }
-      } catch (error) { if (isMounted) setLoading(false); }
-    };
-    fetchRealNews();
-    return () => { isMounted = false; };
-  }, []);
-
-  const filteredNews = activeCategory === '全部' ? news : news.filter(n => n.category === activeCategory);
-
-  if (loading) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取熱點新聞中...</div>;
-
+function CryptoAssetsPage({ paperAccount }) {
+  const totalRealized = paperAccount.history.reduce((a, b) => a + b.pnl, 0);
+  const winRate = paperAccount.history.length ? ((paperAccount.history.filter(h => h.pnl > 0).length / paperAccount.history.length) * 100).toFixed(1) : 0;
   return (
-    <div className="space-y-6 pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-emerald-500/20 rounded-lg"><Newspaper className="w-6 h-6 text-emerald-400" /></div>
-          <div><h2 className="text-xl font-bold text-white">24H 財經熱點新聞</h2></div>
-        </div>
-        <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-          {['全部', '台股 / 宏觀', '加密貨幣'].map(cat => (
-            <button key={cat} onClick={() => setActiveCategory(cat)} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>{cat}</button>
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filteredNews.map((item, idx) => (
-          <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="bg-[#121620] border border-[#2a2f3a] hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group">
-            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{item.category}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {item.time}</span></div>
-            <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{item.title}</h3>
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{item.source}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
-          </a>
-        ))}
-        {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-blue-500" /> 帳戶數據</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">可用餘額</div><div className="text-2xl font-mono font-bold text-blue-400">${paperAccount.balance.toFixed(2)}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">累計盈虧</div><div className={`text-2xl font-mono font-bold ${totalRealized >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>${totalRealized.toFixed(2)}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">歷史勝率</div><div className="text-2xl font-mono font-bold text-white">{winRate}%</div></div>
       </div>
     </div>
   );
@@ -902,9 +974,9 @@ function NewsDashboard() {
 // ==========================================
 function PortalPage() {
   const cards = [
-    { id: 'crypto', title: '虛擬貨幣 SMC', desc: '串接合約數據，提供機構級 SMC 訊號 (15m, 1h, 4h) 與模擬下單。', icon: <Bitcoin className="w-12 h-12 text-[#f7931a]" />, color: 'from-[#f7931a]/20 to-[#f7931a]/5', route: '#/crypto/home' },
-    { id: 'tw-stocks', title: '台股與 ETF', desc: '整合全台標的、歷史 K 線及盤後真實籌碼 (三大法人、融資券)。', icon: <LineChart className="w-12 h-12 text-[#3b82f6]" />, color: 'from-[#3b82f6]/20 to-[#3b82f6]/5', route: '#/tw-stocks' },
-    { id: 'news', title: '24H 財經新聞', desc: '即時串接 Yahoo 與全球財經熱點，掌握市場第一手風向。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
+    { id: 'crypto', title: '虛擬貨幣 SMC', desc: '全自動 SMC 高階策略掃描，支援 15m, 1h, 4h 週期並提供進場、止盈、止損點。', icon: <Bitcoin className="w-12 h-12 text-[#f7931a]" />, color: 'from-[#f7931a]/20 to-[#f7931a]/5', route: '#/crypto/home' },
+    { id: 'tw-stocks', title: '台股與 ETF', desc: '上市、上櫃及全台 ETF 總覽，提供指標分析與真實三大法人及融資券籌碼。', icon: <LineChart className="w-12 h-12 text-[#3b82f6]" />, color: 'from-[#3b82f6]/20 to-[#3b82f6]/5', route: '#/tw-stocks' },
+    { id: 'news', title: '24H 財經新聞', desc: '即時串接全球與台灣財經熱點，掌握第一手市場風向。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
   ];
 
   return (
@@ -966,7 +1038,7 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
-  // 抓取台股清單 (加入嚴格的陣列與錯誤字串保護)
+  // 抓取台股清單 (加入嚴格陣列與錯誤保護)
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
@@ -1032,7 +1104,7 @@ export default function App() {
 
   useEffect(() => { 
       fetchCryptoMarkets(); 
-      const i = setInterval(fetchCryptoMarkets, 8000); 
+      const i = setInterval(fetchCryptoMarkets, 10000); 
       return () => clearInterval(i); 
   }, []);
 
@@ -1061,14 +1133,10 @@ export default function App() {
     handleHash(); window.addEventListener('hashchange', handleHash); return () => window.removeEventListener('hashchange', handleHash);
   }, [twStocks, allTickers]);
 
-  const openPosition = (symbol, type, margin, leverage, size, liq, mode, auto, price) => { setPaperAccount(prev => ({ ...prev, balance: prev.balance - margin, positions: [...prev.positions, { id: Date.now(), symbol, type, margin, leverage, size, entryPrice: price, liqPrice: liq, marginMode: mode, autoMargin: auto }] })); };
-  const closePosition = (id, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; const pnl = p.type === 'LONG' ? (price - p.entryPrice) * p.size : (p.entryPrice - price) * p.size; return { ...prev, balance: prev.balance + p.margin + pnl, positions: prev.positions.filter(x => x.id !== id), history: [{ ...p, closePrice: price, pnl, closeTime: new Date().toLocaleString() }, ...prev.history].slice(0, 50) }; }); };
-  const adjustPosition = (id, type, amount, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; if (type === 'add') { const sz = (amount * p.leverage) / price; return { ...prev, balance: prev.balance - amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size + sz, margin: x.margin + amount, entryPrice: ((x.size * x.entryPrice) + (sz * price)) / (x.size + sz) } : x) }; } else { const r = amount / p.margin; return { ...prev, balance: prev.balance + amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size * (1 - r), margin: x.margin - amount } : x) }; } }); };
-
   let backHash = '#/portal';
   let backLabel = '返回首頁';
   if (currentRoute === 'tw_stock_detail') { backHash = '#/tw-stocks'; backLabel = '返回台股清單'; }
-  else if (currentRoute === 'crypto_trade') { backHash = '#/crypto/home'; backLabel = '返回市場'; }
+  else if (currentRoute === 'crypto_trade') { backHash = '#/crypto/home'; backLabel = '返回加密市場'; }
   else if (currentRoute !== 'portal') { backHash = '#/portal'; backLabel = '返回首頁'; }
 
   if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
@@ -1140,8 +1208,9 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
-        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} loading={loadingTw} />}
+        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} loading={loadingTw} error={errorTw} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} />}
+        
         {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} />}
         {currentRoute === 'crypto_positions' && <CryptoPositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
         {currentRoute === 'crypto_assets' && <CryptoAssetsPage paperAccount={paperAccount} />}
