@@ -9,7 +9,7 @@ import {
 // --- 全域輔助函數 ---
 const formatPrice = (price) => {
   const p = parseFloat(price);
-  if (isNaN(p)) return '0.00';
+  if (isNaN(p) || p === 0) return '--';
   if (p >= 1000) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (p >= 1) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   return p.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
@@ -28,6 +28,7 @@ const formatVolume = (vol) => {
 // 核心：台股技術分析引擎 (Indicators Engine)
 // ==========================================
 const calculateIndicators = (klines) => {
+  if (!klines || !Array.isArray(klines) || klines.length === 0) return [];
   const closePrices = klines.map(k => k.close);
   const result = [];
   
@@ -95,7 +96,6 @@ const calculateIndicators = (klines) => {
   }
   return result;
 };
-
 
 // ==========================================
 // 核心：SMC 虛擬貨幣量化分析函數
@@ -208,12 +208,12 @@ const generateAdvancedSignal = (klines, currentPrice, fundingRate) => {
   if (fr > 0.0006) { score -= 1.5; analysisLog.push("Funding Rate：市場極度看多擁擠，具備多殺多風險 (-1.5)"); } 
   else if (fr < -0.0002) { score += 1.5; analysisLog.push("Funding Rate：市場偏空擁擠，具備軋空引擎動力 (+1.5)"); }
 
-  if (score >= 4.5) signal = 'LONG';
-  else if (score <= -4.5) signal = 'SHORT';
+  // 稍微放寬門檻以利產生 SMC 推薦標籤
+  if (score >= 3.5) signal = 'LONG';
+  else if (score <= -3.5) signal = 'SHORT';
   
   return { signal, score, currentPrice, analysisLog, poc: vp.poc, avwap };
 };
-
 
 // ==========================================
 // 台股子系統：個股工作區與 K 線圖 (TwStockWorkspace)
@@ -359,8 +359,14 @@ function TwStockWorkspace({ stock }) {
         }
         
         const processedData = calculateIndicators(klines);
-        const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
-        const newsData = await resNews.json();
+        
+        // 加入容錯的 News 抓取
+        let newsData = [];
+        try {
+           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
+           const nData = await resNews.json();
+           if (Array.isArray(nData)) newsData = nData;
+        } catch(e) {}
 
         if (isMounted) {
           setChartData(processedData);
@@ -375,35 +381,38 @@ function TwStockWorkspace({ stock }) {
 
     const fetchChipData = async () => {
       try {
-        const [t86Res, marginRes] = await Promise.all([
-          fetch('https://openapi.twse.com.tw/v1/fund/T86').catch(()=>null),
-          fetch('https://openapi.twse.com.tw/v1/marginTransaction/MI_MARGN').catch(()=>null)
+        const [tseT86, tseMargin, tpexT86, tpexMargin] = await Promise.all([
+          fetch('https://openapi.twse.com.tw/v1/fund/T86').then(r=>r.json()).catch(()=>[]),
+          fetch('https://openapi.twse.com.tw/v1/marginTransaction/MI_MARGN').then(r=>r.json()).catch(()=>[]),
+          fetch('https://www.tpex.org.tw/openapi/v1/t1824').then(r=>r.json()).catch(()=>[]),
+          fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r=>r.json()).catch(()=>[])
         ]);
 
         let foreign = null, trust = null, dealer = null;
         let marginToday = null, marginYest = null, marginChange = null;
 
-        if (t86Res && t86Res.ok) {
-          const t86Data = await t86Res.json();
-          const stockT86 = t86Data.find(item => item.Code === stock.symbol);
-          if (stockT86) {
+        // 確保皆為陣列以防 crash
+        const arrTseT86 = Array.isArray(tseT86) ? tseT86 : [];
+        const arrTpexT86 = Array.isArray(tpexT86) ? tpexT86 : [];
+        const t86Item = arrTseT86.find(i => i.Code === stock.symbol) || arrTpexT86.find(i => i.SecuritiesCompanyCode === stock.symbol);
+        
+        if (t86Item) {
             const parseNet = (val) => val ? Math.round(parseFloat(val.toString().replace(/,/g, '')) / 1000) : 0;
-            foreign = parseNet(stockT86.ForeignInvestorNet || stockT86.ForeignDifference);
-            trust = parseNet(stockT86.InvestmentTrustNet || stockT86.TrustDifference);
-            dealer = parseNet(stockT86.DealerNet || stockT86.DealerDifference);
-          }
+            foreign = parseNet(t86Item.ForeignInvestorNet || t86Item.ForeignDifference || t86Item.ForeignInvestmentInstitutionsNetBuySell);
+            trust = parseNet(t86Item.InvestmentTrustNet || t86Item.TrustDifference || t86Item.InvestmentTrustNetBuySell);
+            dealer = parseNet(t86Item.DealerNet || t86Item.DealerDifference || t86Item.DealerNetBuySell);
         }
 
-        if (marginRes && marginRes.ok) {
-          const marginData = await marginRes.json();
-          const stockMargin = marginData.find(item => item.Code === stock.symbol);
-          if (stockMargin) {
-             const today = parseFloat((stockMargin.MarginPurchaseTodayBalance || stockMargin.MarginBalanceToday || '0').toString().replace(/,/g, ''));
-             const yesterday = parseFloat((stockMargin.MarginPurchaseYesterdayBalance || stockMargin.MarginBalanceYesterday || '0').toString().replace(/,/g, ''));
+        const arrTseMargin = Array.isArray(tseMargin) ? tseMargin : [];
+        const arrTpexMargin = Array.isArray(tpexMargin) ? tpexMargin : [];
+        const marginItem = arrTseMargin.find(i => i.Code === stock.symbol) || arrTpexMargin.find(i => i.SecuritiesCompanyCode === stock.symbol);
+
+        if (marginItem) {
+             const today = parseFloat((marginItem.MarginPurchaseTodayBalance || marginItem.MarginBalanceToday || marginItem.TodayBalance || '0').toString().replace(/,/g, ''));
+             const yesterday = parseFloat((marginItem.MarginPurchaseYesterdayBalance || marginItem.MarginBalanceYesterday || marginItem.YesterdayBalance || '0').toString().replace(/,/g, ''));
              marginToday = Math.round(today / 1000);
              marginYest = Math.round(yesterday / 1000);
              marginChange = marginToday - marginYest;
-          }
         }
         
         if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginToday, marginYest, marginChange });
@@ -424,7 +433,7 @@ function TwStockWorkspace({ stock }) {
     let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
     let shortScore = 0;
     if (latest.close > latest.ma5) shortScore++;
-    if (latest.kd.k > latest.kd.d) shortScore++;
+    if (latest.kd && latest.kd.k > latest.kd.d) shortScore++;
     if (latest.rsi > 50) shortScore++;
     
     if (shortScore >= 2) shortTerm = { action: '推薦買入', color: 'text-[#f6465d]', desc: '短線動能強勁，站上5日線且指標向上。' };
@@ -433,7 +442,7 @@ function TwStockWorkspace({ stock }) {
     let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
     let midScore = 0;
     if (latest.close > latest.ma20) midScore++;
-    if (latest.macd.hist > 0) midScore++;
+    if (latest.macd && latest.macd.hist > 0) midScore++;
     
     if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
     else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
@@ -449,7 +458,6 @@ function TwStockWorkspace({ stock }) {
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
 
-  // 格式化為 MM/DD 用於顯示標題
   const formatDate = (timestamp) => {
     if (!timestamp) return '';
     const d = new Date(timestamp);
@@ -461,8 +469,9 @@ function TwStockWorkspace({ stock }) {
 
   return (
     <div className="animate-in fade-in duration-300">
+      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
+      
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 左側：報價與籌碼指標 */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
@@ -506,7 +515,7 @@ function TwStockWorkspace({ stock }) {
                   </div>
               </div>
 
-              {/* 籌碼面看板 (改為表格比對形式，標題顯示真實交易日) */}
+              {/* 籌碼面看板 */}
               <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
@@ -570,7 +579,7 @@ function TwStockWorkspace({ stock }) {
                       <div className="text-[10px] text-slate-500 mt-3 text-right">註：受限公開 API，法人僅提供最新單日結算</div>
                     </div>
                   ) : (
-                    <div className="text-center py-6 text-slate-500 text-xs">尚無當日盤後資料<br/><span className="text-[10px]">(可能為上櫃股票或無交易)</span></div>
+                    <div className="text-center py-6 text-slate-500 text-xs">尚無當日盤後資料<br/><span className="text-[10px]">(可能 API 延遲或無交易)</span></div>
                   )}
               </div>
             </>
@@ -781,9 +790,10 @@ function CryptoMarketCard({ ticker, signalData, onSelectCoin }) {
         <div className="text-lg font-mono font-semibold text-white mt-1 mb-2">${formatPrice(ticker.lastPrice)}</div>
       </div>
       
+      {/* 恢復 SMC 的🔥做多與🩸做空標籤顯示 */}
       {signalData && signalData.signal !== 'NEUTRAL' && (
         <div className={`mt-2 text-[10px] p-2 rounded border ${signalData.signal === 'LONG' ? 'bg-[#0ecb81]/10 border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border-[#f6465d]/30 text-[#f6465d]'}`}>
-          <div className="font-bold flex items-center gap-1"><Target className="w-3 h-3"/> SMC {signalData.timeframe}: {signalData.signal}</div>
+          <div className="font-bold flex items-center gap-1"><Target className="w-3 h-3"/> SMC {signalData.timeframe || '15m'}: {signalData.signal === 'LONG' ? '🔥 推薦做多' : '🩸 推薦做空'}</div>
           <div className="truncate opacity-80">{signalData.analysisLog[0]}</div>
         </div>
       )}
@@ -975,10 +985,12 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
               const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
-              const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]) }));
-              const sig = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
-              if (sig && sig.signal !== 'NEUTRAL') {
-                 chunkSignals[coin.symbol] = { ...sig, timeframe: tf };
+              if (Array.isArray(data)) {
+                  const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]) }));
+                  const sig = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRates[coin.symbol]);
+                  if (sig && sig.signal !== 'NEUTRAL') {
+                     chunkSignals[coin.symbol] = { ...sig, timeframe: tf };
+                  }
               }
             } catch(e) { }
           }));
@@ -1105,9 +1117,11 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
         try {
           const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&limit=120`);
           const data = await res.json();
-          const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), time: d[0] }));
-          if (tf === '15m' && isMounted) setKlines(parsed);
-          signals[tf] = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRate);
+          if (Array.isArray(data)) {
+              const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), time: d[0] }));
+              if (tf === '15m' && isMounted) setKlines(parsed);
+              signals[tf] = generateAdvancedSignal(parsed, parseFloat(coin.lastPrice), fundingRate);
+          }
         } catch(e) {}
       }));
       if (isMounted) setMultiSignals(signals);
@@ -1125,7 +1139,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.history.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回市場</button>
+      <button onClick={() => window.location.hash = '#/crypto/home'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回市場</button>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg">
@@ -1202,6 +1216,9 @@ function TwStocksDashboard({ twStocks, loading, error }) {
     filtered = twStocks.slice(0, 200);
   }
 
+  const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm);
+  const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
+
   if (loading && !twStocks.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取 TWSE 證交所數據中...</div>;
   if (error) return <div className="text-center py-32 text-red-500"><AlertCircle className="w-8 h-8 mx-auto mb-4" /> 取得台股數據失敗：{error}</div>;
 
@@ -1217,6 +1234,15 @@ function TwStocksDashboard({ twStocks, loading, error }) {
         </div>
         <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="輸入股號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
       </div>
+      
+      {showManualEntry && (
+        <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
+            <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
+            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{searchTerm}」 的深度分析系統。</p>
+            <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {filtered.map(stock => {
           const change = parseFloat(stock.priceChangePercent); const isPositive = change >= 0;
@@ -1233,7 +1259,7 @@ function TwStocksDashboard({ twStocks, loading, error }) {
             </div>
           );
         })}
-        {filtered.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">找不到符合的股票代號或名稱。</div>}
+        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">找不到符合的股票代號或名稱。</div>}
       </div>
     </div>
   );
@@ -1250,8 +1276,9 @@ function NewsDashboard() {
       try {
         setLoading(true);
         const res = await fetch('/api/binance?action=news');
-        if (!res.ok) throw new Error('無法取得新聞');
-        if (isMounted) { setNews(await res.json()); setLoading(false); }
+        const data = await res.json();
+        // 加上嚴格的陣列保護
+        if (isMounted) { setNews(Array.isArray(data) ? data : []); setLoading(false); }
       } catch (error) { if (isMounted) setLoading(false); }
     };
     fetchRealNews();
@@ -1283,6 +1310,7 @@ function NewsDashboard() {
             <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{item.source}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
           </a>
         ))}
+        {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
       </div>
     </div>
   );
@@ -1333,18 +1361,21 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
-  // 抓取台股清單
+  // 抓取台股清單 (加入嚴格的陣列保護)
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
-        const res = await fetch('/api/binance?action=tw-stocks');
-        if (!res.ok) throw new Error('無法取得證交所數據');
-        const data = await res.json();
+        const [resTse, resOtc] = await Promise.all([
+          fetch('/api/binance?action=tw-stocks').then(r => r.json()).catch(() => []),
+          fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r => r.json()).catch(() => [])
+        ]);
+
         if (isMounted) {
-          const formatted = data
-            .filter(item => item && item.Code && item.Code.length === 4 && !isNaN(parseInt(item.Code)))
-            .map(item => {
+          const arrTse = Array.isArray(resTse) ? resTse : [];
+          const arrOtc = Array.isArray(resOtc) ? resOtc : [];
+
+          const formattedTse = arrTse.filter(i => i && i.Code).map(item => {
               const current = parseFloat(item.ClosingPrice);
               const changeStr = item.Change ? item.Change.toString().replace('+', '').trim() : '0';
               const changeAmt = parseFloat(changeStr) || 0;
@@ -1356,10 +1387,21 @@ export default function App() {
                   else if (changeStr !== '0.00' && changeStr !== '0') percent = Math.abs(percent);
               }
               return { symbol: item.Code, name: item.Name, lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
-            })
-            .filter(item => item.lastPrice !== '0.00')
+          });
+
+          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => ({ 
+              symbol: i.SecuritiesCompanyCode, 
+              name: i.CompanyName || i.SecuritiesCompanyName, 
+              lastPrice: i.Close || '0.00', 
+              priceChangePercent: '0.00', 
+              quoteVolume: parseInt(i.Volume) || 0 
+          }));
+
+          const combined = [...formattedTse, ...formattedOtc]
+            .filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol))
             .sort((a, b) => b.quoteVolume - a.quoteVolume);
-          setTwStocks(formatted); setLoadingTw(false);
+
+          setTwStocks(combined); setLoadingTw(false);
         }
       } catch (err) { if (isMounted) { setErrorTw(err.message); setLoadingTw(false); } }
     };
@@ -1367,13 +1409,17 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
-  // 抓取加密市場清單
+  // 抓取加密市場清單 (加入嚴格的陣列保護)
   const fetchCryptoMarkets = async () => {
     try {
       const res = await fetch('/api/binance?action=overview');
       const data = await res.json();
-      setAllTickers(data.tickers.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
-      const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      if (data && Array.isArray(data.tickers)) {
+        setAllTickers(data.tickers.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
+      }
+      if (data && Array.isArray(data.fundingRates)) {
+        const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      }
     } catch(e) {} finally { setLoadingCrypto(false); }
   };
 
@@ -1383,22 +1429,22 @@ export default function App() {
       return () => clearInterval(i); 
   }, []);
 
-  // 路由解析
+  // 統一的路由解析
   useEffect(() => {
     const handleHash = () => {
       const h = window.location.hash.replace('#/', '');
       if (!h || h === 'portal') { setCurrentRoute('portal'); setSelectedTwStock(null); setSelectedCoin(null); }
       else if (h === 'tw-stocks') { setCurrentRoute('tw_stocks'); setSelectedTwStock(null); }
-      else if (h.startsWith('tw-stocks/detail/')) {
-          const s = h.replace('tw-stocks/detail/', '');
-          const c = twStocks.find(t => t.symbol === s);
-          setSelectedTwStock(c || { symbol: s, name: '載入中...', lastPrice: '0.00', priceChangePercent: '0.00' }); 
-          setCurrentRoute('tw_stock_detail');
-      }
       else if (h === 'news') { setCurrentRoute('news'); }
       else if (h === 'crypto/home') { setCurrentRoute('crypto_home'); setSelectedCoin(null); }
       else if (h === 'crypto/positions') { setCurrentRoute('crypto_positions'); setSelectedCoin(null); }
       else if (h === 'crypto/assets') { setCurrentRoute('crypto_assets'); setSelectedCoin(null); }
+      else if (h.startsWith('tw-stocks/detail/')) {
+          const s = h.replace('tw-stocks/detail/', '');
+          const c = twStocks.find(t => t.symbol === s);
+          setSelectedTwStock(c || { symbol: s, name: '自訂搜尋標的', lastPrice: '--', priceChangePercent: '0.00' }); 
+          setCurrentRoute('tw_stock_detail');
+      }
       else if (h.startsWith('crypto/trade/')) {
           const s = h.replace('crypto/trade/', '');
           const c = allTickers.find(t => t.symbol === s);
@@ -1412,9 +1458,14 @@ export default function App() {
   const closePosition = (id, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; const pnl = p.type === 'LONG' ? (price - p.entryPrice) * p.size : (p.entryPrice - price) * p.size; return { ...prev, balance: prev.balance + p.margin + pnl, positions: prev.positions.filter(x => x.id !== id), history: [{ ...p, closePrice: price, pnl, closeTime: new Date().toLocaleString() }, ...prev.history].slice(0, 50) }; }); };
   const adjustPosition = (id, type, amount, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; if (type === 'add') { const sz = (amount * p.leverage) / price; return { ...prev, balance: prev.balance - amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size + sz, margin: x.margin + amount, entryPrice: ((x.size * x.entryPrice) + (sz * price)) / (x.size + sz) } : x) }; } else { const r = amount / p.margin; return { ...prev, balance: prev.balance + amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size * (1 - r), margin: x.margin - amount } : x) }; } }); };
 
-  if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
+  // 動態判定返回按鈕的標籤與目標路徑
+  let backHash = '#/portal';
+  let backLabel = '返回首頁';
+  if (currentRoute === 'tw_stock_detail') { backHash = '#/tw-stocks'; backLabel = '返回台股清單'; }
+  else if (currentRoute === 'crypto_trade') { backHash = '#/crypto/home'; backLabel = '返回加密市場'; }
+  else if (currentRoute !== 'portal') { backHash = '#/portal'; backLabel = '返回入口'; }
 
-  const isCryptoRoute = currentRoute.startsWith('crypto');
+  if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-blue-500/30 pb-10">
@@ -1424,7 +1475,7 @@ export default function App() {
             <button className="sm:hidden text-slate-300 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu className="w-6 h-6" /></button>
             <div className="flex items-center gap-2 text-blue-500 cursor-pointer" onClick={() => window.location.hash = '#/portal'}><Globe className="w-6 h-6 text-blue-400" /><h1 className="text-xl font-bold text-white tracking-tighter hidden sm:block">SMC <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">PRO MAX</span></h1></div>
             
-            {isCryptoRoute && (
+            {currentRoute.startsWith('crypto') && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
                   <button onClick={() => window.location.hash = '#/crypto/home'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>加密市場</button>
                   <button onClick={() => window.location.hash = '#/crypto/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>持倉 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{paperAccount.positions.length}</span>}</button>
@@ -1432,21 +1483,17 @@ export default function App() {
                 </nav>
             )}
 
-            {!isCryptoRoute && currentRoute !== 'portal' && (
+            {!currentRoute.startsWith('crypto') && currentRoute !== 'portal' && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
-                  {currentRoute === 'tw_stock_detail' ? (
-                    <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> 返回台股清單</button>
-                  ) : (
-                    <button onClick={() => window.location.hash = '#/portal'} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> 返回入口</button>
-                  )}
+                    <button onClick={() => window.location.hash = backHash} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> {backLabel}</button>
                 </nav>
             )}
           </div>
           
-          {isCryptoRoute ? (
+          {currentRoute.startsWith('crypto') ? (
              <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${paperAccount.balance.toFixed(2)}</span></div>
           ) : currentRoute !== 'portal' ? (
-             <div className="text-xs font-bold px-3 py-1.5 bg-[#2a2f3a] rounded text-slate-300">{currentRoute.startsWith('tw_stock') ? '台股分析系統' : '熱點新聞中心'}</div>
+             <div className="text-xs font-bold px-3 py-1.5 bg-[#2a2f3a] rounded text-slate-300">{currentRoute === 'news' ? '熱點新聞中心' : '台股分析系統'}</div>
           ) : null}
         </div>
 
@@ -1474,7 +1521,7 @@ export default function App() {
                <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('tw_stock') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台灣股市行情</button>
                <button onClick={() => { window.location.hash = '#/news'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'news' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>熱點新聞</button>
                
-               {isCryptoRoute && (
+               {currentRoute.startsWith('crypto') && (
                   <>
                    <div className="text-xs text-slate-500 mt-4 mb-1 font-bold border-t border-[#2a2f3a] pt-4">加密貨幣子系統</div>
                    <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
