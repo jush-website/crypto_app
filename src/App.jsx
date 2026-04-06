@@ -370,7 +370,7 @@ function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center text-sm text-slate-400 mb-2">
         <span>台股模擬下單 (1張=1000股)</span>
-        <span className="text-xs">可用餘額: <span className="text-white font-bold">NT$ {Math.floor(balance).toLocaleString()}</span></span>
+        <span className="text-xs">可用餘額: <span className="text-white font-bold">NT$ {balance.toLocaleString()}</span></span>
       </div>
       <div className="relative">
         <input type="number" value={size} onChange={(e) => setSize(e.target.value)} placeholder="輸入交易張數" className="w-full bg-[#1a1e27] border border-[#2a2f3a] rounded p-3 text-white font-mono text-sm outline-none" />
@@ -785,7 +785,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           )}
 
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
-             <h3 className="text-lg font-bold text-white mb-4">個股新聞</h3>
+             <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
              {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
                 <div className="space-y-3">
                   {news.slice(0, 5).map((item, idx) => (
@@ -1044,6 +1044,126 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
   );
 }
 
+const CryptoAdvancedKLineChart = ({ klines, signalData }) => {
+  const containerRef = useRef(null);
+  const [visibleCount, setVisibleCount] = useState(60); 
+  const [endIndexOffset, setEndIndexOffset] = useState(0); 
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  const dataLen = klines ? klines.length : 0;
+
+  useEffect(() => {
+    const container = containerRef.current; if (!container || dataLen === 0) return;
+    const handleWheel = (e) => {
+      e.preventDefault(); 
+      let newCount = Math.round(visibleCount * (e.deltaY > 0 ? 1.1 : 0.9));
+      newCount = Math.max(15, Math.min(newCount, dataLen));
+      setVisibleCount(newCount);
+      const newMaxOffset = Math.max(0, dataLen - newCount);
+      if (endIndexOffset > newMaxOffset) setEndIndexOffset(newMaxOffset);
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [visibleCount, dataLen, endIndexOffset]);
+
+  if (!klines || !Array.isArray(klines) || dataLen === 0) return <div className="w-full h-[500px] flex items-center justify-center text-slate-500">圖表數據載入中...</div>;
+  
+  const maxOffset = Math.max(0, dataLen - visibleCount);
+  const safeOffset = Math.min(Math.max(0, endIndexOffset), maxOffset);
+  const safeVisibleCount = Math.min(visibleCount, dataLen);
+  const startIndex = Math.max(0, dataLen - safeVisibleCount - safeOffset);
+  const endIndex = dataLen - safeOffset;
+  const visibleKlines = klines.slice(startIndex, endIndex);
+
+  const width = 800; const totalHeight = 500; const kLineHeight = 380;
+  const paddingX = 10; const xStep = (width - paddingX * 2) / safeVisibleCount; const candleWidth = Math.max(xStep * 0.7, 1);
+  
+  const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
+  const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
+  const minPrice = lows.length ? Math.min(...lows) : 0; 
+  const maxPrice = highs.length ? Math.max(...highs) : 1;
+  const priceRange = (maxPrice - minPrice) || 1;
+  const getPriceY = (p) => kLineHeight - 20 - ((p - minPrice) / priceRange) * (kLineHeight - 40);
+
+  const getSvgCoords = (clientX) => {
+    if (!containerRef.current) return 0;
+    const rect = containerRef.current.getBoundingClientRect();
+    return (clientX - rect.left) * (width / rect.width);
+  };
+
+  const updateHover = (clientX) => {
+    const dataIndex = Math.floor((getSvgCoords(clientX) - paddingX) / xStep);
+    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
+  };
+
+  const handleMouseDown = (e) => { setIsDragging(true); setDragStartX(e.clientX); };
+  const handleMouseUp = () => { setIsDragging(false); };
+  const handleMouseMove = (e) => {
+    if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      if (Math.abs(dx) > 5) {
+        setEndIndexOffset(prev => Math.max(0, Math.min(prev + Math.round(dx / 5), maxOffset)));
+        setDragStartX(e.clientX);
+      }
+    } else updateHover(e.clientX);
+  };
+
+  const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
+
+  return (
+    <div className="w-full relative group touch-none" style={{ height: '500px' }}>
+      <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <button onClick={() => setVisibleCount(p => Math.max(15, Math.round(p * 0.8)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomIn className="w-4 h-4" /></button>
+        <button onClick={() => setVisibleCount(p => Math.min(dataLen, Math.round(p * 1.2)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomOut className="w-4 h-4" /></button>
+      </div>
+
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
+        {hoveredK ? (
+          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
+            <div>TIME: {new Date(hoveredK?.time).toLocaleString()}</div>
+            <div className="flex gap-2">
+              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK?.open)}</span></span>
+              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK?.high)}</span></span>
+              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK?.low)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK?.close >= hoveredK?.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK?.close)}</span></span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-slate-500 bg-[#0b0e14]/50 backdrop-blur px-2 py-1 rounded">
+             <MoveHorizontal className="w-3.5 h-3.5" /> 滾輪縮放 / 拖曳平移
+          </div>
+        )}
+      </div>
+
+      <div ref={containerRef} className={`w-full h-full overflow-hidden touch-none cursor-crosshair`} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={() => {setIsDragging(false); setHoveredIndex(null);}} onMouseMove={handleMouseMove}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
+          
+          {signalData?.poc && !isNaN(signalData.poc) && <><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></>}
+          {signalData?.avwap && !isNaN(signalData.avwap) && <><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></>}
+
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
+            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            
+            return (
+              <g key={k.time || i}>
+                {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={color} />
+              </g>
+            );
+          })}
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
+          <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+        </svg>
+      </div>
+    </div>
+  );
+};
+
 function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition }) {
   const [klines, setKlines] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(coin.lastPrice));
@@ -1300,12 +1420,11 @@ export default function App() {
       if (s) {
          const parsed = JSON.parse(s);
          if (!parsed.aiSignals || !parsed.aiSignals['15m']) parsed.aiSignals = { '15m': {}, '1h': {}, '4h': {} };
-         // 將虛擬貨幣預設掃描標的從 150 改為 100 以加快速度與精準度
-         if (!parsed.scanLimit || parsed.scanLimit === 150) parsed.scanLimit = 100;
+         if (!parsed.scanLimit) parsed.scanLimit = 150;
          return { ...parsed, isScanning: false, scanProgress: 0 };
       }
     } catch(e) {}
-    return { activeTab: 'ALL', timeframe: '15m', scanLimit: 100, searchTerm: '', aiSignals: { '15m': {}, '1h': {}, '4h': {} }, isScanning: false, scanProgress: 0, initialScanned: false };
+    return { activeTab: 'ALL', timeframe: '15m', scanLimit: 150, searchTerm: '', aiSignals: { '15m': {}, '1h': {}, '4h': {} }, isScanning: false, scanProgress: 0, initialScanned: false };
   });
 
   const [twDashState, setTwDashState] = useState(() => {
@@ -1336,7 +1455,7 @@ export default function App() {
     const fetchTwStocksList = async () => {
       try {
         const [resTse, resOtc] = await Promise.all([
-          fetch('/api/binance?action=tw-stocks').then(r => r.json()).catch(() => []),
+          fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(r => r.json()).catch(() => []),
           fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r => r.json()).catch(() => [])
         ]);
 
@@ -1382,13 +1501,16 @@ export default function App() {
 
   const fetchCryptoMarkets = async () => {
     try {
-      const res = await fetch('/api/binance?action=overview');
+      const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
       const data = await res.json();
-      if (data && Array.isArray(data.tickers)) {
-        setAllTickers(data.tickers.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
+      if (data && Array.isArray(data)) {
+        setAllTickers(data.filter(t => t.symbol.endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
       }
-      if (data && Array.isArray(data.fundingRates)) {
-        const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      
+      const fundRes = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+      const fundData = await fundRes.json();
+      if (fundData && Array.isArray(fundData)) {
+        const frMap = {}; fundData.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
       }
     } catch(e) {} finally { setLoadingCrypto(false); }
   };
