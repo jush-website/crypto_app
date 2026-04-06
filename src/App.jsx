@@ -192,22 +192,22 @@ const generateAdvancedSignal = (klines, currentPrice, fundingRate) => {
   let score = 0;
   let analysisLog = [];
 
-  if (currentPrice > avwap) { score += 1; analysisLog.push("Anchored VWAP：價格大於機構加權平均成本 (+1)"); } 
-  else { score -= 1; analysisLog.push("Anchored VWAP：價格受壓於機構加權平均成本 (-1)"); }
+  if (currentPrice > avwap) { score += 1; analysisLog.push("AVWAP：大於機構成本 (+1)"); } 
+  else { score -= 1; analysisLog.push("AVWAP：受壓機構成本 (-1)"); }
 
-  if (currentPrice > vp.vah) { score += 1.5; analysisLog.push("Volume Profile：強勢突破高價值區 (VAH) (+1.5)"); } 
-  else if (currentPrice < vp.val) { score -= 1.5; analysisLog.push("Volume Profile：弱勢跌破低價值區 (VAL) (-1.5)"); } 
-  else if (currentPrice > vp.poc) { score += 0.5; analysisLog.push("Volume Profile：位於區間內，守穩最高成交量控制點 (+0.5)"); } 
-  else { score -= 0.5; analysisLog.push("Volume Profile：位於區間內，受壓於最高成交量控制點 (-0.5)"); }
+  if (currentPrice > vp.vah) { score += 1.5; analysisLog.push("VP：突破高價值區 (+1.5)"); } 
+  else if (currentPrice < vp.val) { score -= 1.5; analysisLog.push("VP：跌破低價值區 (-1.5)"); } 
+  else if (currentPrice > vp.poc) { score += 0.5; analysisLog.push("VP：守穩控制點 (+0.5)"); } 
+  else { score -= 0.5; analysisLog.push("VP：受壓控制點 (-0.5)"); }
 
-  if (sweep.sweepLong) { score += 3; analysisLog.push("Liquidity Sweep：向低點獵取流動性後拉回，機構看漲 (+3)"); }
-  if (sweep.sweepShort) { score -= 3; analysisLog.push("Liquidity Sweep：向高點獵取流動性誘多後壓回，機構看跌 (-3)"); }
+  if (sweep.sweepLong) { score += 3; analysisLog.push("Sweep：向低點洗盤機構看漲 (+3)"); }
+  if (sweep.sweepShort) { score -= 3; analysisLog.push("Sweep：向高點洗盤機構看跌 (-3)"); }
 
-  if (flow.fvgUp) { score += 2; analysisLog.push("Order Flow：出現多頭合理價值缺口 FVG (+2)"); }
-  if (flow.fvgDown) { score -= 2; analysisLog.push("Order Flow：出現空頭合理價值缺口 FVG (-2)"); }
+  if (flow.fvgUp) { score += 2; analysisLog.push("Order Flow：多頭 FVG (+2)"); }
+  if (flow.fvgDown) { score -= 2; analysisLog.push("Order Flow：空頭 FVG (-2)"); }
 
-  if (fr > 0.0006) { score -= 1.5; analysisLog.push("Funding Rate：資金費率過高，具備多殺多風險 (-1.5)"); } 
-  else if (fr < -0.0002) { score += 1.5; analysisLog.push("Funding Rate：資金費率偏負，具備軋空引擎動力 (+1.5)"); }
+  if (fr > 0.0006) { score -= 1.5; analysisLog.push("費率：過高防多殺多 (-1.5)"); } 
+  else if (fr < -0.0002) { score += 1.5; analysisLog.push("費率：偏負具軋空動力 (+1.5)"); }
 
   if (score >= 3.5) signal = 'LONG';
   else if (score <= -3.5) signal = 'SHORT';
@@ -222,7 +222,7 @@ const TwKLineChart = ({ klines }) => {
   const containerRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
   
-  if (!klines || klines.length === 0) return <div className="h-[500px]" />;
+  if (!klines || klines.length === 0) return <div className="h-[500px] flex items-center justify-center text-slate-500">圖表載入中...</div>;
   
   const visibleCount = 80;
   const visibleKlines = klines.slice(-visibleCount);
@@ -373,7 +373,6 @@ function TwStockWorkspace({ stock }) {
           setLoading(false);
         }
       } catch (err) {
-        console.error(err);
         if (isMounted) setLoading(false);
       }
     };
@@ -467,8 +466,6 @@ function TwStockWorkspace({ stock }) {
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a]"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
-      
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
@@ -584,7 +581,6 @@ function TwStockWorkspace({ stock }) {
           )}
         </div>
 
-        {/* 右側：圖表與新聞 */}
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
             <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
@@ -769,12 +765,10 @@ function CryptoPositionCard({ pos, currentPrice, balance, onSelectCoin, onClose,
   );
 }
 
-// 變更：接收多週期的訊號，並將 15m, 1h, 4h 同時呈現出來
 function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
   const change = parseFloat(ticker.priceChangePercent);
   const isPositive = change >= 0;
   
-  // 找出有產生訊號的週期
   const activeSignals = ['15m', '1h', '4h'].filter(tf => multiSignals?.[tf] && multiSignals[tf].signal !== 'NEUTRAL');
 
   return (
@@ -800,15 +794,15 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
           const isLong = sig.signal === 'LONG';
           return (
              <div key={tf} className={`text-[10px] px-2 py-1.5 rounded flex items-center justify-between ${isLong ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>
-               <div className="font-bold flex items-center gap-1">
-                  <Target className="w-3 h-3"/> {tf} {isLong ? '做多' : '做空'}
+               <div className="font-bold flex items-center gap-1 whitespace-nowrap">
+                  <Target className="w-3 h-3"/> {tf} {isLong ? '🔥 做多' : '🩸 做空'}
                </div>
-               <div className="truncate ml-2 opacity-80 max-w-[100px]">{sig.analysisLog[0]}</div>
+               <div className="truncate ml-2 opacity-80 max-w-[100px] text-right">{sig.analysisLog[0]}</div>
              </div>
           );
         }) : (
           <div className="text-[10px] px-2 py-1.5 rounded flex items-center justify-center bg-white/5 text-slate-500 border border-white/5">
-            短中長期皆處於盤整或無明顯訊號
+            無明顯短中長趨勢訊號
           </div>
         )}
       </div>
@@ -969,7 +963,6 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
   const [isRangeOpen, setIsRangeOpen] = useState(false);
 
   const setActiveTab = (tab) => setDashState(p => ({ ...p, activeTab: tab }));
-  const setTimeframe = (tf) => setDashState(p => ({ ...p, timeframe: tf }));
   const setScanLimit = (limit) => setDashState(p => ({ ...p, scanLimit: limit }));
   const setSearchTerm = (term) => setDashState(p => ({ ...p, searchTerm: term }));
 
@@ -1032,9 +1025,9 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
   if (searchTerm) {
       filtered = filtered.filter(t => t.symbol.includes(searchTerm.toUpperCase()));
   } else if (activeTab === 'LONG') {
-      filtered = filtered.filter(t => aiSignals[timeframe]?.[t.symbol]?.signal === 'LONG');
+      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'LONG' || aiSignals['1h']?.[t.symbol]?.signal === 'LONG' || aiSignals['4h']?.[t.symbol]?.signal === 'LONG');
   } else if (activeTab === 'SHORT') {
-      filtered = filtered.filter(t => aiSignals[timeframe]?.[t.symbol]?.signal === 'SHORT');
+      filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'SHORT' || aiSignals['1h']?.[t.symbol]?.signal === 'SHORT' || aiSignals['4h']?.[t.symbol]?.signal === 'SHORT');
   }
 
   return (
@@ -1048,15 +1041,6 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
                     </button>
                   ))}
               </div>
-              {(activeTab === 'LONG' || activeTab === 'SHORT') && (
-                  <div className="flex items-center gap-2 w-full sm:w-auto animate-in fade-in zoom-in-95 duration-200">
-                      <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] flex-1 sm:flex-none">
-                          {['15m', '1h', '4h'].map(tf => (
-                            <button key={tf} onClick={() => setTimeframe(tf)} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${timeframe === tf ? 'bg-amber-600/20 text-amber-500 font-bold' : 'text-slate-500 hover:text-white'}`}>{tf}</button>
-                          ))}
-                      </div>
-                  </div>
-              )}
               <div className="flex items-center gap-2">
                   <div className="relative shrink-0">
                       <button onClick={() => setIsRangeOpen(!isRangeOpen)} className="flex items-center justify-center gap-1.5 bg-[#121620] px-3 py-2 sm:py-1.5 rounded-lg border border-[#2a2f3a] text-xs sm:text-sm text-slate-300 hover:text-white transition-colors h-full">
@@ -1207,9 +1191,9 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
 // ==========================================
 function PortalPage() {
   const cards = [
-    { id: 'crypto', title: '虛擬貨幣量化 SMC', desc: '串接幣安合約真實數據，提供多週期 (15m, 1h, 4h) 的機構級 SMC 訊號掃描與模擬下單。', icon: <Bitcoin className="w-12 h-12 text-[#f7931a]" />, color: 'from-[#f7931a]/20 to-[#f7931a]/5', route: '#/crypto/home' },
-    { id: 'tw-stocks', title: '台股與 ETF 分析', desc: '整合全台標的、歷史 K 線及盤後真實籌碼 (三大法人、融資券) 及 AI 趨勢建議。', icon: <LineChart className="w-12 h-12 text-[#3b82f6]" />, color: 'from-[#3b82f6]/20 to-[#3b82f6]/5', route: '#/tw-stocks' },
-    { id: 'news', title: '24H 財經新聞', desc: '即時串接 Yahoo 與全球財經熱點，掌握台股與加密市場第一手風向。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
+    { id: 'crypto', title: '虛擬貨幣 SMC', desc: '串接合約數據，提供機構級 SMC 訊號 (15m, 1h, 4h) 與模擬下單。', icon: <Bitcoin className="w-12 h-12 text-[#f7931a]" />, color: 'from-[#f7931a]/20 to-[#f7931a]/5', route: '#/crypto/home' },
+    { id: 'tw-stocks', title: '台股與 ETF', desc: '整合全台標的、歷史 K 線及盤後真實籌碼 (三大法人、融資券)。', icon: <LineChart className="w-12 h-12 text-[#3b82f6]" />, color: 'from-[#3b82f6]/20 to-[#3b82f6]/5', route: '#/tw-stocks' },
+    { id: 'news', title: '24H 財經新聞', desc: '即時串接 Yahoo 與全球財經熱點，掌握市場第一手風向。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
   ];
 
   return (
@@ -1223,6 +1207,117 @@ function PortalPage() {
             <div className="text-sm font-bold text-white group-hover:text-blue-400 flex items-center">進入系統 <ChevronRight className="w-4 h-4 ml-1" /></div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 台股列表 Dashboard
+// ==========================================
+function TwStocksDashboard({ twStocks, loading, error }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const filtered = useMemo(() => {
+    const s = searchTerm.toUpperCase();
+    if (!s) return twStocks.slice(0, 100);
+    return twStocks.filter(t => t.symbol.includes(s) || t.name.includes(s)).slice(0, 200);
+  }, [twStocks, searchTerm]);
+
+  const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm);
+  const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
+
+  if (loading && !twStocks.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取全台股資料中...</div>;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-500/20 rounded-lg"><LineChart className="w-6 h-6 text-blue-400" /></div>
+          <div><h2 className="text-xl font-bold text-white">台灣股市與 ETF</h2><p className="text-xs text-slate-400">上市、上櫃與全台 ETF 深度解析</p></div>
+        </div>
+        <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
+      </div>
+
+      {showManualEntry && (
+        <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
+            <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
+            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{searchTerm}」 的深度分析系統。</p>
+            <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
+        </div>
+      )}
+
+      {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {filtered.map(stock => {
+          const change = parseFloat(stock.priceChangePercent); const isPositive = change >= 0;
+          return (
+            <div key={stock.symbol} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
+              <div className="flex justify-between items-start mb-2">
+                <div><h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors">{stock.name}</h3><div className="text-xs text-slate-500 mt-0.5 font-mono">{stock.symbol}</div></div>
+                <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
+              </div>
+              <div className="mt-4">
+                <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{stock.lastPrice}</div>
+                <div className="text-[10px] text-slate-500 mt-1">量: {formatVolume(stock.quoteVolume)}</div>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">找不到符合的股票代號或名稱。</div>}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 財經新聞 Dashboard
+// ==========================================
+function NewsDashboard() {
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState('全部');
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRealNews = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch('/api/binance?action=news');
+        const data = await res.json();
+        if (isMounted) { setNews(Array.isArray(data) ? data : []); setLoading(false); }
+      } catch (error) { if (isMounted) setLoading(false); }
+    };
+    fetchRealNews();
+    return () => { isMounted = false; };
+  }, []);
+
+  const filteredNews = activeCategory === '全部' ? news : news.filter(n => n.category === activeCategory);
+
+  if (loading) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取熱點新聞中...</div>;
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-500/20 rounded-lg"><Newspaper className="w-6 h-6 text-emerald-400" /></div>
+          <div><h2 className="text-xl font-bold text-white">24H 財經熱點新聞</h2></div>
+        </div>
+        <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
+          {['全部', '台股 / 宏觀', '加密貨幣'].map(cat => (
+            <button key={cat} onClick={() => setActiveCategory(cat)} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>{cat}</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {filteredNews.map((item, idx) => (
+          <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="bg-[#121620] border border-[#2a2f3a] hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group">
+            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{item.category}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {item.time}</span></div>
+            <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{item.title}</h3>
+            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{item.source}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
+          </a>
+        ))}
+        {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
       </div>
     </div>
   );
@@ -1271,6 +1366,7 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
+  // 抓取台股清單 (加入嚴格的陣列與錯誤字串保護)
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
@@ -1312,12 +1408,15 @@ export default function App() {
 
           setTwStocks(combined); setLoadingTw(false);
         }
-      } catch (err) { if (isMounted) { setErrorTw(err.message); setLoadingTw(false); } }
+      } catch (err) { 
+        if (isMounted) { setErrorTw(err instanceof Error ? err.message : String(err)); setLoadingTw(false); } 
+      }
     };
     fetchTwStocksList();
     return () => { isMounted = false; };
   }, []);
 
+  // 抓取加密市場清單
   const fetchCryptoMarkets = async () => {
     try {
       const res = await fetch('/api/binance?action=overview');
@@ -1337,6 +1436,7 @@ export default function App() {
       return () => clearInterval(i); 
   }, []);
 
+  // 統一的路由解析
   useEffect(() => {
     const handleHash = () => {
       const h = window.location.hash.replace('#/', '');
@@ -1349,7 +1449,7 @@ export default function App() {
       else if (h.startsWith('tw-stocks/detail/')) {
           const s = h.replace('tw-stocks/detail/', '');
           const c = twStocks.find(t => t.symbol === s);
-          setSelectedTwStock(c || { symbol: s, name: '自訂標的', lastPrice: '--', priceChangePercent: '0.00' }); 
+          setSelectedTwStock(c || { symbol: s, name: '自訂搜尋標的', lastPrice: '--', priceChangePercent: '0.00' }); 
           setCurrentRoute('tw_stock_detail');
       }
       else if (h.startsWith('crypto/trade/')) {
@@ -1368,18 +1468,17 @@ export default function App() {
   let backHash = '#/portal';
   let backLabel = '返回首頁';
   if (currentRoute === 'tw_stock_detail') { backHash = '#/tw-stocks'; backLabel = '返回台股清單'; }
-  else if (currentRoute === 'crypto_trade') { backHash = '#/crypto/home'; backLabel = '返回加密市場'; }
-  else if (currentRoute !== 'portal') { backHash = '#/portal'; backLabel = '返回入口'; }
+  else if (currentRoute === 'crypto_trade') { backHash = '#/crypto/home'; backLabel = '返回市場'; }
+  else if (currentRoute !== 'portal') { backHash = '#/portal'; backLabel = '返回首頁'; }
 
   if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-blue-500/30 pb-10">
-      <header className="bg-[#121620]/95 backdrop-blur border-b border-[#2a2f3a] sticky top-0 z-20 h-16 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 h-full flex justify-between items-center relative">
-          <div className="flex items-center gap-4 sm:gap-6">
+      <header className="bg-[#121620]/95 backdrop-blur border-b border-[#2a2f3a] sticky top-0 z-20 h-16 shadow-xl flex items-center px-4 justify-between">
+        <div className="flex items-center gap-4 sm:gap-6">
             <button className="sm:hidden text-slate-300 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu className="w-6 h-6" /></button>
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.hash = '#/portal'}><Globe className="w-6 h-6 text-blue-400" /><h1 className="text-xl font-bold text-white tracking-tighter hidden sm:block">SMC <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">MAX</span></h1></div>
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.hash = '#/portal'}><Globe className="w-6 h-6 text-blue-400" /><h1 className="text-xl font-bold text-white tracking-tighter hidden sm:block">SMC MAX</h1></div>
             
             {currentRoute.startsWith('crypto') && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
@@ -1394,56 +1493,56 @@ export default function App() {
                     <button onClick={() => window.location.hash = backHash} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-slate-400 hover:bg-[#2a2f3a] hover:text-white transition-all"><ArrowLeft className="w-4 h-4"/> {backLabel}</button>
                 </nav>
             )}
-          </div>
-          
-          {currentRoute.startsWith('crypto') ? (
-             <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${paperAccount.balance.toFixed(2)}</span></div>
-          ) : currentRoute !== 'portal' ? (
-             <div className="text-xs font-bold px-3 py-1.5 bg-[#2a2f3a] rounded text-slate-300">{currentRoute === 'news' ? '熱點新聞中心' : '台股分析系統'}</div>
-          ) : null}
         </div>
-
-        {isMobileMenuOpen && (
-          <div className="sm:hidden z-50 relative">
-            <div 
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm cursor-pointer z-40" 
-              onClick={() => setIsMobileMenuOpen(false)} 
-              onTouchStart={(e) => { e.preventDefault(); setIsMobileMenuOpen(false); }}
-            />
-            <div className="fixed top-0 left-0 h-full w-64 bg-[#121620] border-r border-[#2a2f3a] shadow-2xl flex flex-col p-4 gap-2 z-50 animate-in slide-in-from-left duration-200 overflow-y-auto">
-               <div className="flex items-center justify-between mb-4 pb-4 border-b border-[#2a2f3a]">
-                 <div className="flex items-center gap-2 text-blue-500">
-                    <Globe className="w-6 h-6 text-blue-400" />
-                    <span className="font-bold text-white tracking-tighter">SMC MAX</span>
-                 </div>
-                 <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white p-1">
-                    <X className="w-5 h-5"/>
-                 </button>
-               </div>
-
-               <div className="text-xs text-slate-500 mb-1 font-bold">主系統</div>
-               <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
-               <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('tw_stock') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台灣股市行情</button>
-               <button onClick={() => { window.location.hash = '#/news'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'news' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>熱點新聞</button>
-               
-               {currentRoute.startsWith('crypto') && (
-                  <>
-                   <div className="text-xs text-slate-500 mt-4 mb-1 font-bold border-t border-[#2a2f3a] pt-4">加密貨幣子系統</div>
-                   <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
-                   <button onClick={() => { window.location.hash = '#/crypto/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all flex items-center justify-between ${currentRoute === 'crypto_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>持倉與管理 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{paperAccount.positions.length}</span>}</button>
-                   <button onClick={() => { window.location.hash = '#/crypto/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>資產帳戶</button>
-                  </>
-               )}
-            </div>
-          </div>
-        )}
+        
+        {currentRoute.startsWith('crypto') ? (
+           <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${paperAccount.balance.toFixed(2)}</span></div>
+        ) : currentRoute !== 'portal' ? (
+           <div className="text-xs font-bold px-3 py-1.5 bg-[#2a2f3a] rounded text-slate-300">{currentRoute === 'news' ? '熱點新聞中心' : '台股分析系統'}</div>
+        ) : <div />}
       </header>
-      
+
+      {isMobileMenuOpen && (
+        <div className="sm:hidden z-50 relative">
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm cursor-pointer z-40" 
+            onClick={() => setIsMobileMenuOpen(false)} 
+            onTouchStart={(e) => { e.preventDefault(); setIsMobileMenuOpen(false); }}
+          />
+          <div className="fixed top-0 left-0 h-full w-64 bg-[#121620] border-r border-[#2a2f3a] shadow-2xl flex flex-col p-4 gap-2 z-50 animate-in slide-in-from-left duration-200 overflow-y-auto">
+             <div className="flex items-center justify-between mb-4 pb-4 border-b border-[#2a2f3a]">
+               <div className="flex items-center gap-2 text-blue-500">
+                  <Globe className="w-6 h-6 text-blue-400" />
+                  <span className="font-bold text-white tracking-tighter">SMC MAX</span>
+               </div>
+               <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white p-1">
+                  <X className="w-5 h-5"/>
+               </button>
+             </div>
+
+             <div className="text-xs text-slate-500 mb-1 font-bold">主系統</div>
+             <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
+             <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('tw_stock') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台灣股市行情</button>
+             <button onClick={() => { window.location.hash = '#/news'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'news' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>熱點新聞</button>
+             
+             {currentRoute.startsWith('crypto') && (
+                <>
+                 <div className="text-xs text-slate-500 mt-4 mb-1 font-bold border-t border-[#2a2f3a] pt-4">加密貨幣子系統</div>
+                 <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
+                 <button onClick={() => { window.location.hash = '#/crypto/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all flex items-center justify-between ${currentRoute === 'crypto_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>持倉與管理 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{paperAccount.positions.length}</span>}</button>
+                 <button onClick={() => { window.location.hash = '#/crypto/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>資產帳戶</button>
+                </>
+             )}
+          </div>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 py-6">
         {currentRoute === 'portal' && <PortalPage />}
-        {currentRoute === 'news' && <NewsDashboard />}
         {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} loading={loadingTw} error={errorTw} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} />}
+        {currentRoute === 'news' && <NewsDashboard />}
+        
         {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} />}
         {currentRoute === 'crypto_positions' && <CryptoPositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
         {currentRoute === 'crypto_assets' && <CryptoAssetsPage paperAccount={paperAccount} />}
