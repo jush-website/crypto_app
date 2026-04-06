@@ -1,6 +1,5 @@
 // 這是 Vercel 的 Serverless Function 檔案
 // 需放置於專案根目錄的 api 資料夾中，即: /api/binance.js
-// 升級版：支援幣安合約、台股證交所、台股歷史K線(Yahoo Finance)、RSS 熱點新聞代理
 
 export default async function handler(req, res) {
   // 設定 CORS 標頭
@@ -17,7 +16,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { action, symbol, limit = 120 } = req.query;
+  // 加上 interval 參數支援多週期
+  const { action, symbol, limit = 120, interval = '15m' } = req.query;
 
   try {
     const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
@@ -34,7 +34,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ tickers, fundingRates });
     } 
     else if (action === 'klines' && symbol) {
-      const klineRes = await fetch(`${BINANCE_BASE_URL}/klines?symbol=${symbol}&interval=15m&limit=${limit}`);
+      // 這裡會動態載入 15m, 1h, 4h
+      const klineRes = await fetch(`${BINANCE_BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
       if (!klineRes.ok) throw new Error('獲取 K 線失敗');
       return res.status(200).json(await klineRes.json());
     } 
@@ -53,7 +54,6 @@ export default async function handler(req, res) {
 
     // 3. 台灣股市 (個股歷史 K 線 - 來自 Yahoo Finance API)
     else if (action === 'tw-history' && symbol) {
-      // 取得過去 6 個月的日 K 線
       const yfRes = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`);
       if (!yfRes.ok) throw new Error('獲取歷史數據失敗');
       const data = await yfRes.json();
@@ -63,13 +63,11 @@ export default async function handler(req, res) {
     // 4. 熱點新聞與個股新聞
     else if (action === 'news') {
       if (symbol) {
-        // 特定個股新聞 (Yahoo Finance Search API)
         const yNewsRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}.TW&newsCount=10`);
         if (!yNewsRes.ok) throw new Error('獲取新聞失敗');
         const data = await yNewsRes.json();
         return res.status(200).json(data.news || []);
       } else {
-        // 綜合熱點新聞
         const feeds = [
           { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
           { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
