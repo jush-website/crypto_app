@@ -31,14 +31,32 @@ export default async function handler(req, res) {
       const priceRes = await fetch(`${BINANCE_BASE_URL}/ticker/price?symbol=${symbol}`);
       return res.status(200).json(await priceRes.json());
     }
+    // 【修改點】上市股票清單
     else if (action === 'tw-stocks') {
       const twseRes = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
       return res.status(200).json(await twseRes.json());
     }
-    else if (action === 'tw-history' && symbol) {
-      const yfRes = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`);
-      return res.status(200).json(await yfRes.json());
+    // 【修改點】上櫃股票清單代理 (繞過前端 CORS 限制)
+    else if (action === 'tw-otc-stocks') {
+      const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
+      return res.status(200).json(await tpexRes.json());
     }
+    // 【修改點】自動偵測上市 (.TW) 與上櫃 (.TWO) 的歷史 K 線
+    else if (action === 'tw-history' && symbol) {
+      const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+      
+      // 先嘗試抓取上市 (.TW) 股票
+      let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
+      let data = await yfRes.json();
+      
+      // 如果找不到 (通常是上櫃股票會回傳 null 的 result)，則切換為上櫃 (.TWO) 後綴重新抓取
+      if (!data?.chart?.result) {
+        yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers });
+        data = await yfRes.json();
+      }
+      return res.status(200).json(data);
+    }
+    // 新聞抓取
     else if (action === 'news') {
       if (symbol) {
         const yNewsRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}.TW&newsCount=10`);
