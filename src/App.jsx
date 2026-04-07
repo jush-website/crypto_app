@@ -332,7 +332,7 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
   );
 }
 
-function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashState }) {
+function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState, setTwDashState }) {
   const { activeTab, searchTerm, liveData, isScanning, scanProgress } = twDashState;
 
   const setActiveTab = (tab) => setTwDashState(p => ({ ...p, activeTab: tab }));
@@ -410,7 +410,10 @@ function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashSta
             <RefreshCw className={`w-4 h-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} /> {isScanning ? `即時數據掃描中 ${scanProgress}%` : '全域即時掃描'}
           </button>
         </div>
-        <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
+            {twUpdateTime && <div className="text-xs text-slate-400 flex items-center gap-1 justify-end sm:justify-start shrink-0"><Clock className="w-3 h-3"/> 資料更新: {twUpdateTime}</div>}
+            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+        </div>
       </div>
 
       {showManualEntry && (
@@ -684,9 +687,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [chartError, setChartError] = useState(false);
   
-  const [news, setNews] = useState([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-  
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
@@ -748,24 +748,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
     fetchChart();
     const intId = setInterval(() => fetchChart(true), 10000); 
-    return () => { isMounted = false; clearInterval(intId); };
-  }, [stock.symbol]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchNews = async () => {
-        try {
-           setNewsLoading(true);
-           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
-           const nData = await resNews.json();
-           if (isMounted) setNews(Array.isArray(nData) ? nData : []); 
-        } catch(e) {}
-        finally {
-           if (isMounted) setNewsLoading(false);
-        }
-    };
-    fetchNews();
-    const intId = setInterval(fetchNews, 60000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol]);
 
@@ -1441,6 +1423,7 @@ export default function App() {
   const [currentRoute, setCurrentRoute] = useState('portal');
   
   const [twStocks, setTwStocks] = useState([]);
+  const [twUpdateTime, setTwUpdateTime] = useState('');
   const [loadingTw, setLoadingTw] = useState(true);
   const [errorTw, setErrorTw] = useState(null);
   const [selectedTwStock, setSelectedTwStock] = useState(null);
@@ -1531,7 +1514,9 @@ export default function App() {
             .filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol))
             .sort((a, b) => b.quoteVolume - a.quoteVolume);
 
-          setTwStocks(combined); setLoadingTw(false);
+          setTwStocks(combined); 
+          setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }));
+          setLoadingTw(false);
         }
       } catch (err) { 
         if (isMounted) { setErrorTw(err instanceof Error ? err.message : String(err)); setLoadingTw(false); } 
@@ -1720,7 +1705,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
-        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} />}
+        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
