@@ -1184,7 +1184,7 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, [visibleCount, dataLen, endIndexOffset]);
 
-  if (!klines || !Array.isArray(klines) || dataLen === 0) return <div className="w-full h-[500px] flex items-center justify-center text-slate-500">圖表數據載入中...</div>;
+  if (!klines || !Array.isArray(klines) || dataLen === 0) return <div className="w-full h-[650px] flex items-center justify-center text-slate-500">圖表數據載入中...</div>;
   
   const maxOffset = Math.max(0, dataLen - visibleCount);
   const safeOffset = Math.min(Math.max(0, endIndexOffset), maxOffset);
@@ -1193,15 +1193,32 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   const endIndex = dataLen - safeOffset;
   const visibleKlines = klines.slice(startIndex, endIndex);
 
-  const width = 800; const totalHeight = 500; const kLineHeight = 380;
-  const paddingX = 10; const xStep = (width - paddingX * 2) / safeVisibleCount; const candleWidth = Math.max(xStep * 0.7, 1);
+  // 重新分配圖表高度配置
+  const width = 800; 
+  const totalHeight = 650; 
+  const kLineHeight = 350;     // K線區域
+  const volTop = 380;          // 成交量區域起點
+  const volHeight = 100;       // 成交量高度
+  const macdTop = 500;         // MACD 區域起點
+  const macdHeight = 130;      // MACD 區域高度
+  const paddingX = 10; 
+  const xStep = (width - paddingX * 2) / safeVisibleCount; 
+  const candleWidth = Math.max(xStep * 0.7, 1);
   
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
   const minPrice = lows.length ? Math.min(...lows) : 0; 
   const maxPrice = highs.length ? Math.max(...highs) : 1;
   const priceRange = (maxPrice - minPrice) || 1;
+  
+  const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
+  
+  const macdValues = visibleKlines.flatMap(k => [k.macd?.macd, k.macd?.signal, k.macd?.hist]).filter(v => v != null && !isNaN(v));
+  const maxAbsMacd = Math.max(0.00001, ...macdValues.map(Math.abs));
+
   const getPriceY = (p) => kLineHeight - 20 - ((p - minPrice) / priceRange) * (kLineHeight - 40);
+  const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
+  const getMacdY = (v) => macdTop + macdHeight / 2 - (v / maxAbsMacd) * (macdHeight / 2);
 
   const getSvgCoords = (clientX) => {
     if (!containerRef.current) return 0;
@@ -1228,8 +1245,21 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
 
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
 
+  // 繪製 MACD 與 Signal 線
+  let macdPath = "";
+  let signalPath = "";
+  visibleKlines.forEach((k, i) => {
+    const x = paddingX + i * xStep + candleWidth / 2;
+    if (k.macd?.macd != null && !isNaN(k.macd.macd)) {
+      macdPath += (macdPath === "" ? `M ${x} ${getMacdY(k.macd.macd)} ` : `L ${x} ${getMacdY(k.macd.macd)} `);
+    }
+    if (k.macd?.signal != null && !isNaN(k.macd.signal)) {
+      signalPath += (signalPath === "" ? `M ${x} ${getMacdY(k.macd.signal)} ` : `L ${x} ${getMacdY(k.macd.signal)} `);
+    }
+  });
+
   return (
-    <div className="w-full relative group touch-none" style={{ height: '500px' }}>
+    <div className="w-full relative group touch-none" style={{ height: '650px' }}>
       <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
         <button onClick={() => setVisibleCount(p => Math.max(15, Math.round(p * 0.8)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomIn className="w-4 h-4" /></button>
         <button onClick={() => setVisibleCount(p => Math.min(dataLen, Math.round(p * 1.2)))} className="p-1.5 bg-[#1a1e27]/80 hover:bg-[#2a2f3a] text-slate-300 rounded"><ZoomOut className="w-4 h-4" /></button>
@@ -1245,6 +1275,16 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK?.low)}</span></span>
               <span className="text-slate-500">C:<span className={hoveredK?.close >= hoveredK?.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK?.close)}</span></span>
             </div>
+            <div className="flex gap-2 text-[10px]">
+              <span className="text-slate-500">Vol:<span className="text-white ml-1">{formatVolume(hoveredK?.volume)}</span></span>
+              <span className="text-slate-500">買盤:<span className="text-[#0ecb81] ml-1">{formatVolume(hoveredK?.takerBuyVol)}</span></span>
+              <span className="text-slate-500">賣盤:<span className="text-[#f6465d] ml-1">{formatVolume((hoveredK?.volume || 0) - (hoveredK?.takerBuyVol || 0))}</span></span>
+            </div>
+            <div className="flex gap-2 text-[10px]">
+              <span className="text-slate-500">MACD:<span className="text-[#3b82f6] ml-1">{hoveredK?.macd?.macd?.toFixed(4) || '--'}</span></span>
+              <span className="text-slate-500">Signal:<span className="text-[#f59e0b] ml-1">{hoveredK?.macd?.signal?.toFixed(4) || '--'}</span></span>
+              <span className="text-slate-500">Hist:<span className={hoveredK?.macd?.hist >= 0 ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{hoveredK?.macd?.hist?.toFixed(4) || '--'}</span></span>
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-slate-500 bg-[#0b0e14]/50 backdrop-blur px-2 py-1 rounded">
@@ -1255,25 +1295,62 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
 
       <div ref={containerRef} className={`w-full h-full overflow-hidden touch-none cursor-crosshair`} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={() => {setIsDragging(false); setHoveredIndex(null);}} onMouseMove={handleMouseMove}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          {/* 分隔線 */}
           <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
+          <line x1="0" y1={macdTop - 10} x2={width} y2={macdTop - 10} stroke="#2a2f3a" strokeWidth="1" />
+          <line x1="0" y1={getMacdY(0)} x2={width} y2={getMacdY(0)} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="2 2" />
           
           {signalData?.poc && !isNaN(signalData.poc) && <React.Fragment><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></React.Fragment>}
           {signalData?.avwap && !isNaN(signalData.avwap) && <React.Fragment><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></React.Fragment>}
 
           {visibleKlines.map((k, i) => {
-            const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
-            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            const x = paddingX + i * xStep; 
+            const isUp = k.close >= k.open; 
+            const color = isUp ? '#0ecb81' : '#f6465d';
+            const openY = getPriceY(k.open); 
+            const closeY = getPriceY(k.close); 
+            const highY = getPriceY(k.high); 
+            const lowY = getPriceY(k.low);
+            
+            // 買賣量 (堆疊長條圖)
+            const buyVol = k.takerBuyVol || 0;
+            const sellVol = Math.max(0, (k.volume || 0) - buyVol);
+            const buyHeight = (buyVol / maxVol) * volHeight;
+            const sellHeight = (sellVol / maxVol) * volHeight;
+
+            // MACD Hist
+            const hist = k.macd?.hist || 0;
+            const histY = getMacdY(hist);
+            const zeroY = getMacdY(0);
+            const histHeight = Math.abs(histY - zeroY);
+            const histColor = hist >= 0 ? '#0ecb81' : '#f6465d';
             
             return (
               <g key={k.time || i}>
                 {hoveredIndex === i && <line x1={x + candleWidth / 2} y1={0} x2={x + candleWidth / 2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                
+                {/* K 線 */}
                 <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={color} />
+
+                {/* Order Flow 買賣成交量 (綠=主動買, 紅=主動賣) */}
+                <rect x={x} y={volTop + volHeight - buyHeight} width={candleWidth} height={buyHeight} fill="#0ecb81" opacity="0.8" />
+                <rect x={x} y={volTop + volHeight - buyHeight - sellHeight} width={candleWidth} height={sellHeight} fill="#f6465d" opacity="0.8" />
+
+                {/* MACD Histogram */}
+                <rect x={x} y={Math.min(histY, zeroY)} width={candleWidth} height={Math.max(1, histHeight)} fill={histColor} opacity="0.6" />
               </g>
             );
           })}
+
+          {/* MACD 線與 Signal 線 */}
+          <path d={macdPath} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
+          <path d={signalPath} fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
           <text x={width - 5} y={kLineHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={volTop + 15} fill="#848e9c" textAnchor="end" fontSize="9">Vol</text>
+          <text x={width - 5} y={macdTop + 15} fill="#848e9c" textAnchor="end" fontSize="9">MACD</text>
         </svg>
       </div>
     </div>
