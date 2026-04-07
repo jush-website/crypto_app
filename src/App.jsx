@@ -145,44 +145,85 @@ function detectLiquiditySweep(klines) {
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
-  const klines = calculateIndicators(klinesRaw);
+  // 完全捨棄 MACD/RSI/EMA 等滯後指標，全面採用純粹 K 線價格行為與真實成交量
+  const klines = klinesRaw;
   const latest = klines[klines.length - 1];
-  const prev = klines[klines.length - 2];
-  const k1 = klines[klines.length - 3];
   
   const vp = calculateVolumeProfile(klines);
   const sweep = detectLiquiditySweep(klines);
+  
+  // 計算 Anchored VWAP (aVWAP)
   let totalPV = 0, totalV = 0;
-  klines.forEach(k => { totalPV += ((k.high + k.low + k.close) / 3) * k.volume; totalV += k.volume; });
+  klines.forEach(k => { 
+      const typPrice = (k.high + k.low + k.close) / 3;
+      totalPV += typPrice * k.volume; 
+      totalV += k.volume; 
+  });
   const avwap = totalV > 0 ? totalPV / totalV : currentPrice;
 
   let score = 0, logs = [];
 
-  if (latest.close > latest.ema12 && latest.close > latest.ma20) { score += 1.5; logs.push("均線: 站上EMA/MA，趨勢看多"); }
-  else if (latest.close < latest.ema12 && latest.close < latest.ma20) { score -= 1.5; logs.push("均線: 跌破EMA/MA，趨勢看空"); }
-
-  if (latest.macd?.hist > 0 && prev.macd?.hist <= 0) { score += 2; logs.push("MACD: 零軸金叉，多頭起漲"); }
-  else if (latest.macd?.hist < 0 && prev.macd?.hist >= 0) { score -= 2; logs.push("MACD: 零軸死叉，空頭發力"); }
-
-  if (latest.rsi < 30) { score += 2; logs.push("RSI: 低於30超賣，醞釀反彈"); }
-  else if (latest.rsi > 70) { score -= 2; logs.push("RSI: 高於70超買，回調風險"); }
-
-  if (latest.bb?.lower && latest.close < latest.bb.lower) { score += 1.5; logs.push("布林: 跌穿下軌，具備支撐"); }
-  if (latest.bb?.upper && latest.close > latest.bb.upper) { score -= 1.5; logs.push("布林: 突破上軌，面臨阻力"); }
-
+  // 1. Order Flow (買賣動能 Delta)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
   const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) / 10;
-  if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 主動買盤湧入"); }
-  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 主動賣盤砸盤"); }
+  if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
+  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
-  if (k1 && latest.low > k1.high) { score += 1.5; logs.push("FVG: 多頭價值缺口形成"); }
-  if (k1 && latest.high < k1.low) { score -= 1.5; logs.push("FVG: 空頭價值缺口形成"); }
+  // 2. Volume Profile (POC)
+  if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`Volume Profile: 價格站上 POC (${formatPrice(vp.poc)})`); }
+  else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`Volume Profile: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
-  if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵殺低點後強力拉回 (吸籌)"); }
-  if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵殺高點後迅速壓回 (派發)"); }
+  // 3. Anchored VWAP
+  if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
+  else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
+  // 4. Liquidity Sweep (流動性獵取)
+  if (sweep.sweepLong) { score += 3; logs.push("Liquidity Sweep: 獵取賣方流動性 (Sweep Lows)，主力吸籌"); }
+  if (sweep.sweepShort) { score -= 3; logs.push("Liquidity Sweep: 獵取買方流動性 (Sweep Highs)，主力派發"); }
+
+  // 5. FVG & IFVG 偵測 (近15根K線)
+  let bullishFVG = false, bearishFVG = false;
+  let bullishIFVG = false, bearishIFVG = false;
+  for (let i = klines.length - 15; i < klines.length - 1; i++) {
+      if (!klines[i-1] || !klines[i+1]) continue;
+      const k1 = klines[i-1], k3 = klines[i+1];
+      // Bullish FVG
+      if (k1.high < k3.low) {
+          bullishFVG = true;
+          if (latest.close < k1.high) bearishIFVG = true; // 跌破多頭FVG，轉為阻力 IFVG
+      }
+      // Bearish FVG
+      if (k1.low > k3.high) {
+          bearishFVG = true;
+          if (latest.close > k1.low) bullishIFVG = true; // 突破空頭FVG，轉為支撐 IFVG
+      }
+  }
+  if (bullishIFVG) { score += 2; logs.push("IFVG: 突破空頭缺口轉為支撐 (多頭反轉)"); }
+  else if (bullishFVG) { score += 1; logs.push("FVG: 存在多頭合理價值缺口"); }
+  
+  if (bearishIFVG) { score -= 2; logs.push("IFVG: 跌破多頭缺口轉為阻力 (空頭反轉)"); }
+  else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
+
+  // 6. AMD Model (Accumulation -> Manipulation -> Distribution)
+  const accRange = klines.slice(-30, -10);
+  const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
+  const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
+  const manRange = klines.slice(-10, -1);
+  const manLow = Math.min(...manRange.map(k=>k.low).filter(n => !isNaN(n)));
+  const manHigh = Math.max(...manRange.map(k=>k.high).filter(n => !isNaN(n)));
+  
+  const isAccumulation = (accHigh - accLow) / (accLow || 1) < 0.035; // 震幅小於3.5%視為盤整吸籌
+  if (isAccumulation) {
+      if (manLow < accLow && latest.close > accHigh) {
+          score += 3; logs.push("AMD Model: 向下洗盤後急拉突破 (多頭獵取)");
+      } else if (manHigh > accHigh && latest.close < accLow) {
+          score -= 3; logs.push("AMD Model: 向上誘多後急跌破底 (空頭獵取)");
+      }
+  }
+
+  // 綜合評分判斷訊號
   let signal = 'NEUTRAL';
   if (score >= 4) signal = 'LONG';
   else if (score <= -4) signal = 'SHORT';
@@ -194,15 +235,15 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   const swingHigh = recentHighs.length ? Math.max(...recentHighs) : currentPrice * 1.05;
 
   if (signal === 'LONG') {
-      sl = Math.min(swingLow, latest.bb?.lower || currentPrice) * 0.995;
+      sl = Math.min(swingLow, vp.val || currentPrice) * 0.995;
       if ((entry - sl) / entry < 0.005) sl = entry * 0.985;
       tp = entry + (entry - sl) * 2; 
   } else if (signal === 'SHORT') {
-      sl = Math.max(swingHigh, latest.bb?.upper || currentPrice) * 1.005;
+      sl = Math.max(swingHigh, vp.vah || currentPrice) * 1.005;
       if ((sl - entry) / entry < 0.005) sl = entry * 1.015;
       tp = entry - (sl - entry) * 2;
   }
-  if (logs.length === 0) logs.push("動能不足，處於區間盤整");
+  if (logs.length === 0) logs.push("市場於 POC / aVWAP 附近盤整，流動性建構中");
 
   return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
 }
