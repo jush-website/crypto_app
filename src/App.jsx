@@ -9,22 +9,22 @@ import {
 // ==========================================
 // 1. 全域輔助函數
 // ==========================================
-const formatPrice = (price) => {
+function formatPrice(price) {
   const p = parseFloat(price);
   if (isNaN(p) || p === 0) return '--';
   if (p >= 1000) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (p >= 1) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   return p.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
-};
+}
 
-const formatVolume = (vol) => {
+function formatVolume(vol) {
   const v = parseFloat(vol);
   if (isNaN(v)) return '0';
   if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
   if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
   if (v >= 1e3) return (v / 1e3).toFixed(2) + 'K';
   return v.toLocaleString('en-US'); 
-};
+}
 
 // ==========================================
 // 2. 核心演算法：技術指標與 SMC 量化引擎
@@ -240,7 +240,7 @@ function generateBranchData(symbol, price, change, vol) {
 }
 
 // ==========================================
-// 3. UI 系統元件宣告 (依賴樹底層至高層)
+// 3. UI 系統元件宣告
 // ==========================================
 
 function PortalPage() {
@@ -262,6 +262,79 @@ function PortalPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashState }) {
+  const { activeTab, searchTerm } = twDashState;
+
+  const setActiveTab = (tab) => setTwDashState(p => ({ ...p, activeTab: tab }));
+  const setSearchTerm = (term) => setTwDashState(p => ({ ...p, searchTerm: term }));
+
+  const filtered = useMemo(() => {
+    let list = Array.isArray(twStocks) ? twStocks : [];
+    if (activeTab === 'DAYTRADE') {
+       list = list.filter(t => parseFloat(t.priceChangePercent) > 6 && parseFloat(t.quoteVolume) > 5000000);
+    }
+    const s = String(searchTerm || '').toUpperCase();
+    if (!s) return list.slice(0, 100);
+    return list.filter(t => String(t.symbol || '').includes(s) || String(t.name || '').includes(s)).slice(0, 200);
+  }, [twStocks, searchTerm, activeTab]);
+
+  const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm || '');
+  const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
+
+  if (loading && (!twStocks || !twStocks.length)) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取全台股資料中...</div>;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
+             <button onClick={() => setActiveTab('ALL')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>大盤與熱門個股</button>
+             <button onClick={() => setActiveTab('DAYTRADE')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖潛力雷達</button>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
+      </div>
+
+      {showManualEntry && (
+        <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
+            <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
+            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{String(searchTerm)}」 的深度分析系統。</p>
+            <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
+        </div>
+      )}
+
+      {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {filtered.map(stock => {
+          const change = parseFloat(stock.priceChangePercent) || 0; 
+          const isPositive = change >= 0;
+          return (
+            <div key={stock.symbol} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                   <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors flex items-center gap-2">
+                     {String(stock.name || '')} 
+                     {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30">隔日沖</span>}
+                   </h3>
+                   <div className="text-xs text-slate-500 mt-0.5 font-mono">{String(stock.symbol || '')}</div>
+                </div>
+                <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
+              </div>
+              <div className="mt-4">
+                <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{String(stock.lastPrice || '--')}</div>
+                <div className="text-[10px] text-slate-500 mt-1 font-mono">成交量: {formatVolume(stock.quoteVolume)}</div>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之標的。</div>}
+      </div>
+      <p className="text-xs text-slate-500 text-center mt-6">首頁大盤為盤後結算數據，點擊進入個股頁面可查看最新即時走勢。</p>
     </div>
   );
 }
@@ -312,6 +385,89 @@ function NewsDashboard() {
         ))}
         {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
       </div>
+    </div>
+  );
+}
+
+function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
+  const [size, setSize] = useState(''); 
+  const [tradeError, setTradeError] = useState('');
+
+  const numSize = parseFloat(size) || 0;
+  const shares = numSize * 1000;
+  const cost = currentPrice * shares;
+  const fee = Math.floor(cost * 0.001425); 
+  const totalRequired = cost + fee;
+
+  const handleSubmit = (type) => {
+    setTradeError('');
+    if (numSize <= 0 || !Number.isInteger(numSize)) return setTradeError("請輸入有效的整數張數");
+    if (currentPrice === 0 || isNaN(currentPrice)) return setTradeError("無法取得當前有效報價");
+    if (type === 'LONG' && totalRequired > balance) return setTradeError("可用餘額不足");
+    if (type === 'SHORT' && cost * 0.9 > balance) return setTradeError("可用餘額不足以放空");
+
+    onOpenPosition(String(symbol), String(name), type, numSize, currentPrice);
+    setSize('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center text-sm text-slate-400 mb-2">
+        <span>台股當沖模擬 (1張=1000股)</span>
+        <span className="text-xs">餘額: <span className="text-white font-bold">NT$ {Math.floor(balance).toLocaleString()}</span></span>
+      </div>
+      <div className="relative">
+        <input type="number" value={size} onChange={(e) => setSize(e.target.value)} placeholder="輸入交易張數" className="w-full bg-[#1a1e27] border border-[#2a2f3a] rounded p-3 text-white font-mono text-sm outline-none" />
+        <span className="absolute right-4 top-3 text-xs text-slate-500">張</span>
+      </div>
+      <div className="flex justify-between text-[11px] text-slate-500 bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
+         <span>預估總價: NT$ {cost.toLocaleString()}</span>
+         <span>手續費: NT$ {fee.toLocaleString()}</span>
+      </div>
+      {tradeError && <div className="text-[10px] text-red-400">{String(tradeError)}</div>}
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <button onClick={() => handleSubmit('LONG')} className="bg-[#f6465d]/20 hover:bg-[#f6465d]/30 text-[#f6465d] border border-[#f6465d]/30 py-3 rounded-lg font-bold transition-all">現股買進 (做多)</button>
+        <button onClick={() => handleSubmit('SHORT')} className="bg-[#0ecb81]/20 hover:bg-[#0ecb81]/30 text-[#0ecb81] border border-[#0ecb81]/30 py-3 rounded-lg font-bold transition-all">融券賣出 (做空)</button>
+      </div>
+      <div className="text-[10px] text-slate-500 text-center">符合規範：當沖證交稅 0.15% / 手續費 0.1425%</div>
+    </div>
+  );
+}
+
+function TwPositionCard({ pos, currentPrice, onClose }) {
+  const isLong = pos.type === 'LONG';
+  const safeCurrentPrice = Number(currentPrice) || pos.entryPrice;
+  const currentValue = safeCurrentPrice * pos.shares;
+  const closeFee = Math.floor(currentValue * 0.001425);
+  const tax = Math.floor(currentValue * 0.0015);
+
+  let pnl = 0;
+  if (isLong) pnl = (safeCurrentPrice - pos.entryPrice) * pos.shares - pos.fee - closeFee - tax;
+  else pnl = (pos.entryPrice - safeCurrentPrice) * pos.shares - pos.fee - closeFee - tax;
+  
+  const costBasis = isLong ? (pos.entryPrice * pos.shares) : (pos.entryPrice * pos.shares * 0.9);
+  const roe = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  const isProfit = pnl >= 0;
+
+  return (
+    <div className={`bg-[#121620] border ${isProfit ? 'border-[#f6465d]/30' : 'border-[#0ecb81]/30'} rounded-xl p-5 shadow-lg flex flex-col`}>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h3 className="text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{String(pos.name)} <span className="text-sm font-normal text-slate-500">{String(pos.symbol)}</span></h3>
+          <span className={`text-[10px] px-2 py-0.5 rounded font-bold mt-1 inline-block ${isLong ? 'bg-[#f6465d] text-white' : 'bg-[#0ecb81] text-white'}`}>{isLong ? '做多' : '做空'} {pos.size} 張</span>
+        </div>
+        <div className="text-right">
+          <div className={`text-xl font-mono font-black ${isProfit ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{isProfit ? '+' : ''}{Math.floor(pnl).toLocaleString()}</div>
+          <div className={`text-xs ${isProfit ? 'text-[#f6465d]/70' : 'text-[#0ecb81]/70'}`}>{roe.toFixed(2)}%</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 mb-4 bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330]">
+        <div>庫存: <span className="text-white font-mono">{pos.shares.toLocaleString()} 股</span></div>
+        <div>均價: <span className="text-white font-mono">{pos.entryPrice.toFixed(2)}</span></div>
+        <div>現價: <span className="text-white font-mono">{safeCurrentPrice.toFixed(2)}</span></div>
+        <div>預估稅費: <span className="text-amber-400 font-mono">{(pos.fee + closeFee + tax).toLocaleString()}</span></div>
+      </div>
+      <button onClick={onClose} className="w-full bg-[#1a1e27] hover:bg-[#2a2f3a] text-white text-sm py-3 rounded-lg font-bold border border-[#2a2f3a] transition-all">當沖平倉</button>
     </div>
   );
 }
@@ -420,97 +576,15 @@ function TwKLineChart({ klines }) {
   );
 }
 
-function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
-  const [size, setSize] = useState(''); 
-  const [tradeError, setTradeError] = useState('');
-
-  const numSize = parseFloat(size) || 0;
-  const shares = numSize * 1000;
-  const cost = currentPrice * shares;
-  const fee = Math.floor(cost * 0.001425); 
-  const totalRequired = cost + fee;
-
-  const handleSubmit = (type) => {
-    setTradeError('');
-    if (numSize <= 0 || !Number.isInteger(numSize)) return setTradeError("請輸入有效的整數張數");
-    if (currentPrice === 0 || isNaN(currentPrice)) return setTradeError("無法取得當前有效報價");
-    if (type === 'LONG' && totalRequired > balance) return setTradeError("可用餘額不足");
-    if (type === 'SHORT' && cost * 0.9 > balance) return setTradeError("可用餘額不足以放空");
-
-    onOpenPosition(String(symbol), String(name), type, numSize, currentPrice);
-    setSize('');
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center text-sm text-slate-400 mb-2">
-        <span>台股當沖模擬 (1張=1000股)</span>
-        <span className="text-xs">餘額: <span className="text-white font-bold">NT$ {Math.floor(balance).toLocaleString()}</span></span>
-      </div>
-      <div className="relative">
-        <input type="number" value={size} onChange={(e) => setSize(e.target.value)} placeholder="輸入交易張數" className="w-full bg-[#1a1e27] border border-[#2a2f3a] rounded p-3 text-white font-mono text-sm outline-none" />
-        <span className="absolute right-4 top-3 text-xs text-slate-500">張</span>
-      </div>
-      <div className="flex justify-between text-[11px] text-slate-500 bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
-         <span>預估總價: NT$ {cost.toLocaleString()}</span>
-         <span>手續費: NT$ {fee.toLocaleString()}</span>
-      </div>
-      {tradeError && <div className="text-[10px] text-red-400">{String(tradeError)}</div>}
-      <div className="grid grid-cols-2 gap-2 mt-2">
-        <button onClick={() => handleSubmit('LONG')} className="bg-[#f6465d]/20 hover:bg-[#f6465d]/30 text-[#f6465d] border border-[#f6465d]/30 py-3 rounded-lg font-bold transition-all">現股買進 (做多)</button>
-        <button onClick={() => handleSubmit('SHORT')} className="bg-[#0ecb81]/20 hover:bg-[#0ecb81]/30 text-[#0ecb81] border border-[#0ecb81]/30 py-3 rounded-lg font-bold transition-all">融券賣出 (做空)</button>
-      </div>
-      <div className="text-[10px] text-slate-500 text-center">符合規範：當沖證交稅 0.15% / 手續費 0.1425%</div>
-    </div>
-  );
-}
-
-function TwPositionCard({ pos, currentPrice, onClose }) {
-  const isLong = pos.type === 'LONG';
-  const safeCurrentPrice = Number(currentPrice) || pos.entryPrice;
-  const currentValue = safeCurrentPrice * pos.shares;
-  const closeFee = Math.floor(currentValue * 0.001425);
-  const tax = Math.floor(currentValue * 0.0015);
-
-  let pnl = 0;
-  if (isLong) pnl = (safeCurrentPrice - pos.entryPrice) * pos.shares - pos.fee - closeFee - tax;
-  else pnl = (pos.entryPrice - safeCurrentPrice) * pos.shares - pos.fee - closeFee - tax;
-  
-  const costBasis = isLong ? (pos.entryPrice * pos.shares) : (pos.entryPrice * pos.shares * 0.9);
-  const roe = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-  const isProfit = pnl >= 0;
-
-  return (
-    <div className={`bg-[#121620] border ${isProfit ? 'border-[#f6465d]/30' : 'border-[#0ecb81]/30'} rounded-xl p-5 shadow-lg flex flex-col`}>
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{String(pos.name)} <span className="text-sm font-normal text-slate-500">{String(pos.symbol)}</span></h3>
-          <span className={`text-[10px] px-2 py-0.5 rounded font-bold mt-1 inline-block ${isLong ? 'bg-[#f6465d] text-white' : 'bg-[#0ecb81] text-white'}`}>{isLong ? '做多' : '做空'} {pos.size} 張</span>
-        </div>
-        <div className="text-right">
-          <div className={`text-xl font-mono font-black ${isProfit ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{isProfit ? '+' : ''}{Math.floor(pnl).toLocaleString()}</div>
-          <div className={`text-xs ${isProfit ? 'text-[#f6465d]/70' : 'text-[#0ecb81]/70'}`}>{roe.toFixed(2)}%</div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 mb-4 bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330]">
-        <div>庫存: <span className="text-white font-mono">{pos.shares.toLocaleString()} 股</span></div>
-        <div>均價: <span className="text-white font-mono">{pos.entryPrice.toFixed(2)}</span></div>
-        <div>現價: <span className="text-white font-mono">{safeCurrentPrice.toFixed(2)}</span></div>
-        <div>預估稅費: <span className="text-amber-400 font-mono">{(pos.fee + closeFee + tax).toLocaleString()}</span></div>
-      </div>
-      <button onClick={onClose} className="w-full bg-[#1a1e27] hover:bg-[#2a2f3a] text-white text-sm py-3 rounded-lg font-bold border border-[#2a2f3a] transition-all">當沖平倉</button>
-    </div>
-  );
-}
-
 function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chartData, setChartData] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
   
-  const [news, setNews] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [chartError, setChartError] = useState(false);
+  
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
@@ -520,6 +594,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
       try {
         if (!isBackground) setChartLoading(true);
         else setIsSyncing(true);
+        setChartError(false);
 
         const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`);
         const historyData = await resHistory.json();
@@ -554,10 +629,16 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           }
         }
         
-        if (isMounted && klines.length > 0) { 
-            setChartData(calculateIndicators(klines)); 
+        if (isMounted) {
+            if (klines.length > 0) {
+                setChartData(calculateIndicators(klines)); 
+            } else {
+                setChartError(true);
+            }
         }
-      } catch (err) {} 
+      } catch (err) {
+         if (isMounted) setChartError(true);
+      } 
       finally {
          if (isMounted) { setChartLoading(false); setIsSyncing(false); }
       }
@@ -570,58 +651,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchNews = async () => {
-        try {
-           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
-           const nData = await resNews.json();
-           if (isMounted) setNews(Array.isArray(nData) ? nData : []); 
-        } catch(e) {}
-    };
-    fetchNews();
-    const intId = setInterval(fetchNews, 60000); 
-    return () => { isMounted = false; clearInterval(intId); };
-  }, [stock.symbol]);
-
-  useEffect(() => {
-    let isMounted = true;
     const fetchChipData = async () => {
       try {
-        const [tseT86, tseMargin, tpexT86, tpexMargin] = await Promise.all([
-          fetch('https://openapi.twse.com.tw/v1/fund/T86').then(r=>r.json()).catch(()=>[]),
-          fetch('https://openapi.twse.com.tw/v1/marginTransaction/MI_MARGN').then(r=>r.json()).catch(()=>[]),
-          fetch('https://www.tpex.org.tw/openapi/v1/t1824').then(r=>r.json()).catch(()=>[]),
-          fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r=>r.json()).catch(()=>[])
-        ]);
-
         if (isMounted) setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, stock.quoteVolume));
-
-        let foreign = null, trust = null, dealer = null;
-        let marginToday = null, marginYest = null, marginChange = null;
-
-        const arrTseT86 = Array.isArray(tseT86) ? tseT86 : [];
-        const arrTpexT86 = Array.isArray(tpexT86) ? tpexT86 : [];
-        const t86Item = arrTseT86.find(i => String(i.Code) === String(stock.symbol)) || arrTpexT86.find(i => String(i.SecuritiesCompanyCode) === String(stock.symbol));
-        
-        if (t86Item) {
-            const parseNet = (val) => val ? Math.round(parseFloat(String(val).replace(/,/g, '')) / 1000) : 0;
-            foreign = parseNet(t86Item.ForeignInvestorNet || t86Item.ForeignDifference || t86Item.ForeignInvestmentInstitutionsNetBuySell);
-            trust = parseNet(t86Item.InvestmentTrustNet || t86Item.TrustDifference || t86Item.InvestmentTrustNetBuySell);
-            dealer = parseNet(t86Item.DealerNet || t86Item.DealerDifference || t86Item.DealerNetBuySell);
-        }
-
-        const arrTseMargin = Array.isArray(tseMargin) ? tseMargin : [];
-        const arrTpexMargin = Array.isArray(tpexMargin) ? tpexMargin : [];
-        const marginItem = arrTseMargin.find(i => String(i.Code) === String(stock.symbol)) || arrTpexMargin.find(i => String(i.SecuritiesCompanyCode) === String(stock.symbol));
-
-        if (marginItem) {
-             const today = parseFloat(String(marginItem.MarginPurchaseTodayBalance || marginItem.MarginBalanceToday || marginItem.TodayBalance || '0').replace(/,/g, ''));
-             const yesterday = parseFloat(String(marginItem.MarginPurchaseYesterdayBalance || marginItem.MarginBalanceYesterday || marginItem.YesterdayBalance || '0').replace(/,/g, ''));
-             marginToday = Math.round(today / 1000);
-             marginYest = Math.round(yesterday / 1000);
-             marginChange = marginToday - marginYest;
-        }
-        
-        if (isMounted) setChipData({ loading: false, foreign, trust, dealer, marginToday, marginYest, marginChange });
+        if (isMounted) setChipData({ loading: false, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
       } catch (error) {
         if (isMounted) setChipData(prev => ({ ...prev, loading: false }));
       }
@@ -636,7 +669,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     
     let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
     let shortScore = 0;
-    if (latest.close > latest.ma5) shortScore++;
+    if (latest.close > (latest.ma5 || 0)) shortScore++;
     if (latest.kd && latest.kd.k > latest.kd.d) shortScore++;
     if (latest.rsi > 50) shortScore++;
     
@@ -645,26 +678,21 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
     let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
     let midScore = 0;
-    if (latest.close > latest.ma20) midScore++;
+    if (latest.close > (latest.ma20 || 0)) midScore++;
     if (latest.macd && latest.macd.hist > 0) midScore++;
     
     if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
     else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
 
-    let longTerm = latest.close > latest.ma60 
+    let longTerm = latest.close > (latest.ma60 || 0) 
       ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
       : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
 
     return { shortTerm, midTerm, longTerm };
   };
 
-  const recommendations = getRecommendations();
+  const recommendations = chartError ? null : getRecommendations();
   const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-  const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
-
-  const formatDate = (timestamp) => timestamp ? `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()}` : '';
-  const latestDateStr = latestData ? formatDate(latestData.time) : '';
-  const prevDateStr = prevData ? formatDate(prevData.time) : '';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -722,49 +750,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             </div>
           )}
 
-          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
-                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
-              </h3>
-              {chipData.loading ? (
-                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
-              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-[#2a2f3a] text-slate-500">
-                        <th className="pb-2 font-normal">指標</th>
-                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
-                        <th className="pb-2 font-normal text-right whitespace-nowrap">前一交易日 {prevDateStr && <span className="text-[10px] text-slate-600 font-mono">({prevDateStr})</span>}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#2a2f3a]/50">
-                      <tr>
-                        <td className="py-2.5 text-slate-400">外資買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
-                        <td className="py-2.5 text-right font-mono text-slate-500">--</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">投信買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
-                        <td className="py-2.5 text-right font-mono text-slate-500">--</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
-                        <td className="py-2.5 text-right font-mono text-slate-500">--</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">融資餘額</td>
-                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
-                        <td className="py-2.5 text-right font-mono text-slate-400">{chipData.marginYest !== null ? String(chipData.marginYest) : '--'}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
-          </div>
         </div>
 
         <div className="lg:col-span-8 space-y-6">
@@ -775,6 +760,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             {chartLoading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
           </div>
 
+          {/* AI 操作建議區塊 */}
           {recommendations && (
             <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
@@ -785,101 +771,53 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                </div>
             </div>
           )}
-
-          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
-             <h3 className="text-lg font-bold text-white mb-4">個股新聞</h3>
-             {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
-                <div className="space-y-3">
-                  {news.slice(0, 5).map((item, idx) => (
-                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
-                      <div className="flex justify-between items-center text-[10px] text-slate-500">
-                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
-                        <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function TwStocksDashboard({ twStocks, loading, error, twDashState, setTwDashState }) {
-  const { activeTab, searchTerm } = twDashState;
-
-  const setActiveTab = (tab) => setTwDashState(p => ({ ...p, activeTab: tab }));
-  const setSearchTerm = (term) => setTwDashState(p => ({ ...p, searchTerm: term }));
-
-  const filtered = useMemo(() => {
-    let list = Array.isArray(twStocks) ? twStocks : [];
-    if (activeTab === 'DAYTRADE') {
-       list = list.filter(t => parseFloat(t.priceChangePercent) > 6 && parseFloat(t.quoteVolume) > 5000000);
-    }
-    const s = String(searchTerm).toUpperCase();
-    if (!s) return list.slice(0, 100);
-    return list.filter(t => String(t.symbol).includes(s) || String(t.name).includes(s)).slice(0, 200);
-  }, [twStocks, searchTerm, activeTab]);
-
-  const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm);
-  const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
-
-  if (loading && (!twStocks || !twStocks.length)) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取全台股資料中...</div>;
+function TwPositionsPage({ twStocks, twAccount, closeTwPosition, twLivePrices }) {
+  const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
+  const activeTickers = Array.isArray(twStocks) ? twStocks.filter(t => activeSymbols.includes(t.symbol)) : [];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-             <button onClick={() => setActiveTab('ALL')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>大盤與熱門個股</button>
-             <button onClick={() => setActiveTab('DAYTRADE')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖潛力雷達</button>
-          </div>
-        </div>
-        <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none" /></div>
-      </div>
-
-      {showManualEntry && (
-        <div className="bg-blue-600/10 border border-blue-500/30 p-8 rounded-2xl text-center">
-            <h3 className="text-xl font-bold text-white mb-2">查無預載名稱？</h3>
-            <p className="text-slate-400 mb-6">點擊下方直接進入代號 「{String(searchTerm)}」 的深度分析系統。</p>
-            <button onClick={() => window.location.hash = `#/tw-stocks/detail/${searchTerm}`} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all">進入分析系統</button>
-        </div>
-      )}
-
-      {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {filtered.map(stock => {
-          const change = parseFloat(stock.priceChangePercent); const isPositive = change >= 0;
-          return (
-            <div key={stock.symbol} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                   <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors flex items-center gap-2">
-                     {String(stock.name)} 
-                     {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30">隔日沖</span>}
-                   </h3>
-                   <div className="text-xs text-slate-500 mt-0.5 font-mono">{String(stock.symbol)}</div>
-                </div>
-                <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
-              </div>
-              <div className="mt-4">
-                <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{stock.lastPrice}</div>
-                <div className="text-[10px] text-slate-500 mt-1 font-mono">成交量: {formatVolume(stock.quoteVolume)}</div>
-              </div>
-            </div>
-          );
+    <div className="space-y-8 animate-in fade-in duration-300">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (台股當沖)</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {Array.isArray(twAccount.positions) && twAccount.positions.map(pos => {
+            const t = activeTickers.find(x => String(x.symbol) === String(pos.symbol));
+            const fallbackPrice = t ? parseFloat(t.lastPrice) : pos.entryPrice;
+            const currentPrice = twLivePrices[pos.symbol] || fallbackPrice;
+            return <TwPositionCard key={pos.id} pos={pos} currentPrice={currentPrice} onClose={() => closeTwPosition(pos.id, currentPrice)} />;
         })}
-        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之標的。</div>}
+        {(!twAccount.positions || twAccount.positions.length === 0) && <div className="col-span-full py-10 text-center text-slate-500">目前無任何台股持倉</div>}
       </div>
     </div>
   );
 }
 
-// --- 虛擬貨幣模塊 ---
+function TwAssetsPage({ twAccount, resetTwAccount }) {
+  const totalRealized = Array.isArray(twAccount.history) ? twAccount.history.reduce((a, b) => a + b.pnl, 0) : 0;
+  const winRate = Array.isArray(twAccount.history) && twAccount.history.length ? ((twAccount.history.filter(h => h.pnl > 0).length / twAccount.history.length) * 100).toFixed(1) : 0;
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl mx-auto">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-blue-500" /> 台股資產與績效</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">可用餘額 (TWD)</div><div className="text-2xl font-mono font-bold text-blue-400">NT$ {Math.floor(twAccount.balance || 0).toLocaleString()}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">累計盈虧</div><div className={`text-2xl font-mono font-bold ${totalRealized >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>NT$ {Math.floor(totalRealized).toLocaleString()}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">歷史勝率</div><div className="text-2xl font-mono font-bold text-white">{winRate}%</div></div>
+      </div>
+      <div className="pt-8">
+        <button onClick={() => { if(window.confirm('確定要宣告破產並重置台股帳戶嗎？所有紀錄將清空，並恢復初始資金 1,000 萬。')) resetTwAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5" /> 破產重置 (恢復初始 10,000,000 TWD)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- 虛擬貨幣子系統模塊 ---
 function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
   const [leverage, setLeverage] = useState(10);
   const [marginMode, setMarginMode] = useState('ISOLATED'); 
@@ -1271,6 +1209,26 @@ function CryptoPositionsPage({ allTickers, paperAccount, openPosition, closePosi
   );
 }
 
+function CryptoAssetsPage({ paperAccount, resetCryptoAccount }) {
+  const totalRealized = Array.isArray(paperAccount.history) ? paperAccount.history.reduce((a, b) => a + b.pnl, 0) : 0;
+  const winRate = Array.isArray(paperAccount.history) && paperAccount.history.length ? ((paperAccount.history.filter(h => h.pnl > 0).length / paperAccount.history.length) * 100).toFixed(1) : 0;
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl mx-auto">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-blue-500" /> 帳戶數據</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">可用餘額</div><div className="text-2xl font-mono font-bold text-blue-400">${(paperAccount.balance || 0).toFixed(2)}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">累計盈虧</div><div className={`text-2xl font-mono font-bold ${totalRealized >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>${totalRealized.toFixed(2)}</div></div>
+        <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">歷史勝率</div><div className="text-2xl font-mono font-bold text-white">{winRate}%</div></div>
+      </div>
+      <div className="pt-8">
+        <button onClick={() => { if(window.confirm('確定要宣告破產並重置虛擬貨幣帳戶嗎？所有紀錄將清空，並恢復初始資金 10,000 USDT。')) resetCryptoAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5" /> 破產重置 (恢復初始 10,000 USDT)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition }) {
   const [klines, setKlines] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(coin.lastPrice));
@@ -1418,7 +1376,7 @@ export default function App() {
       try {
         const [resTse, resOtc] = await Promise.all([
           fetch('/api/binance?action=tw-stocks').then(r => r.json()).catch(() => []),
-          fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r => r.json()).catch(() => [])
+          fetch('/api/binance?action=tw-otc-stocks').then(r => r.json()).catch(() => [])
         ]);
 
         if (isMounted) {
