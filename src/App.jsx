@@ -74,17 +74,17 @@ function calculateIndicators(klines) {
     const windowLows = klines.slice(i - 8, i + 1).map(k => k.low);
     const maxH = Math.max(...windowHighs), minL = Math.min(...windowLows);
     let rsv = maxH === minL ? 50 : ((closePrices[i] - minL) / (maxH - minL)) * 100;
-    kArray[i] = (2/3) * kArray[i-1] + (1/3) * rsv; dArray[i] = (2/3) * dArray[i-1] + (1/3) * kArray[i];
+    kArray[i] = (2 / 3) * kArray[i-1] + (1 / 3) * rsv; dArray[i] = (2 / 3) * dArray[i-1] + (1 / 3) * kArray[i];
   }
 
   for (let i = 0; i < klines.length; i++) {
-    let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b)/5 : null;
+    let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b) / 5 : null;
     let ma20 = null, upperBB = null, lowerBB = null;
-    let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b)/60 : null;
+    let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b) / 60 : null;
 
     if (i >= 19) {
       const slice = closePrices.slice(i-19, i+1);
-      ma20 = slice.reduce((a,b)=>a+b)/20;
+      ma20 = slice.reduce((a,b)=>a+b) / 20;
       const variance = slice.reduce((acc, val) => acc + Math.pow(val - ma20, 2), 0) / 20;
       const stdDev = Math.sqrt(variance);
       upperBB = ma20 + 2 * stdDev;
@@ -175,7 +175,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   const delta = takerBuy - takerSell;
   const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) / 10;
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 主動買盤湧入"); }
-  else if (delta < -latest.volume * 0.2 && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 主動賣盤砸盤"); }
+  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 主動賣盤砸盤"); }
 
   if (k1 && latest.low > k1.high) { score += 1.5; logs.push("FVG: 多頭價值缺口形成"); }
   if (k1 && latest.high < k1.low) { score -= 1.5; logs.push("FVG: 空頭價值缺口形成"); }
@@ -227,6 +227,8 @@ function generateBranchData(symbol, price, change, vol) {
 
     const estCost1 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.005 : 0));
     const estCost2 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.008 : 0));
+    
+    const percentage = (buyVol1 / (volNum || 1)) * 100;
 
     return {
         isDayTradeTarget,
@@ -235,8 +237,8 @@ function generateBranchData(symbol, price, change, vol) {
             { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: '外資/波段' }
         ],
         advice: isDayTradeTarget 
-            ? `⚠️ 【隔日沖警示】「${mainBuyer}」等典型隔日沖分點已大量進駐，佔總成交量約 ${(buyVol1/(volNum||1)*100).toFixed(1)}%。預估成本 ${estCost1.toFixed(2)} 元。明日早盤極可能出現獲利了結賣壓，空手者【切勿追高】。` 
-            : `✅ 【籌碼穩定】主要買盤「${mainBuyer}」屬波段或外資分點，未見明顯短線隔日沖特徵。預估主力成本 ${estCost1.toFixed(2)} 元，可配合技術指標偏多操作。`
+            ? `⚠️ 【隔日沖警示】「${mainBuyer}」等典型隔日沖分點已大量進駐，佔總成交量約 ${percentage.toFixed(1)}%。預估成本 ${estCost1.toFixed(2)} 元。明日早盤極可能出現獲利了結賣壓，空手者【切勿追高】。` 
+            : `✅ 【籌碼穩定】主要買盤「${mainBuyer}」屬波段或外資分點，未見明顯隔日沖特徵。預估主力成本 ${estCost1.toFixed(2)} 元，可配合技術指標偏多操作。`
     };
 }
 
@@ -271,10 +273,9 @@ function PortalPage() {
 function TwLiveStockCard({ stock, activeTab, isScanned }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [change, setChange] = useState(parseFloat(stock.priceChangePercent) || 0);
-  const [isLive, setIsLive] = useState(isScanned); // 如果已經從批次掃描取得即時資料，直接標記為Live
+  const [isLive, setIsLive] = useState(isScanned); 
   const cardRef = useRef(null);
 
-  // 當從 props 接收到最新的 stock 時更新
   useEffect(() => {
      setPrice(parseFloat(stock.lastPrice) || 0);
      setChange(parseFloat(stock.priceChangePercent) || 0);
@@ -283,7 +284,6 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
 
   useEffect(() => {
     let isMounted = true;
-    // 如果尚未掃描過即時資料，才在滾動到畫面時觸發 Lazy 抓取
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !isLive) {
         fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`)
@@ -338,12 +338,10 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   const setActiveTab = (tab) => setTwDashState(p => ({ ...p, activeTab: tab }));
   const setSearchTerm = (term) => setTwDashState(p => ({ ...p, searchTerm: term }));
 
-  // 台股即時批次掃描功能 (更新至 SessionState 保存)
   const handleLiveScan = async () => {
     if (isScanning || !twStocks || !twStocks.length) return;
     setTwDashState(p => ({ ...p, isScanning: true, scanProgress: 0, activeTab: 'DAYTRADE' }));
     
-    // 抓取交易量前 100 大的股票進行盤中即時報價更新
     const targets = [...twStocks].sort((a,b) => b.quoteVolume - a.quoteVolume).slice(0, 100);
     const batchSize = 10;
     let completed = 0;
@@ -374,7 +372,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   const filtered = useMemo(() => {
     let list = Array.isArray(twStocks) ? [...twStocks] : [];
     
-    // 將掃描到的即時資料融合進清單
     list = list.map(t => {
        const live = liveData[t.symbol];
        if (live) {
@@ -384,7 +381,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     });
 
     if (activeTab === 'DAYTRADE') {
-       // 以即時資料重新篩選隔日沖標的：漲幅 > 5% 且 交易量大於 2000 張
        list = list.filter(t => parseFloat(t.priceChangePercent) > 5 && parseFloat(t.quoteVolume) > 2000000);
     }
     
@@ -480,9 +476,15 @@ function NewsDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filteredNews.map((item, idx) => (
           <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="bg-[#121620] border border-[#2a2f3a] hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group">
-            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{String(item.category)}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(item.time)}</span></div>
+            <div className="flex justify-between items-center mb-3">
+               <span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{String(item.category)}</span>
+               <span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(item.time)}</span>
+            </div>
             <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{String(item.title)}</h3>
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{String(item.source)}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
+            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50">
+               <span className="text-xs text-slate-400">{String(item.source)}</span>
+               <span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
+            </div>
           </a>
         ))}
         {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
@@ -635,7 +637,7 @@ function TwKLineChart({ klines }) {
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
               <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d] ml-1" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
-              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume||0)/1000).toLocaleString()} 張</span></span>
+              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) / 1000).toLocaleString()} 張</span></span>
             </div>
           </div>
         )}
@@ -643,7 +645,7 @@ function TwKLineChart({ klines }) {
 
       <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          <line x1="0" y1={priceHeight/2} x2={width} y2={priceHeight/2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
+          <line x1="0" y1={priceHeight / 2} x2={width} y2={priceHeight / 2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
           
           <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
@@ -661,8 +663,8 @@ function TwKLineChart({ klines }) {
             
             return (
               <g key={k.time || i}>
-                {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
-                <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                {hoveredIndex === i && <line x1={x + candleWidth / 2} y1={0} x2={x + candleWidth / 2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
                 <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
               </g>
@@ -671,7 +673,7 @@ function TwKLineChart({ klines }) {
           
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
           <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
-          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol/1000)}K 張</text>
+          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol / 1000)}K 張</text>
         </svg>
       </div>
     </div>
@@ -794,6 +796,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   };
 
   const recommendations = chartError ? null : getRecommendations();
+  const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+
+  const formatDate = (timestamp) => timestamp ? `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()}` : '';
+  const latestDateStr = latestData ? formatDate(latestData.time) : '';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -850,6 +856,45 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 </div>
             </div>
           )}
+
+          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
+                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
+              </h3>
+              {chipData.loading ? (
+                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-[#2a2f3a] text-slate-500">
+                        <th className="pb-2 font-normal">指標</th>
+                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2f3a]/50">
+                      <tr>
+                        <td className="py-2.5 text-slate-400">外資買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">投信買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">融資餘額</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
+          </div>
         </div>
 
         <div className="lg:col-span-8 space-y-6">
@@ -926,8 +971,8 @@ function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
 
   const val = parseFloat(inputValue) || 0;
   const coinSize = currentPrice > 0 ? (val * leverage) / currentPrice : 0;
-  let liqLong = currentPrice * (1 - 1/leverage + 0.004);
-  let liqShort = currentPrice * (1 + 1/leverage - 0.004);
+  let liqLong = currentPrice * (1 - (1 / leverage) + 0.004);
+  let liqShort = currentPrice * (1 + (1 / leverage) - 0.004);
 
   const handleSubmit = (type) => {
     setTradeError('');
@@ -1171,8 +1216,8 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
           <line x1="0" y1={kLineHeight} x2={width} y2={kLineHeight} stroke="#2a2f3a" strokeWidth="1" />
           
-          {signalData?.poc && !isNaN(signalData.poc) && <><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></>}
-          {signalData?.avwap && !isNaN(signalData.avwap) && <><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></>}
+          {signalData?.poc && !isNaN(signalData.poc) && <React.Fragment><line x1="0" y1={getPriceY(signalData.poc)} x2={width} y2={getPriceY(signalData.poc)} stroke="#3b82f6" strokeWidth="1" strokeDasharray="5 5" opacity="0.6" /><text x={5} y={getPriceY(signalData.poc) - 5} fill="#3b82f6" fontSize="9">POC</text></React.Fragment>}
+          {signalData?.avwap && !isNaN(signalData.avwap) && <React.Fragment><line x1="0" y1={getPriceY(signalData.avwap)} x2={width} y2={getPriceY(signalData.avwap)} stroke="#f59e0b" strokeWidth="1" opacity="0.4" /><text x={width - 40} y={getPriceY(signalData.avwap) + 12} fill="#f59e0b" fontSize="9">AVWAP</text></React.Fragment>}
 
           {visibleKlines.map((k, i) => {
             const x = paddingX + i * xStep; const isUp = k.close >= k.open; const color = isUp ? '#0ecb81' : '#f6465d';
@@ -1180,8 +1225,8 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
             
             return (
               <g key={k.time || i}>
-                {hoveredIndex === i && <line x1={x + candleWidth/2} y1={0} x2={x + candleWidth/2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
-                <line x1={x + candleWidth/2} y1={highY} x2={x + candleWidth/2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                {hoveredIndex === i && <line x1={x + candleWidth / 2} y1={0} x2={x + candleWidth / 2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={color} />
               </g>
             );
@@ -1221,7 +1266,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
           const chunkSignals = {};
           await Promise.all(chunk.map(async (coin) => {
             try {
-              const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
+              const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
               if (Array.isArray(data)) {
@@ -1341,7 +1386,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -1355,7 +1400,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
     fetchAll();
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
+        const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
         const data = await res.json();
         if (isMounted && data.price) setCurrentPrice(parseFloat(data.price));
       } catch(e) {}
