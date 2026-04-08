@@ -27,6 +27,20 @@ function formatVolume(vol) {
 }
 
 // ==========================================
+// 1.5 存股推薦清單與歷年配息資料庫
+// ==========================================
+const DIVIDEND_RECOMMENDATIONS = {
+  '0056': { type: '國民高息ETF', risk: '低', avgYield: '6.5%', history: ['2023年: 現金 2.20元', '2022年: 現金 2.10元', '2021年: 現金 1.80元'] },
+  '00878': { type: 'ESG季配ETF', risk: '低', avgYield: '6.5%', history: ['2023年: 現金 1.24元', '2022年: 現金 1.18元', '2021年: 現金 0.98元'] },
+  '00919': { type: '精選高息ETF', risk: '中低', avgYield: '9.0%', history: ['2023年: 現金 1.63元', '2022年: (近年新掛牌無完整資料)'] },
+  '00713': { type: '低波動高息ETF', risk: '極低', avgYield: '6.8%', history: ['2023年: 現金 3.05元', '2022年: 現金 2.90元', '2021年: 現金 3.15元'] },
+  '2412': { type: '電信防禦龍頭', risk: '極低', avgYield: '4.2%', history: ['2023年: 現金 4.70元', '2022年: 現金 4.60元', '2021年: 現金 4.30元'] },
+  '2892': { type: '官股金融存股', risk: '低', avgYield: '5.2%', history: ['2023年: 現 0.80元 + 股 0.30元', '2022年: 現 1.00元 + 股 0.20元', '2021年: 現 0.90元 + 股 0.10元'] },
+  '2884': { type: '民營金融存股', risk: '低', avgYield: '5.5%', history: ['2023年: 現 0.60元 + 股 0.60元', '2022年: 現 0.67元 + 股 0.67元', '2021年: 現 0.61元 + 股 0.61元'] },
+  '1216': { type: '食品抗通膨', risk: '極低', avgYield: '4.0%', history: ['2023年: 現金 3.15元', '2022年: 現金 2.70元', '2021年: 現金 2.70元'] }
+};
+
+// ==========================================
 // 2. 核心演算法：技術指標與 SMC 量化引擎
 // ==========================================
 function calculateIndicators(klines) {
@@ -234,6 +248,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
 }
 
+// 籌碼動態推算引擎 (升級版)
 function generateBranchData(symbol, price, change, vol) {
     const changeNum = parseFloat(change || 0);
     const priceNum = parseFloat(price || 0);
@@ -374,26 +389,49 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
   }, [stock.symbol, isVisible]);
 
   const isPositive = change >= 0;
+  const divInfo = activeTab === 'DIVIDEND' ? DIVIDEND_RECOMMENDATIONS[stock.symbol] : null;
 
   return (
     <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
-      <div className="flex justify-between items-start mb-2">
-        <div>
-           <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors flex items-center gap-2">
-             {String(stock.name || '')} 
-             {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30">隔日沖</span>}
-           </h3>
-           <div className="text-xs text-slate-500 mt-0.5 font-mono flex items-center gap-1">
-             {String(stock.symbol || '')}
-             {isLive && <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 rounded animate-pulse">LIVE</span>}
-           </div>
+      <div>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+             <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400 transition-colors flex items-center gap-2">
+               {String(stock.name || '')} 
+               {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30">隔日沖</span>}
+               {activeTab === 'DIVIDEND' && <span className="bg-emerald-500/20 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded border border-emerald-500/30">定存股</span>}
+             </h3>
+             <div className="text-xs text-slate-500 mt-0.5 font-mono flex items-center gap-1">
+               {String(stock.symbol || '')}
+               {isLive && <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 rounded animate-pulse">LIVE</span>}
+             </div>
+          </div>
+          <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
         </div>
-        <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{change.toFixed(2)}%</div>
+        <div className="mt-4">
+          <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{formatPrice(price)}</div>
+          <div className="text-[10px] text-slate-500 mt-1 font-mono">交易量: {formatVolume(stock.quoteVolume)}</div>
+        </div>
       </div>
-      <div className="mt-4">
-        <div className={`text-2xl font-mono font-bold ${isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{formatPrice(price)}</div>
-        <div className="text-[10px] text-slate-500 mt-1 font-mono">交易量: {formatVolume(stock.quoteVolume)}</div>
-      </div>
+      
+      {/* 高股息/存股專屬的展開資訊 */}
+      {divInfo && (
+        <div className="mt-4 pt-3 border-t border-[#2a2f3a]/50">
+          <div className="flex justify-between items-center mb-3">
+              <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/20">{divInfo.type}</span>
+              <span className="text-[10px] text-slate-400">投資風險: <span className={divInfo.risk === '極低' || divInfo.risk === '低' ? 'text-[#0ecb81]' : 'text-amber-400'}>{divInfo.risk}</span></span>
+          </div>
+          <div className="text-xs font-bold text-white mb-2 flex items-center gap-1">
+             預估殖利率: <span className="text-[#f6465d] text-sm">{divInfo.avgYield}</span>
+          </div>
+          <div className="bg-[#0b0e14] p-2 rounded-lg border border-[#1e2330]">
+             <div className="text-[9px] text-slate-500 mb-1 font-bold">歷年股利發放 (除權息):</div>
+             <div className="text-[10px] text-slate-400 space-y-1 font-mono">
+                {divInfo.history.map((h, i) => <div key={i} className="flex items-start gap-1"><span>•</span> <span>{h}</span></div>)}
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -448,6 +486,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
     if (activeTab === 'DAYTRADE') {
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 8.5 && parseFloat(t.quoteVolume) > 2000000);
+    } else if (activeTab === 'DIVIDEND') {
+       // 過濾出位於我們存股推薦清單中的標的
+       list = list.filter(t => DIVIDEND_RECOMMENDATIONS[t.symbol]);
     }
     
     const s = String(searchTerm || '').toUpperCase();
@@ -462,17 +503,18 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-             <button onClick={() => setActiveTab('ALL')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>大盤與熱門個股</button>
-             <button onClick={() => setActiveTab('DAYTRADE')} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖潛力雷達</button>
+      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 sm:pb-0">
+          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto min-w-max">
+             <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>大盤與熱門個股</button>
+             <button onClick={() => setActiveTab('DAYTRADE')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖潛力雷達</button>
+             <button onClick={() => setActiveTab('DIVIDEND')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>💰 高股息與存股推薦</button>
           </div>
           <button onClick={handleLiveScan} disabled={isScanning} className="w-full sm:w-auto bg-[#121620] px-4 py-2 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0 text-sm">
             <RefreshCw className={`w-4 h-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} /> {isScanning ? `即時數據掃描中 ${scanProgress}%` : '全域即時掃描'}
           </button>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full xl:w-auto shrink-0">
             {twUpdateTime && <div className="text-xs text-slate-400 flex items-center gap-1 justify-end sm:justify-start shrink-0"><Clock className="w-3 h-3"/> 資料更新: {twUpdateTime}</div>}
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
         </div>
