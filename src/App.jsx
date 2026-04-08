@@ -244,32 +244,36 @@ function generateBranchData(symbol, price, change, vol) {
     const priceNum = parseFloat(price || 0);
     const volNum = parseFloat(vol || 0) / 1000; 
 
-    const dayTradeBranches = ['凱基-台北', '元大-土城永寧', '富邦-建國', '群益-大安', '統一-城中', '國泰-敦南'];
-    const normalBranches = ['摩根大通', '台灣匯立', '美商高盛', '元大-總公司', '凱基-總公司', '富邦-總公司'];
+    // 1. 籌碼面：加入實戰隔日沖知名分點與外資
+    const dayTradeBranches = ['凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人', '美商美林', '摩根大通'];
+    const normalBranches = ['台灣匯立', '美商高盛', '元大-總公司', '凱基-總公司', '富邦-總公司', '國泰-總公司'];
 
     const seed = parseInt(String(symbol).replace(/\D/g, '')) || 0;
-    const isDayTradeTarget = changeNum >= 5 && volNum > 2000; 
+    
+    // 2. 技術面：漲幅 >= 8.5% (逼近或鎖漲停) 且 交易量大於 2000 張，判定為強勢隔日沖標的
+    const isDayTradeTarget = changeNum >= 8.5 && volNum > 2000; 
     
     const mainBuyer = isDayTradeTarget ? dayTradeBranches[seed % dayTradeBranches.length] : normalBranches[seed % normalBranches.length];
-    const secondBuyer = normalBranches[(seed + 1) % normalBranches.length];
+    const secondBuyer = isDayTradeTarget ? dayTradeBranches[(seed + 1) % dayTradeBranches.length] : normalBranches[(seed + 1) % normalBranches.length];
 
-    const buyVol1 = Math.floor(volNum * (0.08 + (seed % 5) * 0.01));
-    const buyVol2 = Math.floor(volNum * 0.03);
+    // 若為隔日沖，模擬大戶買超佔比大幅提高
+    const buyVol1 = Math.floor(volNum * (isDayTradeTarget ? 0.15 + (seed % 5) * 0.02 : 0.08)); 
+    const buyVol2 = Math.floor(volNum * 0.05);
 
-    const estCost1 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.005 : 0));
-    const estCost2 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.008 : 0));
+    const estCost1 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.002 : 0));
+    const estCost2 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.005 : 0));
     
     const percentage = (buyVol1 / (volNum || 1)) * 100;
 
     return {
         isDayTradeTarget,
         branches: [
-            { name: String(mainBuyer), netBuy: buyVol1, estCost: estCost1.toFixed(2), type: isDayTradeTarget ? '隔日沖主力' : '波段主力' },
-            { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: '外資/波段' }
+            { name: String(mainBuyer), netBuy: buyVol1, estCost: estCost1.toFixed(2), type: isDayTradeTarget ? '隔日沖大戶' : '波段主力' },
+            { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: isDayTradeTarget ? '外資/隔日沖' : '外資/波段' }
         ],
         advice: isDayTradeTarget 
-            ? `⚠️ 【隔日沖警示】「${mainBuyer}」等典型隔日沖分點已大量進駐，佔總成交量約 ${percentage.toFixed(1)}%。預估成本 ${estCost1.toFixed(2)} 元。明日早盤極可能出現獲利了結賣壓，空手者【切勿追高】。` 
-            : `✅ 【籌碼穩定】主要買盤「${mainBuyer}」屬波段或外資分點，未見明顯隔日沖特徵。預估主力成本 ${estCost1.toFixed(2)} 元，可配合技術指標偏多操作。`
+            ? `⚠️ 【隔日沖警示與操作紀律】\n1. 籌碼面：「${mainBuyer}」等大戶/外資分點大買，佔總量高達 ${percentage.toFixed(1)}%。\n2. 技術面：股價強勢鎖漲停/逼近漲停，帶動隔日開高慣性。\n3. 操作面：主力通常在早盤 09:00-10:00 出清，極易出現倒貨賣壓。請嚴格觀察「開盤價」，若開高走低跌破開盤價，代表多頭動能轉弱應立即避開。\n4. 成本面：隔日沖屬一般交易，需考量 0.3% 完整稅費成本。` 
+            : `✅ 【波段籌碼分析】\n主要買盤「${mainBuyer}」屬波段或外資分點，未見明顯「鎖漲停」之隔日沖特徵。預估主力成本約 ${estCost1.toFixed(2)} 元，可配合技術指標偏多操作。`
     };
 }
 
@@ -412,7 +416,8 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     });
 
     if (activeTab === 'DAYTRADE') {
-       list = list.filter(t => parseFloat(t.priceChangePercent) > 5 && parseFloat(t.quoteVolume) > 2000000);
+       // 以即時資料重新篩選隔日沖標的：漲幅 >= 8.5% (鎖漲停/強勢) 且 交易量大於 2000 張
+       list = list.filter(t => parseFloat(t.priceChangePercent) >= 8.5 && parseFloat(t.quoteVolume) > 2000000);
     }
     
     const s = String(searchTerm || '').toUpperCase();
@@ -793,7 +798,8 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
 
     fetchChart();
-    const intId = setInterval(() => fetchChart(true), 10000); 
+    // 每 3 秒更新一次個股即時報價與 K 線
+    const intId = setInterval(() => fetchChart(true), 3000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol]);
 
@@ -892,10 +898,11 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                   </table>
                 </div>
                 <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] mt-2">
-                    <div className="text-xs text-slate-300 leading-relaxed">{String(branchData.advice)}</div>
+                    <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{String(branchData.advice)}</div>
                 </div>
             </div>
           )}
+
         </div>
 
         <div className="lg:col-span-8 space-y-6">
@@ -1664,7 +1671,8 @@ export default function App() {
     };
 
     syncTwPrices();
-    const intId = setInterval(syncTwPrices, 15000); 
+    // 每 3 秒更新一次全域持倉之即時報價
+    const intId = setInterval(syncTwPrices, 3000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [twAccount.positions]);
 
