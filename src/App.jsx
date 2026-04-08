@@ -309,6 +309,7 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [change, setChange] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [isLive, setIsLive] = useState(isScanned); 
+  const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef(null);
 
   useEffect(() => {
@@ -317,30 +318,41 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
      if (isScanned) setIsLive(true);
   }, [stock.lastPrice, stock.priceChangePercent, isScanned]);
 
+  // 當卡片進入畫面時，才啟動即時更新 (節省效能)
   useEffect(() => {
-    let isMounted = true;
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !isLive) {
-        fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`)
-          .then(r => r.json())
-          .then(data => {
-            if (!isMounted) return;
-            const meta = data?.chart?.result?.[0]?.meta;
-            if (meta && meta.regularMarketPrice) {
-              setPrice(Number(meta.regularMarketPrice));
-              if (meta.chartPreviousClose || meta.previousClose) {
-                const prevC = Number(meta.chartPreviousClose || meta.previousClose);
-                const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
-                setChange(chg);
-              }
-              setIsLive(true);
-            }
-          }).catch(() => {});
-      }
+      setIsVisible(entries[0].isIntersecting);
     });
     if (cardRef.current) observer.observe(cardRef.current);
-    return () => { isMounted = false; observer.disconnect(); };
-  }, [stock.symbol, isLive]);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    let isMounted = true;
+    const fetchLive = async () => {
+      try {
+        // 加入 _t 時間戳突破瀏覽器快取，確保每 3 秒抓到的是最新報價
+        const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (!isMounted) return;
+        const meta = data?.chart?.result?.[0]?.meta;
+        if (meta && meta.regularMarketPrice) {
+          setPrice(Number(meta.regularMarketPrice));
+          if (meta.chartPreviousClose || meta.previousClose) {
+            const prevC = Number(meta.chartPreviousClose || meta.previousClose);
+            const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
+            setChange(chg);
+          }
+          setIsLive(true);
+        }
+      } catch(e) {}
+    };
+
+    fetchLive();
+    const intId = setInterval(fetchLive, 3000);
+    return () => { isMounted = false; clearInterval(intId); };
+  }, [stock.symbol, isVisible]);
 
   const isPositive = change >= 0;
 
@@ -386,7 +398,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       const chunk = targets.slice(i, i + batchSize);
       await Promise.all(chunk.map(async (stock) => {
          try {
-           const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`);
+           const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
            const data = await res.json();
            const meta = data?.chart?.result?.[0]?.meta;
            if (meta && meta.regularMarketPrice) {
@@ -727,6 +739,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [chartError, setChartError] = useState(false);
   
+  const [news, setNews] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
@@ -742,7 +757,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}`, { signal: controller.signal });
+        const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { 
+            signal: controller.signal,
+            cache: 'no-store'
+        });
         clearTimeout(timeoutId);
         
         if (!resHistory.ok) throw new Error('API failed');
@@ -924,7 +942,32 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                </div>
             </div>
           )}
+
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+             <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
+             {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
+                <div className="space-y-3">
+                  {news.slice(0, 5).map((item, idx) => (
+                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
+                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
+                      <div className="flex justify-between items-center text-[10px] text-slate-500">
+                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
+                        <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
+          </div>
         </div>
+      </div>
+      
+      {/* 新增的數據來源連結 */}
+      <div className="mt-8 text-center text-xs text-slate-500 bg-[#121620] py-3 rounded-xl border border-[#2a2f3a]">
+        即時報價與 K 線數據來源：
+        <a href={`https://tw.stock.yahoo.com/quote/${stock.symbol}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors ml-1 font-bold inline-flex items-center">
+          Yahoo Finance ({stock.name} {stock.symbol}) <ExternalLink className="w-3 h-3 ml-1" />
+        </a>
       </div>
     </div>
   );
@@ -1657,7 +1700,7 @@ export default function App() {
       const newPrices = {};
       await Promise.all(activeSymbols.map(async (sym) => {
         try {
-          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}`);
+          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`, { cache: 'no-store' });
           const data = await res.json();
           const meta = data?.chart?.result?.[0]?.meta;
           if (meta && meta.regularMarketPrice) {
