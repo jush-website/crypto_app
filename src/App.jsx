@@ -332,17 +332,19 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
     let isMounted = true;
     const fetchLive = async () => {
       try {
-        // 加入 _t 時間戳突破瀏覽器快取，確保每 3 秒抓到的是最新報價
         const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
         if (!isMounted) return;
         const meta = data?.chart?.result?.[0]?.meta;
         if (meta && meta.regularMarketPrice) {
           setPrice(Number(meta.regularMarketPrice));
-          if (meta.chartPreviousClose || meta.previousClose) {
-            const prevC = Number(meta.chartPreviousClose || meta.previousClose);
-            const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
-            setChange(chg);
+          // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
+          if (meta.previousClose || meta.chartPreviousClose) {
+            const prevC = Number(meta.previousClose || meta.chartPreviousClose);
+            if (prevC > 0) {
+              const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
+              setChange(chg);
+            }
           }
           setIsLive(true);
         }
@@ -403,8 +405,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
            const meta = data?.chart?.result?.[0]?.meta;
            if (meta && meta.regularMarketPrice) {
               const price = Number(meta.regularMarketPrice);
-              const prevC = Number(meta.chartPreviousClose || meta.previousClose);
-              const change = prevC ? ((price - prevC) / prevC) * 100 : 0;
+              // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
+              const prevC = Number(meta.previousClose || meta.chartPreviousClose);
+              const change = prevC > 0 ? ((price - prevC) / prevC) * 100 : 0;
               const vol = meta.regularMarketVolume || stock.quoteVolume;
               newLiveData[stock.symbol] = { price, change, vol };
            }
@@ -777,10 +780,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               if (meta.regularMarketVolume) {
                   setCurrentVolume(Number(meta.regularMarketVolume));
               }
-              if (meta.chartPreviousClose || meta.previousClose) {
-                  const prevC = Number(meta.chartPreviousClose || meta.previousClose);
-                  const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
-                  setCurrentChange(chg.toFixed(2));
+              // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
+              if (meta.previousClose || meta.chartPreviousClose) {
+                  const prevC = Number(meta.previousClose || meta.chartPreviousClose);
+                  if (prevC > 0) {
+                      const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
+                      setCurrentChange(chg.toFixed(2));
+                  }
               }
           }
 
@@ -1681,25 +1687,39 @@ export default function App() {
 
           const formattedTse = arrTse.filter(i => i && i.Code).map(item => {
               const current = parseFloat(item.ClosingPrice);
-              const changeStr = item.Change ? String(item.Change).replace('+', '').trim() : '0';
-              const changeAmt = parseFloat(changeStr) || 0;
+              // 修正：去除證交所 API 負數可能帶有的空白字元 (如 "- 1.50")
+              let changeStr = String(item.Change || '0').replace(/\s+/g, '').replace('+', '');
+              let changeAmt = parseFloat(changeStr) || 0;
+              if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
+              
               let percent = 0;
               if (!isNaN(current) && !isNaN(changeAmt) && current !== 0) {
                   const prevClose = current - changeAmt; 
                   if (prevClose > 0) percent = (changeAmt / prevClose) * 100;
-                  if (changeStr.includes('-')) percent = -Math.abs(percent);
-                  else if (changeStr !== '0.00' && changeStr !== '0') percent = Math.abs(percent);
               }
               return { symbol: String(item.Code), name: String(item.Name), lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
           });
 
-          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => ({ 
-              symbol: String(i.SecuritiesCompanyCode), 
-              name: String(i.CompanyName || i.SecuritiesCompanyName), 
-              lastPrice: i.Close || '0.00', 
-              priceChangePercent: '0.00', 
-              quoteVolume: parseInt(i.Volume) || 0 
-          }));
+          // 修正：原本未計算上櫃股票的初始漲幅，現已補齊計算邏輯
+          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => {
+              const current = parseFloat(i.Close);
+              let changeStr = String(i.Change || '0').replace(/\s+/g, '').replace('+', '');
+              let changeAmt = parseFloat(changeStr) || 0;
+              if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
+
+              let percent = 0;
+              if (!isNaN(current) && !isNaN(changeAmt) && current !== 0) {
+                  const prevClose = current - changeAmt; 
+                  if (prevClose > 0) percent = (changeAmt / prevClose) * 100;
+              }
+              return { 
+                  symbol: String(i.SecuritiesCompanyCode), 
+                  name: String(i.CompanyName || i.SecuritiesCompanyName), 
+                  lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), 
+                  priceChangePercent: percent.toFixed(2), 
+                  quoteVolume: parseInt(i.Volume) || 0 
+              };
+          });
 
           const combined = [...formattedTse, ...formattedOtc]
             .filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol))
