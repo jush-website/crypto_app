@@ -250,7 +250,7 @@ function generateBranchData(symbol, price, change, vol) {
 
     const seed = parseInt(String(symbol).replace(/\D/g, '')) || 0;
     
-    // 2. 技術面：漲幅 >= 8.5% (逼近或鎖漲停) 且 交易量大於 2000 張，判定為強勢隔日沖標的
+    // 2. 技術面：依據即時真實數據，漲幅 >= 8.5% (逼近或鎖漲停) 且 交易量大於 2000 張，動態判定為強勢隔日沖標的
     const isDayTradeTarget = changeNum >= 8.5 && volNum > 2000; 
     
     const mainBuyer = isDayTradeTarget ? dayTradeBranches[seed % dayTradeBranches.length] : normalBranches[seed % normalBranches.length];
@@ -272,8 +272,8 @@ function generateBranchData(symbol, price, change, vol) {
             { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: isDayTradeTarget ? '外資/隔日沖' : '外資/波段' }
         ],
         advice: isDayTradeTarget 
-            ? `⚠️ 【隔日沖警示與操作紀律】\n1. 籌碼面：「${mainBuyer}」等大戶/外資分點大買，佔總量高達 ${percentage.toFixed(1)}%。\n2. 技術面：股價強勢鎖漲停/逼近漲停，帶動隔日開高慣性。\n3. 操作面：主力通常在早盤 09:00-10:00 出清，極易出現倒貨賣壓。請嚴格觀察「開盤價」，若開高走低跌破開盤價，代表多頭動能轉弱應立即避開。\n4. 成本面：隔日沖屬一般交易，需考量 0.3% 完整稅費成本。` 
-            : `✅ 【波段籌碼分析】\n主要買盤「${mainBuyer}」屬波段或外資分點，未見明顯「鎖漲停」之隔日沖特徵。預估主力成本約 ${estCost1.toFixed(2)} 元，可配合技術指標偏多操作。`
+            ? `⚠️ 【隔日沖實戰解析與操作 S.O.P】\n\n1. 籌碼面：找「大戶分點」\n指標：特定大戶 (如${mainBuyer}) 或外資 (如美林、小摩) 大買。\n現況：該主力買超佔總即時成交量約 ${percentage.toFixed(1)}%，籌碼高度集中。\n\n2. 技術面：看「鎖漲停」與「尾盤動能」\n指標：收盤是否強勢鎖漲停？委買張數越多隔天開高機率越大。\n現況：今日即時漲幅達 ${changeNum.toFixed(2)}%，具備強勢股慣性，容易帶動隔日早盤開高。\n\n3. 操作面：看「早盤 1 小時」與「開盤價」\n核心：「快進快出」，主力通常在隔日 9:00 至 10:00 間完成出清。\n策略：若開高且有持續買盤可先觀察；一旦「跌破開盤價」，代表多頭動能轉弱、主力開始倒貨，應考慮立即離場！\n\n4. 成本與風險：算「交易稅費」\n注意：隔日沖無當沖稅率減半 (一般交易稅 0.3%)，獲利需能覆蓋證交稅與手續費。\n警告：必須確保 T+2 日帳戶有足夠交割款，否則將構成違約交割！` 
+            : `✅ 【波段籌碼分析 - 未達隔日沖標準】\n\n1. 技術面未達標：目前即時漲幅為 ${changeNum.toFixed(2)}%，成交量 ${Math.floor(volNum).toLocaleString()} 張。隔日沖主力通常鎖定「漲幅 > 8.5% 且爆量」的強勢股。\n2. 籌碼狀態：主要買盤「${mainBuyer}」偏向波段或外資分點，未見明顯隔日沖急拉特徵。\n3. 操作建議：預估主力成本約 ${estCost1.toFixed(2)} 元，建議配合下方技術指標與趨勢偏多操作，不需過度擔憂早盤倒貨賣壓。`
     };
 }
 
@@ -734,6 +734,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chartData, setChartData] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
+  const [currentVolume, setCurrentVolume] = useState(parseFloat(stock.quoteVolume) || 0);
   
   const [chartLoading, setChartLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -773,6 +774,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           
           if (meta && meta.regularMarketPrice && isMounted) {
               setCurrentPrice(Number(meta.regularMarketPrice));
+              if (meta.regularMarketVolume) {
+                  setCurrentVolume(Number(meta.regularMarketVolume));
+              }
               if (meta.chartPreviousClose || meta.previousClose) {
                   const prevC = Number(meta.chartPreviousClose || meta.previousClose);
                   const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
@@ -816,8 +820,26 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
 
     fetchChart();
-    // 每 3 秒更新一次個股即時報價與 K 線
+    // 每 3 秒更新一次個股即時報價、即時成交量與 K 線
     const intId = setInterval(() => fetchChart(true), 3000); 
+    return () => { isMounted = false; clearInterval(intId); };
+  }, [stock.symbol]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchNews = async () => {
+        try {
+           setNewsLoading(true);
+           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
+           const nData = await resNews.json();
+           if (isMounted) setNews(Array.isArray(nData) ? nData : []); 
+        } catch(e) {}
+        finally {
+           if (isMounted) setNewsLoading(false);
+        }
+    };
+    fetchNews();
+    const intId = setInterval(fetchNews, 60000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol]);
 
@@ -825,7 +847,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     let isMounted = true;
     const fetchChipData = async () => {
       try {
-        if (isMounted) setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, stock.quoteVolume));
+        if (isMounted) setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, currentVolume));
         if (isMounted) setChipData({ loading: false, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
       } catch (error) {
         if (isMounted) setChipData(prev => ({ ...prev, loading: false }));
@@ -833,7 +855,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
     fetchChipData();
     return () => { isMounted = false; };
-  }, [stock.symbol, currentPrice, currentChange, stock.quoteVolume]);
+  }, [stock.symbol, currentPrice, currentChange, currentVolume]); // 加入 currentVolume 為依賴項，確保量能跳動時重算隔日沖特徵
 
   const getRecommendations = () => {
     if (!chartData || chartData.length < 2) return null;
@@ -864,6 +886,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   };
 
   const recommendations = chartError ? null : getRecommendations();
+  const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+
+  const formatDate = (timestamp) => timestamp ? `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()}` : '';
+  const latestDateStr = latestData ? formatDate(latestData.time) : '';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -880,7 +906,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               <div className={`text-4xl font-mono font-bold ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentPrice.toFixed(2)}</div>
               <div className={`text-lg font-bold pb-1 ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(currentChange) >= 0 ? '+' : ''}{String(currentChange)}%</div>
             </div>
-            <div className="text-sm text-slate-400 mt-2">初篩量: <span className="text-white font-mono">{formatVolume(stock.quoteVolume)}</span> 股</div>
+            <div className="text-sm text-slate-400 mt-2">即時成交量: <span className="text-white font-mono">{formatVolume(currentVolume)}</span> 股</div>
           </div>
 
           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg">
