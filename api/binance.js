@@ -1,6 +1,3 @@
-// 這是 Vercel 的 Serverless Function 檔案
-// 需放置於專案根目錄的 api 資料夾中，即: /api/binance.js
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*'); 
@@ -31,32 +28,46 @@ export default async function handler(req, res) {
       const priceRes = await fetch(`${BINANCE_BASE_URL}/ticker/price?symbol=${symbol}`);
       return res.status(200).json(await priceRes.json());
     }
-    // 【修改點】上市股票清單
     else if (action === 'tw-stocks') {
       const twseRes = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
       return res.status(200).json(await twseRes.json());
     }
-    // 【修改點】上櫃股票清單代理 (繞過前端 CORS 限制)
     else if (action === 'tw-otc-stocks') {
       const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
       return res.status(200).json(await tpexRes.json());
     }
-    // 【修改點】自動偵測上市 (.TW) 與上櫃 (.TWO) 的歷史 K 線
     else if (action === 'tw-history' && symbol) {
       const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
       
-      // 先嘗試抓取上市 (.TW) 股票
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
       let data = await yfRes.json();
+      let suffix = '.TW';
       
-      // 如果找不到 (通常是上櫃股票會回傳 null 的 result)，則切換為上櫃 (.TWO) 後綴重新抓取
       if (!data?.chart?.result) {
+        suffix = '.TWO';
         yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers });
         data = await yfRes.json();
       }
+
+      // 【核心修正】額外請求 v7/quote API，取得 100% 精準的即時昨收價與漲跌幅
+      try {
+          const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
+          const quoteData = await quoteRes.json();
+          const quote = quoteData?.quoteResponse?.result?.[0];
+          
+          if (quote && data?.chart?.result?.[0]?.meta) {
+              data.chart.result[0].meta.regularMarketPrice = quote.regularMarketPrice;
+              data.chart.result[0].meta.previousClose = quote.regularMarketPreviousClose; // 真正的昨收價
+              data.chart.result[0].meta.regularMarketVolume = quote.regularMarketVolume;
+              data.chart.result[0].meta.exactChangePercent = quote.regularMarketChangePercent; // 官方算好的精準 %
+              data.chart.result[0].meta.exactChange = quote.regularMarketChange;
+          }
+      } catch(e) {
+          console.error("Quote fetch error", e);
+      }
+
       return res.status(200).json(data);
     }
-    // 新聞抓取
     else if (action === 'news') {
       if (symbol) {
         const yNewsRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}.TW&newsCount=10`);
