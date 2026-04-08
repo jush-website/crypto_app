@@ -373,7 +373,25 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
           const todayPrice = Number(meta.regularMarketPrice);
           setPrice(todayPrice);
           
-          const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
+          // 動態計算真實昨收價，解決 Yahoo 歷史 API chartPreviousClose 導致漲跌幅異常的問題
+          const timestamps = data.chart.result[0].timestamp || [];
+          const closes = data.chart.result[0].indicators?.quote?.[0]?.close || [];
+          let validCloses = [];
+          for(let i=0; i<timestamps.length; i++) {
+              if(closes[i] != null) validCloses.push({ time: timestamps[i]*1000, close: closes[i] });
+          }
+
+          let yesterdayClose = 0;
+          if (validCloses.length >= 2) {
+              const lastDate = new Date(validCloses[validCloses.length - 1].time).toLocaleDateString();
+              const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
+              if (lastDate === liveDate) {
+                  yesterdayClose = validCloses[validCloses.length - 2].close;
+              } else {
+                  yesterdayClose = validCloses[validCloses.length - 1].close;
+              }
+          }
+
           if (yesterdayClose > 0) {
             const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
             setChange(chg);
@@ -460,7 +478,26 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
            const meta = data?.chart?.result?.[0]?.meta;
            if (meta && meta.regularMarketPrice) {
               const todayPrice = Number(meta.regularMarketPrice);
-              const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
+              
+              // 動態計算真實昨收價
+              const timestamps = data.chart.result[0].timestamp || [];
+              const closes = data.chart.result[0].indicators?.quote?.[0]?.close || [];
+              let validCloses = [];
+              for(let j=0; j<timestamps.length; j++) {
+                  if(closes[j] != null) validCloses.push({ time: timestamps[j]*1000, close: closes[j] });
+              }
+
+              let yesterdayClose = 0;
+              if (validCloses.length >= 2) {
+                  const lastDate = new Date(validCloses[validCloses.length - 1].time).toLocaleDateString();
+                  const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
+                  if (lastDate === liveDate) {
+                      yesterdayClose = validCloses[validCloses.length - 2].close;
+                  } else {
+                      yesterdayClose = validCloses[validCloses.length - 1].close;
+                  }
+              }
+
               const change = yesterdayClose > 0 ? ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0 : 0;
               const vol = meta.regularMarketVolume || stock.quoteVolume;
               newLiveData[stock.symbol] = { price: todayPrice, change, vol };
@@ -487,7 +524,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     if (activeTab === 'DAYTRADE') {
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 8.5 && parseFloat(t.quoteVolume) > 2000000);
     } else if (activeTab === 'DIVIDEND') {
-       // 過濾出位於我們存股推薦清單中的標的
        list = list.filter(t => DIVIDEND_RECOMMENDATIONS[t.symbol]);
     }
     
@@ -832,22 +868,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         if (historyData?.chart?.result?.[0]) {
           const result = historyData.chart.result[0];
           const meta = result.meta;
-          
-          if (meta && meta.regularMarketPrice && isMounted) {
-              const todayPrice = Number(meta.regularMarketPrice);
-              setCurrentPrice(todayPrice);
-              if (meta.regularMarketVolume) {
-                  setCurrentVolume(Number(meta.regularMarketVolume));
-              }
-              const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
-              if (yesterdayClose > 0) {
-                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-                  setCurrentChange(chg.toFixed(2));
-              }
-          }
-
           const timestamps = result.timestamp || [];
           const quote = result.indicators?.quote?.[0] || {};
+
           for (let i = 0; i < timestamps.length; i++) {
             if (quote.close && quote.close[i] != null) {
               klines.push({ 
@@ -859,6 +882,51 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                   volume: Number(quote.volume[i] || 0) 
               });
             }
+          }
+
+          if (meta && meta.regularMarketPrice && isMounted) {
+              const todayPrice = Number(meta.regularMarketPrice);
+              setCurrentPrice(todayPrice);
+              if (meta.regularMarketVolume) {
+                  setCurrentVolume(Number(meta.regularMarketVolume));
+              }
+              
+              // 動態計算真實昨收價，並補齊遺失的今日 K 線
+              let yesterdayClose = 0;
+              if (klines.length >= 2) {
+                  const lastK = klines[klines.length - 1];
+                  const secondLastK = klines[klines.length - 2];
+                  const lastDate = new Date(lastK.time).toLocaleDateString();
+                  const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
+
+                  if (lastDate === liveDate) {
+                      yesterdayClose = secondLastK.close;
+                      // 更新最新一根 K 線為即時狀態
+                      klines[klines.length - 1] = {
+                          ...lastK,
+                          close: todayPrice,
+                          high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
+                          low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
+                          volume: Math.max(lastK.volume, meta.regularMarketVolume || 0)
+                      };
+                  } else {
+                      yesterdayClose = lastK.close;
+                      // 補齊今天遺失的 K 線
+                      klines.push({
+                          time: (meta.regularMarketTime || (Date.now()/1000)) * 1000,
+                          open: meta.regularMarketOpen || lastK.close || todayPrice,
+                          high: meta.regularMarketDayHigh || todayPrice,
+                          low: meta.regularMarketDayLow || todayPrice,
+                          close: todayPrice,
+                          volume: meta.regularMarketVolume || 0
+                      });
+                  }
+              }
+
+              if (yesterdayClose > 0) {
+                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+                  setCurrentChange(chg.toFixed(2));
+              }
           }
         }
         
@@ -1643,7 +1711,7 @@ function CryptoAssetsPage({ paperAccount, resetCryptoAccount }) {
         <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">歷史勝率</div><div className="text-2xl font-mono font-bold text-white">{winRate}%</div></div>
       </div>
       <div className="pt-8">
-        <button onClick={() => { if(window.confirm('確定要宣告破產並重置虛擬貨幣帳戶嗎？所有紀錄將清空，並恢復初始資金 10,000 USDT。')) resetCryptoAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+        <button onClick={() => { if(window.confirm('確定要宣告破Config並重置虛擬貨幣帳戶嗎？所有紀錄將清空，並恢復初始資金 10,000 USDT。')) resetCryptoAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
             <RefreshCw className="w-5 h-5" /> 破產重置 (恢復初始 10,000 USDT)
         </button>
       </div>
@@ -1663,7 +1731,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -1677,7 +1745,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
     fetchAll();
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
+        const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
         const data = await res.json();
         if (isMounted && data.price) setCurrentPrice(parseFloat(data.price));
       } catch(e) {}
