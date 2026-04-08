@@ -3,7 +3,7 @@ import {
   TrendingUp, RefreshCw, ArrowLeft, Search, Target, AlertCircle, Zap, Wallet, 
   ZoomIn, ZoomOut, MoveHorizontal, Pencil, Trash2, X, Layers, BarChart2, Waves, 
   Menu, Filter, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
-  Clock, ShieldAlert, Crosshair, Activity
+  Clock, ShieldAlert, Crosshair, Activity, PieChart
 } from 'lucide-react';
 
 // ==========================================
@@ -20,9 +20,9 @@ function formatPrice(price) {
 function formatVolume(vol) {
   const v = parseFloat(vol);
   if (isNaN(v)) return '0';
-  if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
-  if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
-  if (v >= 1e3) return (v / 1e3).toFixed(2) + 'K';
+  if (v >= 1e9) return (v * 0.000000001).toFixed(2) + 'B';
+  if (v >= 1e6) return (v * 0.000001).toFixed(2) + 'M';
+  if (v >= 1e3) return (v * 0.001).toFixed(2) + 'K';
   return v.toLocaleString('en-US'); 
 }
 
@@ -36,10 +36,10 @@ function calculateIndicators(klines) {
   
   const calcEMA = (data, period) => {
     if (data.length === 0) return [];
-    const k = 2 / (period + 1);
+    const k = 2.0 / (period + 1.0);
     let emaArray = [data[0]];
     for (let i = 1; i < data.length; i++) {
-      emaArray.push(data[i] * k + emaArray[i - 1] * (1 - k));
+      emaArray.push(data[i] * k + emaArray[i - 1] * (1.0 - k));
     }
     return emaArray;
   };
@@ -59,13 +59,13 @@ function calculateIndicators(klines) {
     if(diff >= 0) gains += diff; else losses -= diff;
   }
   let avgGain = gains / rsiPeriod; let avgLoss = losses / rsiPeriod;
-  if(rsiPeriod < closePrices.length) rsiArray[rsiPeriod] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+  if(rsiPeriod < closePrices.length) rsiArray[rsiPeriod] = avgLoss === 0 ? 100 : 100.0 - (100.0 / (1.0 + (avgGain / avgLoss)));
 
   for (let i = rsiPeriod + 1; i < closePrices.length; i++) {
     let diff = closePrices[i] - closePrices[i-1];
-    avgGain = ((avgGain * 13) + (diff >= 0 ? diff : 0)) / 14;
-    avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
-    rsiArray[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+    avgGain = ((avgGain * 13.0) + (diff >= 0 ? diff : 0)) / 14.0;
+    avgLoss = ((avgLoss * 13.0) + (diff < 0 ? -diff : 0)) / 14.0;
+    rsiArray[i] = avgLoss === 0 ? 100 : 100.0 - (100.0 / (1.0 + (avgGain / avgLoss)));
   }
 
   let kArray = new Array(klines.length).fill(50), dArray = new Array(klines.length).fill(50);
@@ -73,22 +73,23 @@ function calculateIndicators(klines) {
     const windowHighs = klines.slice(i - 8, i + 1).map(k => k.high);
     const windowLows = klines.slice(i - 8, i + 1).map(k => k.low);
     const maxH = Math.max(...windowHighs), minL = Math.min(...windowLows);
-    let rsv = maxH === minL ? 50 : ((closePrices[i] - minL) / (maxH - minL)) * 100;
-    kArray[i] = (2 / 3) * kArray[i-1] + (1 / 3) * rsv; dArray[i] = (2 / 3) * dArray[i-1] + (1 / 3) * kArray[i];
+    let rsv = maxH === minL ? 50 : ((closePrices[i] - minL) / (maxH - minL)) * 100.0;
+    kArray[i] = 0.666666 * kArray[i-1] + 0.333333 * rsv; 
+    dArray[i] = 0.666666 * dArray[i-1] + 0.333333 * kArray[i];
   }
 
   for (let i = 0; i < klines.length; i++) {
-    let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b) / 5 : null;
+    let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b) * 0.2 : null;
     let ma20 = null, upperBB = null, lowerBB = null;
-    let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b) / 60 : null;
+    let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b) / 60.0 : null;
 
     if (i >= 19) {
       const slice = closePrices.slice(i-19, i+1);
-      ma20 = slice.reduce((a,b)=>a+b) / 20;
-      const variance = slice.reduce((acc, val) => acc + Math.pow(val - ma20, 2), 0) / 20;
+      ma20 = slice.reduce((a,b)=>a+b) * 0.05;
+      const variance = slice.reduce((acc, val) => acc + Math.pow(val - ma20, 2), 0) * 0.05;
       const stdDev = Math.sqrt(variance);
-      upperBB = ma20 + 2 * stdDev;
-      lowerBB = ma20 - 2 * stdDev;
+      upperBB = ma20 + 2.0 * stdDev;
+      lowerBB = ma20 - 2.0 * stdDev;
     }
 
     result.push({
@@ -145,39 +146,34 @@ function detectLiquiditySweep(klines) {
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
-  const klines = calculateIndicators(klinesRaw);
+  const klines = klinesRaw;
   const latest = klines[klines.length - 1];
-  const prev = klines[klines.length - 2];
   
   const vp = calculateVolumeProfile(klines);
   const sweep = detectLiquiditySweep(klines);
   let totalPV = 0, totalV = 0;
-  klines.forEach(k => { totalPV += ((k.high + k.low + k.close) / 3) * k.volume; totalV += k.volume; });
+  klines.forEach(k => { totalPV += ((k.high + k.low + k.close) * 0.333333333333) * k.volume; totalV += k.volume; });
   const avwap = totalV > 0 ? totalPV / totalV : currentPrice;
 
   let score = 0, logs = [];
 
-  // 1. Order Flow (買賣動能 Delta)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
-  const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) / 10;
+  const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) * 0.1;
+  
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
   else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
-  // 2. Volume Profile (POC)
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`Volume Profile: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`Volume Profile: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
-  // 3. Anchored VWAP
   if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
   else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
-  // 4. Liquidity Sweep (流動性獵取)
   if (sweep.sweepLong) { score += 3; logs.push("Liquidity Sweep: 獵取賣方流動性，主力吸籌"); }
   if (sweep.sweepShort) { score -= 3; logs.push("Liquidity Sweep: 獵取買方流動性，主力派發"); }
 
-  // 5. FVG & IFVG 偵測 (近15根K線)
   let bullishFVG = false, bearishFVG = false;
   let bullishIFVG = false, bearishIFVG = false;
   for (let i = klines.length - 15; i < klines.length - 1; i++) {
@@ -198,7 +194,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (bearishIFVG) { score -= 2; logs.push("IFVG: 跌破多頭缺口轉為阻力 (空頭反轉)"); }
   else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
 
-  // 6. AMD Model (Accumulation -> Manipulation -> Distribution)
   const accRange = klines.slice(-30, -10);
   const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
   const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
@@ -242,38 +237,63 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
 function generateBranchData(symbol, price, change, vol) {
     const changeNum = parseFloat(change || 0);
     const priceNum = parseFloat(price || 0);
-    const volNum = parseFloat(vol || 0) / 1000; 
+    const volNum = parseFloat(vol || 0) * 0.001; 
 
-    // 1. 籌碼面：加入實戰隔日沖知名分點與外資
-    const dayTradeBranches = ['凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人', '美商美林', '摩根大通'];
-    const normalBranches = ['台灣匯立', '美商高盛', '元大-總公司', '凱基-總公司', '富邦-總公司', '國泰-總公司'];
+    const dayTradeBranches = ['凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人'];
+    const foreignBranches = ['美商美林', '摩根大通', '台灣摩根士丹利', '美商高盛', '台灣匯立'];
+    const normalBranches = ['元大-總公司', '凱基-總公司', '富邦-總公司', '國泰-敦南', '統一-城中', '群益-大安'];
 
     const seed = parseInt(String(symbol).replace(/\D/g, '')) || 0;
-    
-    // 2. 技術面：依據即時真實數據，漲幅 >= 8.5% (逼近或鎖漲停) 且 交易量大於 2000 張，動態判定為強勢隔日沖標的
     const isDayTradeTarget = changeNum >= 8.5 && volNum > 2000; 
     
-    const mainBuyer = isDayTradeTarget ? dayTradeBranches[seed % dayTradeBranches.length] : normalBranches[seed % normalBranches.length];
-    const secondBuyer = isDayTradeTarget ? dayTradeBranches[(seed + 1) % dayTradeBranches.length] : normalBranches[(seed + 1) % normalBranches.length];
+    const generateList = (isBuy, isStrong) => {
+        let list = [];
+        let remainingRatio = isBuy ? (isStrong ? 0.45 : 0.25) : 0.30; 
+        
+        for (let i = 0; i < 5; i++) {
+            let pool = normalBranches;
+            if (isBuy && i < 2 && isStrong) pool = dayTradeBranches;
+            else if (isBuy && i === 2) pool = foreignBranches;
+            else if (!isBuy && i < 2) pool = foreignBranches;
 
-    // 若為隔日沖，模擬大戶買超佔比大幅提高
-    const buyVol1 = Math.floor(volNum * (isDayTradeTarget ? 0.15 + (seed % 5) * 0.02 : 0.08)); 
-    const buyVol2 = Math.floor(volNum * 0.05);
+            const name = pool[(seed + i * (isBuy ? 1 : 2)) % pool.length];
+            const ratio = remainingRatio * (0.4 - (i * 0.05));
+            remainingRatio -= ratio;
+            
+            const estVol = Math.floor(volNum * ratio * 1000);
+            const estCost = priceNum * (1 + (isBuy ? -0.005 : 0.005) * (i+1));
+            
+            let type = '波段主力';
+            if (dayTradeBranches.includes(name)) type = '隔日沖大戶';
+            if (foreignBranches.includes(name)) type = '外資機構';
+            
+            list.push({ name, vol: Math.max(estVol, 1), cost: estCost.toFixed(2), type });
+        }
+        return list;
+    };
 
-    const estCost1 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.002 : 0));
-    const estCost2 = priceNum * (1 - (changeNum > 0 ? changeNum * 0.005 : 0));
+    const buyers = generateList(true, isDayTradeTarget);
+    const sellers = generateList(false, false);
     
-    const percentage = (buyVol1 / (volNum || 1)) * 100;
+    const top5BuyVol = buyers.reduce((sum, b) => sum + b.vol, 0);
+    const totalVolShares = volNum * 1000 || 1;
+    const bigHolderRatio = (top5BuyVol / totalVolShares) * 100.0;
+    
+    let concentrationLevel = "散戶指標 (籌碼渙散)";
+    let concentrationColor = "text-slate-400";
+    if (bigHolderRatio > 20) { concentrationLevel = "大戶高度集中"; concentrationColor = "text-[#f6465d]"; }
+    else if (bigHolderRatio > 10) { concentrationLevel = "主力進場佈局"; concentrationColor = "text-amber-400"; }
 
     return {
         isDayTradeTarget,
-        branches: [
-            { name: String(mainBuyer), netBuy: buyVol1, estCost: estCost1.toFixed(2), type: isDayTradeTarget ? '隔日沖大戶' : '波段主力' },
-            { name: String(secondBuyer), netBuy: buyVol2, estCost: estCost2.toFixed(2), type: isDayTradeTarget ? '外資/隔日沖' : '外資/波段' }
-        ],
+        buyers,
+        sellers,
+        bigHolderRatio,
+        concentrationLevel,
+        concentrationColor,
         advice: isDayTradeTarget 
-            ? `⚠️ 【隔日沖實戰解析與操作 S.O.P】\n\n1. 籌碼面：找「大戶分點」\n指標：特定大戶 (如${mainBuyer}) 或外資 (如美林、小摩) 大買。\n現況：該主力買超佔總即時成交量約 ${percentage.toFixed(1)}%，籌碼高度集中。\n\n2. 技術面：看「鎖漲停」與「尾盤動能」\n指標：收盤是否強勢鎖漲停？委買張數越多隔天開高機率越大。\n現況：今日即時漲幅達 ${changeNum.toFixed(2)}%，具備強勢股慣性，容易帶動隔日早盤開高。\n\n3. 操作面：看「早盤 1 小時」與「開盤價」\n核心：「快進快出」，主力通常在隔日 9:00 至 10:00 間完成出清。\n策略：若開高且有持續買盤可先觀察；一旦「跌破開盤價」，代表多頭動能轉弱、主力開始倒貨，應考慮立即離場！\n\n4. 成本與風險：算「交易稅費」\n注意：隔日沖無當沖稅率減半 (一般交易稅 0.3%)，獲利需能覆蓋證交稅與手續費。\n警告：必須確保 T+2 日帳戶有足夠交割款，否則將構成違約交割！` 
-            : `✅ 【波段籌碼分析 - 未達隔日沖標準】\n\n1. 技術面未達標：目前即時漲幅為 ${changeNum.toFixed(2)}%，成交量 ${Math.floor(volNum).toLocaleString()} 張。隔日沖主力通常鎖定「漲幅 > 8.5% 且爆量」的強勢股。\n2. 籌碼狀態：主要買盤「${mainBuyer}」偏向波段或外資分點，未見明顯隔日沖急拉特徵。\n3. 操作建議：預估主力成本約 ${estCost1.toFixed(2)} 元，建議配合下方技術指標與趨勢偏多操作，不需過度擔憂早盤倒貨賣壓。`
+            ? `⚠️ 【隔日沖實戰解析與操作 S.O.P】\n\n1. 籌碼面：前五大買超佔比達 ${bigHolderRatio.toFixed(1)}%，具備特定大戶隔日沖特徵。\n2. 技術面：今日即時漲幅達 ${changeNum.toFixed(2)}%，鎖漲停慣性極易帶動隔日早盤開高。\n3. 操作面：主力通常在隔日 9:00 至 10:00 間出清，若「跌破開盤價」請立即離場！\n4. 成本與風險：隔日沖屬一般交易無稅率減半，獲利需覆蓋 0.3% 稅費，且須備妥 T+2 交割款。` 
+            : `✅ 【波段籌碼分析 - 未達隔日沖標準】\n\n1. 技術面未達標：目前即時漲幅為 ${changeNum.toFixed(2)}%，未達強勢漲停標準。\n2. 籌碼狀態：前五大買超佔比 ${bigHolderRatio.toFixed(1)}%，${concentrationLevel}，未見明顯隔日沖急拉特徵。\n3. 操作建議：建議配合技術指標與趨勢偏多操作，不需過度擔憂早盤倒貨賣壓。`
     };
 }
 
@@ -304,7 +324,6 @@ function PortalPage() {
   );
 }
 
-// 台股首頁即時跳動報價卡片
 function TwLiveStockCard({ stock, activeTab, isScanned }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [change, setChange] = useState(parseFloat(stock.priceChangePercent) || 0);
@@ -318,7 +337,6 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
      if (isScanned) setIsLive(true);
   }, [stock.lastPrice, stock.priceChangePercent, isScanned]);
 
-  // 當卡片進入畫面時，才啟動即時更新 (節省效能)
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       setIsVisible(entries[0].isIntersecting);
@@ -339,10 +357,10 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
         if (meta && meta.regularMarketPrice) {
           const todayPrice = Number(meta.regularMarketPrice);
           setPrice(todayPrice);
-          // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
+          
           const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
           if (yesterdayClose > 0) {
-            const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+            const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
             setChange(chg);
           }
           setIsLive(true);
@@ -404,16 +422,15 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
            const meta = data?.chart?.result?.[0]?.meta;
            if (meta && meta.regularMarketPrice) {
               const todayPrice = Number(meta.regularMarketPrice);
-              // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
               const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
-              const change = yesterdayClose > 0 ? ((todayPrice - yesterdayClose) / yesterdayClose) * 100 : 0;
+              const change = yesterdayClose > 0 ? ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0 : 0;
               const vol = meta.regularMarketVolume || stock.quoteVolume;
               newLiveData[stock.symbol] = { price: todayPrice, change, vol };
            }
          } catch(e) {}
       }));
       completed += chunk.length;
-      setTwDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / targets.length) * 100)) }));
+      setTwDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / targets.length) * 100.0)) }));
     }
     setTwDashState(p => ({ ...p, liveData: newLiveData, isScanning: false }));
   };
@@ -430,7 +447,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     });
 
     if (activeTab === 'DAYTRADE') {
-       // 以即時資料重新篩選隔日沖標的：漲幅 >= 8.5% (鎖漲停/強勢) 且 交易量大於 2000 張
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 8.5 && parseFloat(t.quoteVolume) > 2000000);
     }
     
@@ -537,118 +553,6 @@ function NewsDashboard() {
   );
 }
 
-function TwKLineChart({ klines }) {
-  const containerRef = useRef(null);
-  const [hoveredIndex, setHoveredIndex] = useState(null);
-  
-  if (!klines || !Array.isArray(klines) || klines.length === 0) {
-      return (
-          <div className="w-full h-[580px] flex flex-col items-center justify-center text-slate-500 bg-[#0b0e14] rounded-2xl border border-[#2a2f3a]">
-             <AlertCircle className="w-10 h-10 mb-3 opacity-50" />
-             <p className="font-bold">無法取得該標的之歷史 K 線數據</p>
-             <p className="text-xs mt-1 opacity-60">可能為新上市標的、或伺服器遭到來源端暫時阻擋</p>
-          </div>
-      );
-  }
-  
-  const visibleCount = 80;
-  const visibleKlines = klines.slice(-visibleCount);
-  
-  const width = 800; const totalHeight = 580;
-  const paddingX = 10; const paddingY = 20;
-  const priceHeight = 400; 
-  const volTop = 440;      
-  const volHeight = 120;   
-  
-  const xStep = (width - paddingX * 2) / Math.max(visibleKlines.length, 1); 
-  const candleWidth = Math.max(xStep * 0.6, 1);
-  
-  const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
-  const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
-  const minPrice = lows.length ? Math.min(...lows) : 0; 
-  const maxPrice = highs.length ? Math.max(...highs) : 1;
-  const priceRange = (maxPrice - minPrice) || 1;
-  const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
-
-  const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2);
-  const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
-
-  const handleMouseMove = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (width / rect.width);
-    const dataIndex = Math.floor((x - paddingX) / xStep);
-    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
-  };
-
-  const getMAPath = (maKey) => {
-    let path = "";
-    visibleKlines.forEach((k, i) => {
-      if (k[maKey] != null && !isNaN(k[maKey])) {
-        const x = paddingX + i * xStep + candleWidth / 2;
-        const y = getPriceY(k[maKey]);
-        path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
-      }
-    });
-    return path;
-  };
-
-  const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
-
-  return (
-    <div className="w-full relative group" style={{ height: '580px' }}>
-      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
-        {hoveredK && (
-          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleDateString()}</div>
-            <div className="flex gap-2">
-              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
-              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
-              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d] ml-1" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
-              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) / 1000).toLocaleString()} 張</span></span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          <line x1="0" y1={priceHeight / 2} x2={width} y2={priceHeight / 2} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
-          <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
-          
-          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
-
-          {visibleKlines.map((k, i) => {
-            const x = paddingX + i * xStep; 
-            const isUp = k.close >= k.open; 
-            const color = isUp ? '#f6465d' : '#0ecb81'; 
-            
-            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
-            const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
-            const volY = getVolY(k.volume || 0);
-            
-            return (
-              <g key={k.time || i}>
-                {hoveredIndex === i && <line x1={x + candleWidth / 2} y1={0} x2={x + candleWidth / 2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
-                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1.5" />
-                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
-              </g>
-            );
-          })}
-          
-          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
-          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
-          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol / 1000)}K 張</text>
-        </svg>
-      </div>
-    </div>
-  );
-}
-
 function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
   const [size, setSize] = useState(''); 
   const [tradeError, setTradeError] = useState('');
@@ -706,7 +610,7 @@ function TwPositionCard({ pos, currentPrice, onClose }) {
   else pnl = (pos.entryPrice - safeCurrentPrice) * pos.shares - pos.fee - closeFee - tax;
   
   const costBasis = isLong ? (pos.entryPrice * pos.shares) : (pos.entryPrice * pos.shares * 0.9);
-  const roe = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  const roe = costBasis > 0 ? (pnl / costBasis) * 100.0 : 0;
   const isProfit = pnl >= 0;
 
   return (
@@ -728,6 +632,120 @@ function TwPositionCard({ pos, currentPrice, onClose }) {
         <div>預估稅費: <span className="text-amber-400 font-mono">{(pos.fee + closeFee + tax).toLocaleString()}</span></div>
       </div>
       <button onClick={onClose} className="w-full bg-[#1a1e27] hover:bg-[#2a2f3a] text-white text-sm py-3 rounded-lg font-bold border border-[#2a2f3a] transition-all">當沖平倉</button>
+    </div>
+  );
+}
+
+function TwKLineChart({ klines }) {
+  const containerRef = useRef(null);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  
+  if (!klines || !Array.isArray(klines) || klines.length === 0) {
+      return (
+          <div className="w-full h-[580px] flex flex-col items-center justify-center text-slate-500 bg-[#0b0e14] rounded-2xl border border-[#2a2f3a]">
+             <AlertCircle className="w-10 h-10 mb-3 opacity-50" />
+             <p className="font-bold">無法取得該標的之歷史 K 線數據</p>
+             <p className="text-xs mt-1 opacity-60">可能為新上市標的、或伺服器遭到來源端暫時阻擋</p>
+          </div>
+      );
+  }
+  
+  const visibleCount = 80;
+  const visibleKlines = klines.slice(-visibleCount);
+  
+  const width = 800; const totalHeight = 580;
+  const paddingX = 10; const paddingY = 20;
+  const priceHeight = 400; 
+  const volTop = 440;      
+  const volHeight = 120;   
+  
+  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length, 1); 
+  const candleWidth = Math.max(xStep * 0.6, 1);
+  
+  const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
+  const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
+  const minPrice = lows.length ? Math.min(...lows) : 0; 
+  const maxPrice = highs.length ? Math.max(...highs) : 1;
+  const priceRange = (maxPrice - minPrice) || 1;
+  const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
+
+  const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2.0);
+  const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
+
+  const handleMouseMove = (e) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (width * (1.0 / rect.width));
+    const dataIndex = Math.floor((x - paddingX) / xStep);
+    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
+  };
+
+  const getMAPath = (maKey) => {
+    let path = "";
+    visibleKlines.forEach((k, i) => {
+      if (k[maKey] != null && !isNaN(k[maKey])) {
+        const x = paddingX + i * xStep + candleWidth * 0.5;
+        const y = getPriceY(k[maKey]);
+        path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
+      }
+    });
+    return path;
+  };
+
+  const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
+
+  return (
+    <div className="w-full relative group" style={{ height: '580px' }}>
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
+        {hoveredK && (
+          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
+            <div>DATE: {new Date(hoveredK.time).toLocaleDateString()}</div>
+            <div className="flex gap-2">
+              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
+              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
+              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) * 0.001).toLocaleString()} 張</span></span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
+          <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
+          <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
+          
+          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
+          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
+          <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
+
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep; 
+            const isUp = k.close >= k.open; 
+            const color = isUp ? '#f6465d' : '#0ecb81'; 
+            
+            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
+            const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            const volY = getVolY(k.volume || 0);
+            
+            const midX = x + candleWidth * 0.5;
+
+            return (
+              <g key={k.time || i}>
+                {hoveredIndex === i && <line x1={midX} y1={0} x2={midX} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
+                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
+                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
+              </g>
+            );
+          })}
+          
+          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
+          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
+          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol * 0.001)}K 張</text>
+        </svg>
+      </div>
     </div>
   );
 }
@@ -756,7 +774,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         else setIsSyncing(true);
         setChartError(false);
 
-        // 加入 8 秒超時保護機制，避免伺服器或代理卡死導致永久轉圈圈
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -780,10 +797,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               if (meta.regularMarketVolume) {
                   setCurrentVolume(Number(meta.regularMarketVolume));
               }
-              // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
               const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
               if (yesterdayClose > 0) {
-                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
                   setCurrentChange(chg.toFixed(2));
               }
           }
@@ -824,7 +840,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
 
     fetchChart();
-    // 每 3 秒更新一次個股即時報價、即時成交量與 K 線
     const intId = setInterval(() => fetchChart(true), 3000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol]);
@@ -859,7 +874,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
     fetchChipData();
     return () => { isMounted = false; };
-  }, [stock.symbol, currentPrice, currentChange, currentVolume]); // 加入 currentVolume 為依賴項，確保量能跳動時重算隔日沖特徵
+  }, [stock.symbol, currentPrice, currentChange, currentVolume]); 
 
   const getRecommendations = () => {
     if (!chartData || chartData.length < 2) return null;
@@ -917,40 +932,110 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
              <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
           </div>
 
+          {/* 全方位 AI 擬真即時籌碼儀表板 */}
           {branchData && (
             <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-amber-500" /> 主力分點雷達
-                    <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">AI 擬真推算</span>
+                    <PieChart className="w-4 h-4 text-amber-500" /> 全方位 AI 即時籌碼儀表板
+                    <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">AI 即時擬真推算</span>
                 </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left text-slate-300">
-                    <thead>
-                      <tr className="border-b border-[#2a2f3a] text-slate-500">
-                        <th className="pb-2 font-normal">買超分點</th>
-                        <th className="pb-2 font-normal text-right">買超(張)</th>
-                        <th className="pb-2 font-normal text-right">均價</th>
-                        <th className="pb-2 font-normal text-right">主力屬性</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#2a2f3a]/50 font-mono">
-                      {branchData.branches.map((b, i) => (
-                         <tr key={i}>
-                           <td className="py-2.5 text-white">{String(b.name)}</td>
-                           <td className="py-2.5 text-right text-[#f6465d] font-bold">+{b.netBuy.toLocaleString()}</td>
-                           <td className="py-2.5 text-right">{b.estCost}</td>
-                           <td className={`py-2.5 text-right text-[10px] ${String(b.type).includes('隔日沖') ? 'text-amber-400' : 'text-blue-400'}`}>{String(b.type)}</td>
-                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                
+                {/* 控盤率進度條 */}
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330]">
+                   <div className="flex justify-between items-center mb-2">
+                       <span className="text-xs text-slate-400 font-bold">大戶控盤率 (買超前五大佔比)</span>
+                       <span className={`text-xs font-black ${branchData.concentrationColor}`}>{branchData.bigHolderRatio.toFixed(1)}%</span>
+                   </div>
+                   <div className="w-full bg-[#1a1e27] rounded-full h-2">
+                      <div className={`h-2 rounded-full ${branchData.concentrationColor.replace('text-', 'bg-')}`} style={{ width: `${Math.min(branchData.bigHolderRatio, 100)}%` }}></div>
+                   </div>
+                   <div className={`text-right text-[10px] mt-1 ${branchData.concentrationColor}`}>{branchData.concentrationLevel}</div>
                 </div>
+
+                {/* 買賣超前五大分點對照 */}
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                    {/* 買方 */}
+                    <div>
+                        <div className="text-[10px] text-center bg-[#f6465d]/10 text-[#f6465d] border border-[#f6465d]/30 rounded py-1 mb-2 font-bold">主力買超前五大</div>
+                        <div className="space-y-1.5">
+                            {branchData.buyers.map((b, i) => (
+                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
+                                        <span className="text-[#f6465d] font-mono">+{Math.floor(b.vol * 0.001)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
+                                        <span>均價 {b.cost}</span>
+                                        <span>{b.type}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {/* 賣方 */}
+                    <div>
+                        <div className="text-[10px] text-center bg-[#0ecb81]/10 text-[#0ecb81] border border-[#0ecb81]/30 rounded py-1 mb-2 font-bold">主力賣超前五大</div>
+                        <div className="space-y-1.5">
+                            {branchData.sellers.map((b, i) => (
+                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
+                                        <span className="text-[#0ecb81] font-mono">-{Math.floor(b.vol * 0.001)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
+                                        <span>均價 {b.cost}</span>
+                                        <span>{b.type}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
                 <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] mt-2">
                     <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{String(branchData.advice)}</div>
                 </div>
             </div>
           )}
 
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
+                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
+              </h3>
+              {chipData.loading ? (
+                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-[#2a2f3a] text-slate-500">
+                        <th className="pb-2 font-normal">指標</th>
+                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2f3a]/50">
+                      <tr>
+                        <td className="py-2.5 text-slate-400">外資買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">投信買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">融資餘額</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
+          </div>
         </div>
 
         <div className="lg:col-span-8 space-y-6">
@@ -1025,7 +1110,7 @@ function TwPositionsPage({ twStocks, twAccount, closeTwPosition, twLivePrices })
 
 function TwAssetsPage({ twAccount, resetTwAccount }) {
   const totalRealized = Array.isArray(twAccount.history) ? twAccount.history.reduce((a, b) => a + b.pnl, 0) : 0;
-  const winRate = Array.isArray(twAccount.history) && twAccount.history.length ? ((twAccount.history.filter(h => h.pnl > 0).length / twAccount.history.length) * 100).toFixed(1) : 0;
+  const winRate = Array.isArray(twAccount.history) && twAccount.history.length ? ((twAccount.history.filter(h => h.pnl > 0).length / twAccount.history.length) * 100.0).toFixed(1) : 0;
   return (
     <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl mx-auto">
       <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-blue-500" /> 台股資產與績效</h2>
@@ -1052,8 +1137,8 @@ function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
 
   const val = parseFloat(inputValue) || 0;
   const coinSize = currentPrice > 0 ? (val * leverage) / currentPrice : 0;
-  let liqLong = currentPrice * (1 - (1 / leverage) + 0.004);
-  let liqShort = currentPrice * (1 + (1 / leverage) - 0.004);
+  let liqLong = currentPrice * (1.0 - (1.0 / leverage) + 0.004);
+  let liqShort = currentPrice * (1.0 + (1.0 / leverage) - 0.004);
 
   const handleSubmit = (type) => {
     setTradeError('');
@@ -1079,7 +1164,7 @@ function CryptoTradeForm({ symbol, currentPrice, balance, onOpenPosition }) {
           <span className="absolute right-3 top-2 text-xs text-slate-500">USDT</span>
         </div>
         <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-          {[25, 50, 75, 100].map(p => <span key={p} className="cursor-pointer" onClick={() => setInputValue(balance > 0 ? (balance * (p / 100)).toFixed(2) : '0')}>{p}%</span>)}
+          {[25, 50, 75, 100].map(p => <span key={p} className="cursor-pointer" onClick={() => setInputValue(balance > 0 ? (balance * (p * 0.01)).toFixed(2) : '0')}>{p}%</span>)}
         </div>
         {tradeError && <div className="text-[10px] text-red-400 mt-1">{String(tradeError)}</div>}
       </div>
@@ -1096,7 +1181,7 @@ function CryptoPositionCard({ pos, currentPrice, balance, onSelectCoin, onClose,
   const [adjustInput, setAdjustInput] = useState('');
   const [modalError, setModalError] = useState('');
   const pnl = pos.type === 'LONG' ? (currentPrice - pos.entryPrice) * pos.size : (pos.entryPrice - currentPrice) * pos.size;
-  const roe = (pnl / pos.margin) * 100;
+  const roe = (pnl / pos.margin) * 100.0;
   const isProfit = pnl >= 0;
 
   const handleAdjustSubmit = () => {
@@ -1233,7 +1318,6 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   const endIndex = dataLen - safeOffset;
   const visibleKlines = klines.slice(startIndex, endIndex);
 
-  // 重新分配圖表高度配置
   const width = 800; 
   const totalHeight = 650; 
   const kLineHeight = 350;     
@@ -1242,7 +1326,7 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   const macdTop = 500;         
   const macdHeight = 130;      
   const paddingX = 10; 
-  const xStep = (width - paddingX * 2) / safeVisibleCount; 
+  const xStep = (width - paddingX * 2.0) / safeVisibleCount; 
   const candleWidth = Math.max(xStep * 0.7, 1);
   
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
@@ -1254,16 +1338,16 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
   
   const macdValues = visibleKlines.flatMap(k => [k.macd?.macd, k.macd?.signal, k.macd?.hist]).filter(v => v != null && !isNaN(v));
-  const maxAbsMacd = Math.max(0.00001, ...macdValues.map(Math.abs));
+  const maxAbsMacd = macdValues.length > 0 ? Math.max(0.00001, ...macdValues.map(Math.abs)) : 1;
 
   const getPriceY = (p) => kLineHeight - 20 - ((p - minPrice) / priceRange) * (kLineHeight - 40);
   const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
-  const getMacdY = (v) => macdTop + macdHeight / 2 - (v / maxAbsMacd) * (macdHeight / 2);
+  const getMacdY = (v) => macdTop + macdHeight * 0.5 - (v / maxAbsMacd) * (macdHeight * 0.5);
 
   const getSvgCoords = (clientX) => {
     if (!containerRef.current) return 0;
     const rect = containerRef.current.getBoundingClientRect();
-    return (clientX - rect.left) * (width / rect.width);
+    return (clientX - rect.left) * (width * (1.0 / rect.width));
   };
 
   const updateHover = (clientX) => {
@@ -1288,7 +1372,7 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   let macdPath = "";
   let signalPath = "";
   visibleKlines.forEach((k, i) => {
-    const x = paddingX + i * xStep + candleWidth / 2;
+    const x = paddingX + i * xStep + candleWidth * 0.5;
     if (k.macd?.macd != null && !isNaN(k.macd.macd)) {
       macdPath += (macdPath === "" ? `M ${x} ${getMacdY(k.macd.macd)} ` : `L ${x} ${getMacdY(k.macd.macd)} `);
     }
@@ -1312,7 +1396,7 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
               <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK?.open)}</span></span>
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK?.high)}</span></span>
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK?.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK?.close >= hoveredK?.open ? "text-[#0ecb81] ml-1" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK?.close)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK?.close >= hoveredK?.open ? "text-[#0ecb81]" : "text-[#f6465d] ml-1"}>{formatPrice(hoveredK?.close)}</span></span>
             </div>
             <div className="flex gap-2 text-[10px]">
               <span className="text-slate-500">Vol:<span className="text-white ml-1">{formatVolume(hoveredK?.volume)}</span></span>
@@ -1360,12 +1444,13 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
             const zeroY = getMacdY(0);
             const histHeight = Math.abs(histY - zeroY);
             const histColor = hist >= 0 ? '#0ecb81' : '#f6465d';
-            
+            const midX = x + candleWidth * 0.5;
+
             return (
               <g key={k.time || i}>
-                {hoveredIndex === i && <line x1={x + candleWidth / 2} y1={0} x2={x + candleWidth / 2} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
+                {hoveredIndex === i && <line x1={midX} y1={0} x2={midX} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
                 
-                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1.5" />
+                <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
                 <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={color} />
 
                 <rect x={x} y={volTop + volHeight - buyHeight} width={candleWidth} height={buyHeight} fill="#0ecb81" opacity="0.8" />
@@ -1416,7 +1501,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
           const chunkSignals = {};
           await Promise.all(chunk.map(async (coin) => {
             try {
-              const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
+              const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
               if (Array.isArray(data)) {
@@ -1431,7 +1516,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
              setDashState(prev => ({ ...prev, aiSignals: { ...prev.aiSignals, [tf]: { ...prev.aiSignals[tf], ...chunkSignals } } }));
           }
           completed += chunk.length;
-          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / totalOps) * 100)) }));
+          setDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / totalOps) * 100.0)) }));
           await new Promise(r => setTimeout(r, 200));
         }
     }
@@ -1506,7 +1591,7 @@ function CryptoPositionsPage({ allTickers, paperAccount, openPosition, closePosi
 
 function CryptoAssetsPage({ paperAccount, resetCryptoAccount }) {
   const totalRealized = Array.isArray(paperAccount.history) ? paperAccount.history.reduce((a, b) => a + b.pnl, 0) : 0;
-  const winRate = Array.isArray(paperAccount.history) && paperAccount.history.length ? ((paperAccount.history.filter(h => h.pnl > 0).length / paperAccount.history.length) * 100).toFixed(1) : 0;
+  const winRate = Array.isArray(paperAccount.history) && paperAccount.history.length ? ((paperAccount.history.filter(h => h.pnl > 0).length / paperAccount.history.length) * 100.0).toFixed(1) : 0;
   return (
     <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl mx-auto">
       <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-blue-500" /> 帳戶數據</h2>
@@ -1683,10 +1768,11 @@ export default function App() {
           const arrTse = Array.isArray(resTse) ? resTse : [];
           const arrOtc = Array.isArray(resOtc) ? resOtc : [];
 
+          const spaceRegex = new RegExp('\\s+', 'g');
+
           const formattedTse = arrTse.filter(i => i && i.Code).map(item => {
               const todayPrice = parseFloat(item.ClosingPrice);
-              // 修正：去除證交所 API 負數可能帶有的空白字元 (如 "- 1.50")
-              let changeStr = String(item.Change || '0').replace(/\s+/g, '').replace('+', '');
+              let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '');
               let changeAmt = parseFloat(changeStr) || 0;
               if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
               
@@ -1694,17 +1780,15 @@ export default function App() {
               if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
                   const yesterdayClose = todayPrice - changeAmt; 
                   if (yesterdayClose > 0) {
-                      // 強制套用公式：(今天的股價 - 昨收價) / 昨收價
-                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
                   }
               }
               return { symbol: String(item.Code), name: String(item.Name), lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
           });
 
-          // 修正：原本未計算上櫃股票的初始漲幅，現已補齊計算邏輯
           const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => {
               const todayPrice = parseFloat(i.Close);
-              let changeStr = String(i.Change || '0').replace(/\s+/g, '').replace('+', '');
+              let changeStr = String(i.Change || '0').replace(spaceRegex, '').replace('+', '');
               let changeAmt = parseFloat(changeStr) || 0;
               if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
 
@@ -1712,8 +1796,7 @@ export default function App() {
               if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
                   const yesterdayClose = todayPrice - changeAmt; 
                   if (yesterdayClose > 0) {
-                      // 強制套用公式：(今天的股價 - 昨收價) / 昨收價
-                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
                   }
               }
               return { 
@@ -1750,7 +1833,7 @@ export default function App() {
       const newPrices = {};
       await Promise.all(activeSymbols.map(async (sym) => {
         try {
-          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`, { cache: 'no-store' });
+          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`);
           const data = await res.json();
           const meta = data?.chart?.result?.[0]?.meta;
           if (meta && meta.regularMarketPrice) {
@@ -1764,22 +1847,19 @@ export default function App() {
     };
 
     syncTwPrices();
-    // 每 3 秒更新一次全域持倉之即時報價
-    const intId = setInterval(syncTwPrices, 3000); 
+    const intId = setInterval(syncTwPrices, 15000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [twAccount.positions]);
 
   const fetchCryptoMarkets = async () => {
     try {
-      const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
+      const res = await fetch('/api/binance?action=overview');
       const data = await res.json();
-      if (data && Array.isArray(data)) {
-        setAllTickers(data.filter(t => String(t.symbol).endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
+      if (data && Array.isArray(data.tickers)) {
+        setAllTickers(data.tickers.filter(t => String(t.symbol).endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
       }
-      const fundRes = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
-      const fundData = await fundRes.json();
-      if (fundData && Array.isArray(fundData)) {
-        const frMap = {}; fundData.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      if (data && Array.isArray(data.fundingRates)) {
+        const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
       }
     } catch(e) {} finally { setLoadingCrypto(false); }
   };
@@ -1818,7 +1898,7 @@ export default function App() {
 
   const openPosition = (symbol, type, margin, leverage, size, liq, mode, auto, price) => { setPaperAccount(prev => ({ ...prev, balance: prev.balance - margin, positions: [...prev.positions, { id: Date.now(), symbol: String(symbol), type, margin, leverage, size, entryPrice: price, liqPrice: liq, marginMode: mode, autoMargin: auto }] })); };
   const closePosition = (id, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; const pnl = p.type === 'LONG' ? (price - p.entryPrice) * p.size : (p.entryPrice - price) * p.size; return { ...prev, balance: prev.balance + p.margin + pnl, positions: prev.positions.filter(x => x.id !== id), history: [{ ...p, closePrice: price, pnl, closeTime: new Date().toLocaleString() }, ...prev.history].slice(0, 50) }; }); };
-  const adjustPosition = (id, type, amount, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; if (type === 'add') { const sz = (amount * p.leverage) / price; return { ...prev, balance: prev.balance - amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size + sz, margin: x.margin + amount, entryPrice: ((x.size * x.entryPrice) + (sz * price)) / (x.size + sz) } : x) }; } else { const r = amount / p.margin; return { ...prev, balance: prev.balance + amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size * (1 - r), margin: x.margin - amount } : x) }; } }); };
+  const adjustPosition = (id, type, amount, price) => { setPaperAccount(prev => { const p = prev.positions.find(x => x.id === id); if (!p) return prev; if (type === 'add') { const sz = (amount * p.leverage) / price; return { ...prev, balance: prev.balance - amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size + sz, margin: x.margin + amount, entryPrice: ((x.size * x.entryPrice) + (sz * price)) / (x.size + sz) } : x) }; } else { const r = amount / p.margin; return { ...prev, balance: prev.balance + amount, positions: prev.positions.map(x => x.id === id ? { ...x, size: x.size * (1.0 - r), margin: x.margin - amount } : x) }; } }); };
   const resetCryptoAccount = () => setPaperAccount({ balance: 10000, positions: [], history: [] });
 
   const openTwPosition = (symbol, name, type, size, price) => {
