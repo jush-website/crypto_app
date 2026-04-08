@@ -337,14 +337,13 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
         if (!isMounted) return;
         const meta = data?.chart?.result?.[0]?.meta;
         if (meta && meta.regularMarketPrice) {
-          setPrice(Number(meta.regularMarketPrice));
-          // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
-          if (meta.previousClose || meta.chartPreviousClose) {
-            const prevC = Number(meta.previousClose || meta.chartPreviousClose);
-            if (prevC > 0) {
-              const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
-              setChange(chg);
-            }
+          const todayPrice = Number(meta.regularMarketPrice);
+          setPrice(todayPrice);
+          // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
+          const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
+          if (yesterdayClose > 0) {
+            const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+            setChange(chg);
           }
           setIsLive(true);
         }
@@ -404,12 +403,12 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
            const data = await res.json();
            const meta = data?.chart?.result?.[0]?.meta;
            if (meta && meta.regularMarketPrice) {
-              const price = Number(meta.regularMarketPrice);
-              // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
-              const prevC = Number(meta.previousClose || meta.chartPreviousClose);
-              const change = prevC > 0 ? ((price - prevC) / prevC) * 100 : 0;
+              const todayPrice = Number(meta.regularMarketPrice);
+              // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
+              const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
+              const change = yesterdayClose > 0 ? ((todayPrice - yesterdayClose) / yesterdayClose) * 100 : 0;
               const vol = meta.regularMarketVolume || stock.quoteVolume;
-              newLiveData[stock.symbol] = { price, change, vol };
+              newLiveData[stock.symbol] = { price: todayPrice, change, vol };
            }
          } catch(e) {}
       }));
@@ -776,17 +775,16 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           const meta = result.meta;
           
           if (meta && meta.regularMarketPrice && isMounted) {
-              setCurrentPrice(Number(meta.regularMarketPrice));
+              const todayPrice = Number(meta.regularMarketPrice);
+              setCurrentPrice(todayPrice);
               if (meta.regularMarketVolume) {
                   setCurrentVolume(Number(meta.regularMarketVolume));
               }
-              // 修正：優先使用真實昨收價 (previousClose) 避免除權息導致漲跌幅失真
-              if (meta.previousClose || meta.chartPreviousClose) {
-                  const prevC = Number(meta.previousClose || meta.chartPreviousClose);
-                  if (prevC > 0) {
-                      const chg = ((Number(meta.regularMarketPrice) - prevC) / prevC) * 100;
-                      setCurrentChange(chg.toFixed(2));
-                  }
+              // 依據要求，強制套用公式：(今天的股價 - 昨收價) / 昨收價
+              const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose);
+              if (yesterdayClose > 0) {
+                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                  setCurrentChange(chg.toFixed(2));
               }
           }
 
@@ -1686,36 +1684,42 @@ export default function App() {
           const arrOtc = Array.isArray(resOtc) ? resOtc : [];
 
           const formattedTse = arrTse.filter(i => i && i.Code).map(item => {
-              const current = parseFloat(item.ClosingPrice);
+              const todayPrice = parseFloat(item.ClosingPrice);
               // 修正：去除證交所 API 負數可能帶有的空白字元 (如 "- 1.50")
               let changeStr = String(item.Change || '0').replace(/\s+/g, '').replace('+', '');
               let changeAmt = parseFloat(changeStr) || 0;
               if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
               
               let percent = 0;
-              if (!isNaN(current) && !isNaN(changeAmt) && current !== 0) {
-                  const prevClose = current - changeAmt; 
-                  if (prevClose > 0) percent = (changeAmt / prevClose) * 100;
+              if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
+                  const yesterdayClose = todayPrice - changeAmt; 
+                  if (yesterdayClose > 0) {
+                      // 強制套用公式：(今天的股價 - 昨收價) / 昨收價
+                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                  }
               }
-              return { symbol: String(item.Code), name: String(item.Name), lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
+              return { symbol: String(item.Code), name: String(item.Name), lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
           });
 
           // 修正：原本未計算上櫃股票的初始漲幅，現已補齊計算邏輯
           const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => {
-              const current = parseFloat(i.Close);
+              const todayPrice = parseFloat(i.Close);
               let changeStr = String(i.Change || '0').replace(/\s+/g, '').replace('+', '');
               let changeAmt = parseFloat(changeStr) || 0;
               if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
 
               let percent = 0;
-              if (!isNaN(current) && !isNaN(changeAmt) && current !== 0) {
-                  const prevClose = current - changeAmt; 
-                  if (prevClose > 0) percent = (changeAmt / prevClose) * 100;
+              if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
+                  const yesterdayClose = todayPrice - changeAmt; 
+                  if (yesterdayClose > 0) {
+                      // 強制套用公式：(今天的股價 - 昨收價) / 昨收價
+                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100;
+                  }
               }
               return { 
                   symbol: String(i.SecuritiesCompanyCode), 
                   name: String(i.CompanyName || i.SecuritiesCompanyName), 
-                  lastPrice: isNaN(current) ? '0.00' : current.toFixed(2), 
+                  lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
                   quoteVolume: parseInt(i.Volume) || 0 
               };
