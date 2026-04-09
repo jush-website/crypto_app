@@ -26,6 +26,87 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
+// 統一處理 Yahoo API 的時差與計算問題
+function parseYahooData(data) {
+  if (!data?.chart?.result?.[0]) return null;
+  const result = data.chart.result[0];
+  const meta = result.meta;
+  if (!meta || !meta.regularMarketPrice) return null;
+
+  const todayPrice = Number(meta.regularMarketPrice);
+  const vol = Number(meta.regularMarketVolume || 0);
+  
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0] || {};
+  
+  let validKlines = [];
+  for (let i = 0; i < timestamps.length; i++) {
+      if (quote.close && quote.close[i] != null) {
+          validKlines.push({ 
+              time: timestamps[i] * 1000, 
+              open: Number(quote.open[i]), 
+              high: Number(quote.high[i]), 
+              low: Number(quote.low[i]), 
+              close: Number(quote.close[i]), 
+              volume: Number(quote.volume[i] || 0) 
+          });
+      }
+  }
+
+  let change = 0;
+  let yesterdayClose = 0;
+
+  if (meta.exactChangePercent !== undefined) {
+      change = Number(meta.exactChangePercent);
+      yesterdayClose = meta.previousClose || 0;
+      
+      if (validKlines.length > 0) {
+          const lastK = validKlines[validKlines.length - 1];
+          validKlines[validKlines.length - 1] = {
+              ...lastK,
+              close: todayPrice,
+              high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
+              low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
+              volume: Math.max(lastK.volume, vol)
+          };
+      }
+  } else if (validKlines.length >= 2) {
+      // 強制使用台北時區對齊日期，避免 K 線少一天或計算錯誤
+      const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+      const metaTimeMs = (meta.regularMarketTime || (Date.now()/1000)) * 1000;
+      const metaDate = new Date(metaTimeMs).toLocaleDateString('zh-TW', opt);
+      const lastK = validKlines[validKlines.length - 1];
+      const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
+
+      if (metaDate === lastKDate) {
+          yesterdayClose = validKlines[validKlines.length - 2].close;
+          validKlines[validKlines.length - 1] = {
+              ...lastK,
+              close: todayPrice,
+              high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
+              low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
+              volume: Math.max(lastK.volume, vol)
+          };
+      } else {
+          yesterdayClose = lastK.close;
+          validKlines.push({
+              time: metaTimeMs,
+              open: meta.regularMarketOpen || lastK.close || todayPrice,
+              high: Math.max(meta.regularMarketDayHigh || todayPrice, todayPrice),
+              low: Math.min(meta.regularMarketDayLow || todayPrice, todayPrice),
+              close: todayPrice,
+              volume: vol
+          });
+      }
+
+      if (yesterdayClose > 0) {
+          change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+      }
+  }
+
+  return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
+}
+
 // ==========================================
 // 1.5 存股推薦清單與歷年配息資料庫
 // ==========================================
@@ -248,7 +329,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
 }
 
-// 籌碼動態推算引擎 (升級版)
 function generateBranchData(symbol, price, change, vol) {
     const changeNum = parseFloat(change || 0);
     const priceNum = parseFloat(price || 0);
@@ -368,34 +448,10 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
         const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
         if (!isMounted) return;
-        const meta = data?.chart?.result?.[0]?.meta;
-        if (meta && meta.regularMarketPrice) {
-          const todayPrice = Number(meta.regularMarketPrice);
-          setPrice(todayPrice);
-          
-          // 動態計算真實昨收價，解決 Yahoo 歷史 API chartPreviousClose 導致漲跌幅異常的問題
-          const timestamps = data.chart.result[0].timestamp || [];
-          const closes = data.chart.result[0].indicators?.quote?.[0]?.close || [];
-          let validCloses = [];
-          for(let i=0; i<timestamps.length; i++) {
-              if(closes[i] != null) validCloses.push({ time: timestamps[i]*1000, close: closes[i] });
-          }
-
-          let yesterdayClose = 0;
-          if (validCloses.length >= 2) {
-              const lastDate = new Date(validCloses[validCloses.length - 1].time).toLocaleDateString();
-              const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
-              if (lastDate === liveDate) {
-                  yesterdayClose = validCloses[validCloses.length - 2].close;
-              } else {
-                  yesterdayClose = validCloses[validCloses.length - 1].close;
-              }
-          }
-
-          if (yesterdayClose > 0) {
-            const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-            setChange(chg);
-          }
+        const parsed = parseYahooData(data);
+        if (parsed) {
+          setPrice(parsed.price);
+          setChange(parsed.change);
           setIsLive(true);
         }
       } catch(e) {}
@@ -432,7 +488,6 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
         </div>
       </div>
       
-      {/* 高股息/存股專屬的展開資訊 */}
       {divInfo && (
         <div className="mt-4 pt-3 border-t border-[#2a2f3a]/50">
           <div className="flex justify-between items-center mb-3">
@@ -475,32 +530,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
          try {
            const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
            const data = await res.json();
-           const meta = data?.chart?.result?.[0]?.meta;
-           if (meta && meta.regularMarketPrice) {
-              const todayPrice = Number(meta.regularMarketPrice);
-              
-              // 動態計算真實昨收價
-              const timestamps = data.chart.result[0].timestamp || [];
-              const closes = data.chart.result[0].indicators?.quote?.[0]?.close || [];
-              let validCloses = [];
-              for(let j=0; j<timestamps.length; j++) {
-                  if(closes[j] != null) validCloses.push({ time: timestamps[j]*1000, close: closes[j] });
-              }
-
-              let yesterdayClose = 0;
-              if (validCloses.length >= 2) {
-                  const lastDate = new Date(validCloses[validCloses.length - 1].time).toLocaleDateString();
-                  const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
-                  if (lastDate === liveDate) {
-                      yesterdayClose = validCloses[validCloses.length - 2].close;
-                  } else {
-                      yesterdayClose = validCloses[validCloses.length - 1].close;
-                  }
-              }
-
-              const change = yesterdayClose > 0 ? ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0 : 0;
-              const vol = meta.regularMarketVolume || stock.quoteVolume;
-              newLiveData[stock.symbol] = { price: todayPrice, change, vol };
+           const parsed = parseYahooData(data);
+           if (parsed) {
+              newLiveData[stock.symbol] = { price: parsed.price, change: parsed.change, vol: parsed.vol };
            }
          } catch(e) {}
       }));
@@ -570,7 +602,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
         {filtered.map(stock => (
           <TwLiveStockCard key={stock.symbol} stock={stock} activeTab={activeTab} isScanned={!!liveData[stock.symbol]} />
         ))}
-        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之即時標的。</div>}
+        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之標的。</div>}
       </div>
       <div className="text-center mt-6">
         <p className="text-xs text-slate-500 bg-[#121620] inline-block px-4 py-2 rounded-full border border-[#2a2f3a]">
@@ -777,7 +809,7 @@ function TwKLineChart({ klines }) {
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
         {hoveredK && (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleDateString()}</div>
+            <div>DATE: {new Date(hoveredK.time).toLocaleDateString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
             <div className="flex gap-2">
               <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
@@ -864,75 +896,18 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         if (!resHistory.ok) throw new Error('API failed');
         const historyData = await resHistory.json();
         
-        let klines = [];
-        if (historyData?.chart?.result?.[0]) {
-          const result = historyData.chart.result[0];
-          const meta = result.meta;
-          const timestamps = result.timestamp || [];
-          const quote = result.indicators?.quote?.[0] || {};
-
-          for (let i = 0; i < timestamps.length; i++) {
-            if (quote.close && quote.close[i] != null) {
-              klines.push({ 
-                  time: timestamps[i] * 1000, 
-                  open: Number(quote.open[i]), 
-                  high: Number(quote.high[i]), 
-                  low: Number(quote.low[i]), 
-                  close: Number(quote.close[i]), 
-                  volume: Number(quote.volume[i] || 0) 
-              });
-            }
-          }
-
-          if (meta && meta.regularMarketPrice && isMounted) {
-              const todayPrice = Number(meta.regularMarketPrice);
-              setCurrentPrice(todayPrice);
-              if (meta.regularMarketVolume) {
-                  setCurrentVolume(Number(meta.regularMarketVolume));
-              }
-              
-              // 動態計算真實昨收價，並補齊遺失的今日 K 線
-              let yesterdayClose = 0;
-              if (klines.length >= 2) {
-                  const lastK = klines[klines.length - 1];
-                  const secondLastK = klines[klines.length - 2];
-                  const lastDate = new Date(lastK.time).toLocaleDateString();
-                  const liveDate = new Date((meta.regularMarketTime || (Date.now()/1000)) * 1000).toLocaleDateString();
-
-                  if (lastDate === liveDate) {
-                      yesterdayClose = secondLastK.close;
-                      // 更新最新一根 K 線為即時狀態
-                      klines[klines.length - 1] = {
-                          ...lastK,
-                          close: todayPrice,
-                          high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
-                          low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
-                          volume: Math.max(lastK.volume, meta.regularMarketVolume || 0)
-                      };
-                  } else {
-                      yesterdayClose = lastK.close;
-                      // 補齊今天遺失的 K 線
-                      klines.push({
-                          time: (meta.regularMarketTime || (Date.now()/1000)) * 1000,
-                          open: meta.regularMarketOpen || lastK.close || todayPrice,
-                          high: meta.regularMarketDayHigh || todayPrice,
-                          low: meta.regularMarketDayLow || todayPrice,
-                          close: todayPrice,
-                          volume: meta.regularMarketVolume || 0
-                      });
-                  }
-              }
-
-              if (yesterdayClose > 0) {
-                  const chg = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-                  setCurrentChange(chg.toFixed(2));
-              }
-          }
-        }
-        
+        const parsed = parseYahooData(historyData);
         if (isMounted) {
-            if (klines.length > 0) {
-                setChartData(calculateIndicators(klines)); 
+            if (parsed) {
+                setCurrentPrice(parsed.price);
+                setCurrentVolume(parsed.vol);
+                setCurrentChange(parsed.change.toFixed(2));
+                if (parsed.klines.length > 0) {
+                    setChartData(calculateIndicators(parsed.klines)); 
+                } else {
+                    setChartError(true);
+                    setChartData([]);
+                }
             } else {
                 setChartError(true);
                 setChartData([]);
@@ -1711,7 +1686,7 @@ function CryptoAssetsPage({ paperAccount, resetCryptoAccount }) {
         <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg"><div className="text-xs text-slate-400">歷史勝率</div><div className="text-2xl font-mono font-bold text-white">{winRate}%</div></div>
       </div>
       <div className="pt-8">
-        <button onClick={() => { if(window.confirm('確定要宣告破Config並重置虛擬貨幣帳戶嗎？所有紀錄將清空，並恢復初始資金 10,000 USDT。')) resetCryptoAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+        <button onClick={() => { if(window.confirm('確定要宣告破產並重置虛擬貨幣帳戶嗎？所有紀錄將清空，並恢復初始資金 10,000 USDT。')) resetCryptoAccount(); }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
             <RefreshCw className="w-5 h-5" /> 破產重置 (恢復初始 10,000 USDT)
         </button>
       </div>
@@ -1945,9 +1920,9 @@ export default function App() {
         try {
           const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`);
           const data = await res.json();
-          const meta = data?.chart?.result?.[0]?.meta;
-          if (meta && meta.regularMarketPrice) {
-              newPrices[sym] = Number(meta.regularMarketPrice);
+          const parsed = parseYahooData(data);
+          if (parsed) {
+              newPrices[sym] = parsed.price;
           }
         } catch(e) {}
       }));
