@@ -95,6 +95,11 @@ export default async function handler(req, res) {
       const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
       return res.status(200).json(await tpexRes.json());
     }
+    // 【新增】：讀取您提供的 OpenAPI 券商分點通訊錄
+    else if (action === 'tw-brokers') {
+      const brokerRes = await fetch('https://openapi.twse.com.tw/v1/opendata/OpenData_BRK02');
+      return res.status(200).json(await brokerRes.json());
+    }
     else if (action === 'tw-history' && symbol) {
       const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
       
