@@ -26,13 +26,16 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 統一處理 API 資料：強制套用官方昨收價錨定，徹底消滅漲跌幅跳動錯亂
-function parseYahooData(data, officialPrevClose) {
+// 統一處理 API 資料：動態補齊即時 K 線與精準漲幅 (防禦 Yahoo 歷史延遲與錯位)
+function parseYahooData(data) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
   const meta = result.meta;
-  if (!meta) return null;
+  if (!meta || !meta.regularMarketPrice) return null;
 
+  const todayPrice = Number(meta.regularMarketPrice);
+  const vol = Number(meta.regularMarketVolume || 0);
+  
   const timestamps = result.timestamp || [];
   const quote = result.indicators?.quote?.[0] || {};
   
@@ -50,11 +53,6 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  // 取得最新收盤或即時價
-  const lastKClose = validKlines.length > 0 ? validKlines[validKlines.length - 1].close : 0;
-  const todayPrice = (meta.regularMarketPrice !== undefined && meta.regularMarketPrice !== null && meta.regularMarketPrice > 0) ? Number(meta.regularMarketPrice) : lastKClose;
-  const vol = Number(meta.regularMarketVolume || (validKlines.length > 0 ? validKlines[validKlines.length - 1].volume : 0));
-
   let trueYesterdayClose = 0;
   const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
   const todayStr = new Date().toLocaleDateString('zh-TW', opt);
@@ -64,8 +62,8 @@ function parseYahooData(data, officialPrevClose) {
       const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
       const realOpen = meta.regularMarketOpen || lastK.close || todayPrice;
-      const realHigh = Math.max(meta.regularMarketDayHigh || todayPrice, todayPrice);
-      const realLow = meta.regularMarketDayLow ? Math.min(meta.regularMarketDayLow, todayPrice) : todayPrice;
+      const realHigh = meta.regularMarketDayHigh || todayPrice;
+      const realLow = meta.regularMarketDayLow || todayPrice;
 
       if (todayStr === lastKDate) {
           if (validKlines.length >= 2) {
@@ -80,27 +78,27 @@ function parseYahooData(data, officialPrevClose) {
           };
       } else {
           trueYesterdayClose = lastK.close;
-          // 若歷史資料未推進到今天，強制畫出一根當日即時 K 柱
           validKlines.push({
               time: Date.now(), 
               open: realOpen,
-              high: realHigh,
-              low: realLow,
+              high: Math.max(realHigh, todayPrice),
+              low: Math.min(realLow, todayPrice),
               close: todayPrice,
               volume: vol
           });
       }
   }
 
-  // 【核心革命】：絕對錨定！只要我們擁有官方的昨收價，就強制使用它作為分母，徹底防禦 Yahoo 亂給昨收導致的 +70% 錯誤
-  const yesterdayClose = (officialPrevClose && officialPrevClose > 0) 
-      ? Number(officialPrevClose) 
-      : (meta.previousClose && meta.previousClose !== meta.chartPreviousClose ? Number(meta.previousClose) : trueYesterdayClose);
+  const yesterdayClose = (meta.previousClose && meta.previousClose !== meta.chartPreviousClose) 
+      ? Number(meta.previousClose) 
+      : trueYesterdayClose;
 
   let change = 0;
   if (yesterdayClose > 0) {
       change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-  } else if (meta.exactChangePercent !== undefined && meta.exactChangePercent !== null) {
+  }
+  
+  if (meta.exactChangePercent !== undefined && meta.exactChangePercent !== null) {
       change = Number(meta.exactChangePercent);
   }
 
@@ -465,8 +463,7 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
         
         if (!isMounted || currentFetch !== fetchRef.current) return;
         
-        // 傳入從全域列表抓到的「官方最準確昨收價」，強制鎖定作為百分比計算錨點
-        const parsed = parseYahooData(data, stock.officialPrevClose);
+        const parsed = parseYahooData(data);
         if (parsed) {
           if (isLiveModeRef.current && !parsed.isRealTime) return;
           if (parsed.isRealTime) isLiveModeRef.current = true;
@@ -481,7 +478,7 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
     fetchLive();
     const intId = setInterval(fetchLive, 3000);
     return () => { isMounted = false; clearInterval(intId); };
-  }, [stock.symbol, isVisible, stock.officialPrevClose]);
+  }, [stock.symbol, isVisible]);
 
   const isPositive = change >= 0;
   const divInfo = activeTab === 'DIVIDEND' ? DIVIDEND_RECOMMENDATIONS[stock.symbol] : null;
@@ -565,8 +562,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
          try {
            const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
            const data = await res.json();
-           // 強制傳入官方昨收價錨點
-           const parsed = parseYahooData(data, stock.officialPrevClose);
+           const parsed = parseYahooData(data);
            if (parsed) {
               newLiveData[stock.symbol] = { price: parsed.price, change: parsed.change, vol: parsed.vol };
            }
@@ -991,8 +987,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         
         if (!isMounted || currentFetch !== fetchRef.current) return;
         
-        // 強制寫入官方昨收價，保證不跳動
-        const parsed = parseYahooData(historyData, stock.officialPrevClose);
+        const parsed = parseYahooData(historyData);
         if (parsed) {
             if (isLiveModeRef.current && !parsed.isRealTime) {
                 setIsSyncing(false);
@@ -1030,7 +1025,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     fetchChart();
     const intId = setInterval(() => fetchChart(true), 3000); 
     return () => { isMounted = false; clearInterval(intId); };
-  }, [stock.symbol, stock.officialPrevClose]);
+  }, [stock.symbol]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1964,12 +1959,10 @@ export default function App() {
               
               const match = changeStr.match(/-?\d+\.?\d*/);
               let changeAmt = match ? parseFloat(match[0]) : 0;
-              if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
               
               let percent = 0;
-              let yesterdayClose = todayPrice; 
               if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
-                  yesterdayClose = todayPrice - changeAmt; 
+                  const yesterdayClose = todayPrice - changeAmt; 
                   if (yesterdayClose > 0) {
                       percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
                   }
@@ -1979,8 +1972,7 @@ export default function App() {
                   name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
                   lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
-                  quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                  officialPrevClose: yesterdayClose // 保留官方的絕對昨收價供前端錨定
+                  quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0 
               };
           };
 
@@ -2019,10 +2011,7 @@ export default function App() {
         try {
           const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`, { cache: 'no-store' });
           const data = await res.json();
-          
-          // 在更新持倉現價時，也強制傳入 twStocks 陣列中的官方定海神針
-          const targetStock = twStocks.find(x => String(x.symbol) === String(sym));
-          const parsed = parseYahooData(data, targetStock?.officialPrevClose);
+          const parsed = parseYahooData(data);
           
           if (parsed) {
               if (liveModeMapRef.current[sym] && !parsed.isRealTime) return;
@@ -2041,7 +2030,7 @@ export default function App() {
     syncTwPrices();
     const intId = setInterval(syncTwPrices, 15000); 
     return () => { isMounted = false; clearInterval(intId); };
-  }, [twAccount.positions, twStocks]);
+  }, [twAccount.positions]);
 
   const fetchCryptoMarkets = async () => {
     try {
