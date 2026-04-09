@@ -1,3 +1,7 @@
+// 建立全域記憶體快取，防止 Serverless 頻繁請求 OpenAPI 被封鎖
+let openApiCache = [];
+let cacheTime = 0;
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*'); 
@@ -50,19 +54,16 @@ export default async function handler(req, res) {
         data = await yfRes.json();
       }
 
-      // 2. 【核心革命：直連台灣證交所 MIS 即時 API，帶 Cookie 破解阻擋】
+      // 2. 【第一重校準：直連台灣證交所 MIS 即時 API，帶 Cookie 破解阻擋】
       let misSuccess = false;
       try {
-          // 先取得 Session Cookie 破解 TWSE 防爬蟲機制
           const sessionRes = await fetch('https://mis.twse.com.tw/stock/index.jsp', { 
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } 
           });
           
-          // 擷取 Set-Cookie 標頭
           const rawCookies = sessionRes.headers.get('set-cookie');
           let cookieString = '';
           if (rawCookies) {
-              // 解析出 JSESSIONID 以供後續請求使用
               cookieString = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
           }
           
@@ -73,58 +74,49 @@ export default async function handler(req, res) {
               'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7', 
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           };
-          // 夾帶通行證
-          if (cookieString) {
-              misFetchHeaders['Cookie'] = cookieString;
-          }
+          if (cookieString) misFetchHeaders['Cookie'] = cookieString;
 
           const misRes = await fetch(misUrl, { headers: misFetchHeaders });
           const misData = await misRes.json();
           
           if (misData?.msgArray?.length > 0) {
               const stockInfo = misData.msgArray[0];
-              const prevClose = Number(stockInfo.y); // y: 真實昨收價
+              const prevClose = Number(stockInfo.y); 
               
-              // 判斷盤中成交價，若尚無成交(z為'-')則看開盤價或昨收
               let realPrice = prevClose;
-              if (stockInfo.z && stockInfo.z !== '-') {
-                  realPrice = Number(stockInfo.z);
-              } else if (stockInfo.o && stockInfo.o !== '-') {
-                  realPrice = Number(stockInfo.o);
-              }
+              if (stockInfo.z && stockInfo.z !== '-') realPrice = Number(stockInfo.z);
+              else if (stockInfo.o && stockInfo.o !== '-') realPrice = Number(stockInfo.o);
 
-              const volumeShares = Number(stockInfo.v || 0) * 1000; // v 為張數，換算成股數
+              const volumeShares = Number(stockInfo.v || 0) * 1000; 
               const high = stockInfo.h !== '-' ? Number(stockInfo.h) : realPrice;
               const low = stockInfo.l !== '-' ? Number(stockInfo.l) : realPrice;
               const open = stockInfo.o !== '-' ? Number(stockInfo.o) : realPrice;
 
               if (data?.chart?.result?.[0]?.meta) {
                   data.chart.result[0].meta.regularMarketPrice = realPrice;
-                  data.chart.result[0].meta.previousClose = prevClose; // 覆蓋錯誤的 chartPreviousClose
+                  data.chart.result[0].meta.previousClose = prevClose; 
                   data.chart.result[0].meta.regularMarketVolume = volumeShares;
                   data.chart.result[0].meta.regularMarketDayHigh = high;
                   data.chart.result[0].meta.regularMarketDayLow = low;
                   data.chart.result[0].meta.regularMarketOpen = open;
-                  // 精算即時漲跌幅
                   data.chart.result[0].meta.exactChangePercent = prevClose > 0 ? ((realPrice - prevClose) / prevClose) * 100.0 : 0;
-                  data.chart.result[0].meta.isRealTime = true; // 標記為真正的 0 延遲數據
+                  data.chart.result[0].meta.isRealTime = true; 
               }
               misSuccess = true;
           }
-      } catch(e) {
-          console.error("MIS fetch error", e);
-      }
+      } catch(e) {}
 
-      // 3. 若 MIS 失敗 (例如非交易時段或被擋)，強制使用 Yahoo V7 Quote API 取得真昨收
-      if (!misSuccess) {
+      // 3. 【第二重校準：導入官方 OpenAPI 進行交叉比對】
+      // 若 MIS 失敗，或需驗證 Yahoo 資料是否暴走 (如 +73% bug)
+      if (!misSuccess && data?.chart?.result?.[0]?.meta) {
+          // Yahoo 備援
           try {
               const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
               const quoteData = await quoteRes.json();
               const quote = quoteData?.quoteResponse?.result?.[0];
               
-              if (quote && data?.chart?.result?.[0]?.meta) {
+              if (quote) {
                   data.chart.result[0].meta.regularMarketPrice = quote.regularMarketPrice;
-                  // 取得 V7 API 回傳的精準昨日收盤價，覆蓋 V8 Chart 的半年錯誤收盤價
                   data.chart.result[0].meta.previousClose = quote.regularMarketPreviousClose;
                   data.chart.result[0].meta.regularMarketVolume = quote.regularMarketVolume;
                   data.chart.result[0].meta.exactChangePercent = quote.regularMarketChangePercent;
@@ -133,6 +125,53 @@ export default async function handler(req, res) {
                   data.chart.result[0].meta.regularMarketOpen = quote.regularMarketOpen;
               }
           } catch(e) {}
+
+          // 使用 TWSE / TPEx OpenAPI 強制校準 (防禦 Yahoo 半年線錯誤)
+          try {
+              const now = Date.now();
+              // 伺服器端快取 10 分鐘，避免請求過度頻繁
+              if (openApiCache.length === 0 || now - cacheTime > 600000) { 
+                  const [tse, otc] = await Promise.all([
+                      fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(r=>r.json()).catch(()=>[]),
+                      fetch('https://www.tpex.org.tw/openapi/v1/t1820').then(r=>r.json()).catch(()=>[])
+                  ]);
+                  openApiCache = [...(Array.isArray(tse) ? tse : []), ...(Array.isArray(otc) ? otc : [])];
+                  cacheTime = now;
+              }
+
+              if (openApiCache.length > 0) {
+                  const stockOfficial = openApiCache.find(s => String(s.Code || s.SecuritiesCompanyCode) === String(symbol));
+                  if (stockOfficial) {
+                      const officialPrice = parseFloat(stockOfficial.ClosingPrice || stockOfficial.Close);
+                      let changeStr = String(stockOfficial.Change || '0').replace(/\s+/g, '').replace('+', '').replace('X', '');
+                      const match = changeStr.match(/-?\d+\.?\d*/);
+                      let changeAmt = match ? parseFloat(match[0]) : 0;
+
+                      if (!isNaN(officialPrice) && !isNaN(changeAmt) && officialPrice > 0) {
+                          const meta = data.chart.result[0].meta;
+                          const currentPrice = meta.regularMarketPrice || officialPrice;
+                          const currentPrevClose = meta.previousClose;
+                          
+                          // 偵測異常：如果 Yahoo 給出的漲幅大於 12%（台股通常最多 10% 漲跌停），代表 Yahoo 給錯昨收價了
+                          const isAbsurd = currentPrevClose > 0 && Math.abs((currentPrice - currentPrevClose) / currentPrevClose) > 0.12;
+                          
+                          if (isAbsurd || !currentPrevClose) {
+                              // 利用 OpenAPI 反推精準的真實昨收價
+                              let calculatedPrevClose = officialPrice - changeAmt;
+                              // 若盤中時段，OpenAPI 的 ClosingPrice 其實就是昨收
+                              if (Math.abs((currentPrice - officialPrice) / officialPrice) < 0.12) {
+                                  calculatedPrevClose = officialPrice;
+                              }
+                              
+                              meta.previousClose = calculatedPrevClose;
+                              meta.exactChangePercent = ((currentPrice - calculatedPrevClose) / calculatedPrevClose) * 100.0;
+                          }
+                      }
+                  }
+              }
+          } catch(e) {
+              console.error("OpenAPI Cross-check error", e);
+          }
       }
 
       return res.status(200).json(data);
