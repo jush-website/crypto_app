@@ -2109,10 +2109,22 @@ export default function App() {
              </div>
 
              <div className="text-xs text-slate-500 mb-1 font-bold">主系統</div>
-             <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
-             <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('tw_') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台灣股市與 ETF</button>
-             <button onClick={() => { window.location.hash = '#/news'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute === 'news' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>熱點新聞</button>
-             <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-3 rounded-lg text-left font-bold transition-all ${currentRoute.startsWith('crypto') ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>虛擬貨幣分析</button>
+             <button onClick={() => { window.location.hash = '#/portal'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'portal' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>首頁入口</button>
+             <button onClick={() => { window.location.hash = '#/news'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'news' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>熱點新聞</button>
+
+             <div className="text-xs text-slate-500 mt-4 mb-1 font-bold">台股與 ETF</div>
+             <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_stocks' || currentRoute === 'tw_stock_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台股市場</button>
+             <button onClick={() => { window.location.hash = '#/tw-stocks/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold flex items-center justify-between transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
+                當沖持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{twAccount.positions.length}</span>}
+             </button>
+             <button onClick={() => { window.location.hash = '#/tw-stocks/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台股資產</button>
+
+             <div className="text-xs text-slate-500 mt-4 mb-1 font-bold">虛擬貨幣 SMC</div>
+             <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
+             <button onClick={() => { window.location.hash = '#/crypto/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold flex items-center justify-between transition-all ${currentRoute === 'crypto_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
+                持倉清單 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{paperAccount.positions.length}</span>}
+             </button>
+             <button onClick={() => { window.location.hash = '#/crypto/assets'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>資產帳戶</button>
           </div>
         </div>
       )}
