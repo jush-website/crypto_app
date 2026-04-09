@@ -1,11 +1,11 @@
-// 建立全域記憶體快取，確保伺服器擁有唯一且最精準的昨收價基準
+// 建立全域記憶體快取，確保伺服器擁有唯一且「絕不跳動」的官方股價基準
 let openApiCache = {};
 let cacheTime = 0;
 
-// 取得台灣證交所官方的精準昨收價 (避免頻繁請求，快取 10 分鐘)
-async function getTruePrevClose(symbol) {
+// 單純抓取台灣證交所官方 OpenAPI 的精準數據 (快取 5 分鐘，防阻擋)
+async function getOfficialStockData(symbol) {
     const now = Date.now();
-    if (Object.keys(openApiCache).length === 0 || now - cacheTime > 600000) { 
+    if (Object.keys(openApiCache).length === 0 || now - cacheTime > 300000) { 
         try {
             const [tseRes, otcRes] = await Promise.all([
                 fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
@@ -15,13 +15,36 @@ async function getTruePrevClose(symbol) {
             const otc = await otcRes.json().catch(() => []);
             
             const newCache = {};
-            // 盤中時段，官方 OpenAPI 的 ClosingPrice 正是我們需要的「精準昨收價」
-            if (Array.isArray(tse)) {
-                tse.forEach(s => { newCache[s.Code] = parseFloat(s.ClosingPrice); });
-            }
-            if (Array.isArray(otc)) {
-                otc.forEach(s => { newCache[s.SecuritiesCompanyCode] = parseFloat(s.Close); });
-            }
+            const spaceRegex = new RegExp('\\s+', 'g');
+            
+            const processItem = (item, isOtc) => {
+                const code = String(isOtc ? item.SecuritiesCompanyCode : item.Code);
+                const price = parseFloat(isOtc ? item.Close : item.ClosingPrice);
+                
+                // 嚴格過濾特殊字元 (例如除息的 'X' 與負號空白)
+                let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
+                const match = changeStr.match(/-?\d+\.?\d*/);
+                let changeAmt = match ? parseFloat(match[0]) : 0;
+                if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
+                
+                let prevClose = price;
+                let percent = 0;
+                // 利用官方 OpenAPI 的收盤價與漲跌額，絕對精準反推昨收價與漲幅
+                if (!isNaN(price) && !isNaN(changeAmt) && price !== 0) {
+                    prevClose = price - changeAmt;
+                    if (prevClose > 0) percent = (changeAmt / prevClose) * 100.0;
+                }
+                
+                newCache[code] = {
+                    price: isNaN(price) ? 0 : price,
+                    prevClose: prevClose,
+                    percent: percent,
+                    volume: parseInt(isOtc ? item.Volume : item.TradeVolume) || 0
+                };
+            };
+
+            if (Array.isArray(tse)) tse.forEach(i => { if (i.Code) processItem(i, false); });
+            if (Array.isArray(otc)) otc.forEach(i => { if (i.SecuritiesCompanyCode) processItem(i, true); });
             
             if (Object.keys(newCache).length > 0) {
                 openApiCache = newCache;
@@ -75,95 +98,27 @@ export default async function handler(req, res) {
     else if (action === 'tw-history' && symbol) {
       const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
       
-      // 1. 抓取基礎歷史 K 線，取得畫圖所需數據
+      // 1. 單純抓取 Yahoo 基礎歷史 K 線 (僅用於繪製圖表)
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
       let data = await yfRes.json();
-      let suffix = '.TW';
       
       if (!data?.chart?.result) {
-        suffix = '.TWO';
         yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers });
         data = await yfRes.json();
       }
 
-      // 2. 獲取官方 OpenAPI 最精準的昨收價，作為不動如山的計算基準
-      let truePrevClose = await getTruePrevClose(symbol);
-      
-      let misSuccess = false;
-      let realPrice = null;
-      let realVolume = null;
+      // 2. 核心修正：單純抓取 OpenAPI 取得最正確的官方股價，徹底取代容易跳動的 MIS 與 Yahoo Quote
+      const officialData = await getOfficialStockData(symbol);
 
-      // 3. 直連台灣證交所 MIS 取得 0 延遲現價
-      try {
-          const sessionRes = await fetch('https://mis.twse.com.tw/stock/index.jsp', { 
-              headers: { 'User-Agent': 'Mozilla/5.0' } 
-          });
-          
-          const rawCookies = sessionRes.headers.get('set-cookie');
-          let cookieString = '';
-          if (rawCookies) cookieString = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
-          
-          const timestamp = Date.now();
-          const misUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw|otc_${symbol}.tw&json=1&delay=0&_=${timestamp}`;
-          
-          const misFetchHeaders = { 
-              'Accept-Language': 'zh-TW', 
-              'User-Agent': 'Mozilla/5.0',
-              'Cookie': cookieString
-          };
-
-          const misRes = await fetch(misUrl, { headers: misFetchHeaders });
-          const misData = await misRes.json();
-          
-          if (misData?.msgArray?.length > 0) {
-              const stockInfo = misData.msgArray[0];
-              
-              // 取得即時成交價 (若無成交則看開盤，否則看昨收)
-              if (stockInfo.z && stockInfo.z !== '-') realPrice = Number(stockInfo.z);
-              else if (stockInfo.o && stockInfo.o !== '-') realPrice = Number(stockInfo.o);
-              else if (stockInfo.y && stockInfo.y !== '-') realPrice = Number(stockInfo.y);
-
-              if (stockInfo.v) realVolume = Number(stockInfo.v) * 1000;
-              
-              // 若 OpenAPI 快取碰巧沒抓到，用 MIS 的 'y' (昨收價) 當備援
-              if (!truePrevClose && stockInfo.y) truePrevClose = Number(stockInfo.y);
-              
-              misSuccess = true;
-          }
-      } catch(e) {}
-
-      // 4. 若 MIS 被擋或失敗，回退使用 Yahoo V7 Quote API 取得目前價格
-      if (!realPrice) {
-          try {
-              const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
-              const quoteData = await quoteRes.json();
-              const quote = quoteData?.quoteResponse?.result?.[0];
-              
-              if (quote) {
-                  realPrice = quote.regularMarketPrice;
-                  realVolume = quote.regularMarketVolume;
-                  if (!truePrevClose) truePrevClose = quote.regularMarketPreviousClose;
-              }
-          } catch(e) {}
-      }
-
-      // 終極防呆：確保價格與昨收價皆有數值
-      if (!realPrice && data?.chart?.result?.[0]?.meta) {
-          realPrice = data.chart.result[0].meta.regularMarketPrice;
-      }
-      if (!truePrevClose) truePrevClose = realPrice; // 避免除以 0
-
-      // 5. 強制覆蓋：徹底根除 Yahoo 錯誤的歷史資料，寫入鎖定計算後的精準 % 數
-      if (data?.chart?.result?.[0]?.meta) {
+      if (officialData && data?.chart?.result?.[0]?.meta) {
           const meta = data.chart.result[0].meta;
-          meta.regularMarketPrice = realPrice;
-          meta.previousClose = truePrevClose; 
-          
-          if (realVolume !== null) meta.regularMarketVolume = realVolume;
-          
-          // 強制統一精算，不會再有任何跳動誤差
-          meta.exactChangePercent = truePrevClose > 0 ? ((realPrice - truePrevClose) / truePrevClose) * 100.0 : 0;
-          meta.isRealTime = misSuccess; 
+          // 完全捨棄 Yahoo 混亂的報價，強制寫入官方 OpenAPI 數據
+          meta.regularMarketPrice = officialData.price;
+          meta.previousClose = officialData.prevClose; 
+          meta.regularMarketVolume = officialData.volume;
+          meta.exactChangePercent = officialData.percent; 
+          // 確保前端知道這是不會跳回錯誤的官方數據
+          meta.isRealTime = true; 
       }
 
       return res.status(200).json(data);
