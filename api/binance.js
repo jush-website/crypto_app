@@ -39,6 +39,7 @@ export default async function handler(req, res) {
     else if (action === 'tw-history' && symbol) {
       const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
       
+      // 1. 先抓取基礎歷史 K 線
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
       let data = await yfRes.json();
       let suffix = '.TW';
@@ -49,21 +50,62 @@ export default async function handler(req, res) {
         data = await yfRes.json();
       }
 
-      // 【核心修正】額外請求 v7/quote API，取得 100% 精準的即時昨收價與漲跌幅
+      // 2. 【核心革命：直連台灣證交所 MIS 即時 API，突破 Yahoo 20 分鐘延遲】
+      let misSuccess = false;
       try {
-          const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
-          const quoteData = await quoteRes.json();
-          const quote = quoteData?.quoteResponse?.result?.[0];
+          const timestamp = Date.now();
+          const misUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw|otc_${symbol}.tw&json=1&delay=0&_=${timestamp}`;
+          const misRes = await fetch(misUrl, { 
+              headers: { 
+                  'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7', 
+                  'User-Agent': 'Mozilla/5.0' 
+              } 
+          });
+          const misData = await misRes.json();
           
-          if (quote && data?.chart?.result?.[0]?.meta) {
-              data.chart.result[0].meta.regularMarketPrice = quote.regularMarketPrice;
-              data.chart.result[0].meta.previousClose = quote.regularMarketPreviousClose; // 真正的昨收價
-              data.chart.result[0].meta.regularMarketVolume = quote.regularMarketVolume;
-              data.chart.result[0].meta.exactChangePercent = quote.regularMarketChangePercent; // 官方算好的精準 %
-              data.chart.result[0].meta.exactChange = quote.regularMarketChange;
+          if (misData?.msgArray?.length > 0) {
+              const stockInfo = misData.msgArray[0];
+              const prevClose = Number(stockInfo.y);
+              // z: 最近成交價。如果尚未開盤或盤中無量可能為 "-"，此時以昨收價代替
+              const realPrice = stockInfo.z !== '-' ? Number(stockInfo.z) : prevClose; 
+              const volumeShares = Number(stockInfo.v || 0) * 1000; // v 是「張數」，換算為「股數」
+              const high = stockInfo.h !== '-' ? Number(stockInfo.h) : realPrice;
+              const low = stockInfo.l !== '-' ? Number(stockInfo.l) : realPrice;
+              const open = stockInfo.o !== '-' ? Number(stockInfo.o) : realPrice;
+
+              if (data?.chart?.result?.[0]?.meta) {
+                  data.chart.result[0].meta.regularMarketPrice = realPrice;
+                  data.chart.result[0].meta.previousClose = prevClose;
+                  data.chart.result[0].meta.regularMarketVolume = volumeShares;
+                  data.chart.result[0].meta.regularMarketDayHigh = high;
+                  data.chart.result[0].meta.regularMarketDayLow = low;
+                  data.chart.result[0].meta.regularMarketOpen = open;
+                  data.chart.result[0].meta.exactChangePercent = prevClose > 0 ? ((realPrice - prevClose) / prevClose) * 100.0 : 0;
+                  data.chart.result[0].meta.isRealTime = true;
+              }
+              misSuccess = true;
           }
       } catch(e) {
-          console.error("Quote fetch error", e);
+          console.error("MIS fetch error", e);
+      }
+
+      // 3. 如果證交所 MIS 拒絕連線，回退使用 Yahoo Quote 即時 API (確保精準昨收價)
+      if (!misSuccess) {
+          try {
+              const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
+              const quoteData = await quoteRes.json();
+              const quote = quoteData?.quoteResponse?.result?.[0];
+              
+              if (quote && data?.chart?.result?.[0]?.meta) {
+                  data.chart.result[0].meta.regularMarketPrice = quote.regularMarketPrice;
+                  data.chart.result[0].meta.previousClose = quote.regularMarketPreviousClose;
+                  data.chart.result[0].meta.regularMarketVolume = quote.regularMarketVolume;
+                  data.chart.result[0].meta.exactChangePercent = quote.regularMarketChangePercent;
+                  data.chart.result[0].meta.regularMarketDayHigh = quote.regularMarketDayHigh;
+                  data.chart.result[0].meta.regularMarketDayLow = quote.regularMarketDayLow;
+                  data.chart.result[0].meta.regularMarketOpen = quote.regularMarketOpen;
+              }
+          } catch(e) {}
       }
 
       return res.status(200).json(data);
