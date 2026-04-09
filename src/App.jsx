@@ -108,7 +108,10 @@ function parseYahooData(data) {
       change = Number(meta.exactChangePercent);
   }
 
-  return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
+  // 標記這筆資料是否為真正 0 延遲的即時數據
+  const isRealTime = meta.isRealTime === true;
+
+  return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines, isRealTime };
 }
 
 // ==========================================
@@ -242,6 +245,7 @@ function detectLiquiditySweep(klines) {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 }
 
+// 虛擬貨幣純 SMC 分析引擎 (不使用滯後指標)
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
@@ -333,6 +337,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
 }
 
+// 台股籌碼動態推算引擎 (升級版)
 function generateBranchData(symbol, price, change, vol) {
     const changeNum = parseFloat(change || 0);
     const priceNum = parseFloat(price || 0);
@@ -430,6 +435,9 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
   const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef(null);
 
+  const fetchRef = useRef(0);
+  const isLiveModeRef = useRef(false);
+
   useEffect(() => {
      setPrice(parseFloat(stock.lastPrice) || 0);
      setChange(parseFloat(stock.priceChangePercent) || 0);
@@ -448,12 +456,18 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
     if (!isVisible) return;
     let isMounted = true;
     const fetchLive = async () => {
+      const currentFetch = ++fetchRef.current;
       try {
         const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
-        if (!isMounted) return;
+        
+        if (!isMounted || currentFetch !== fetchRef.current) return;
+        
         const parsed = parseYahooData(data);
         if (parsed) {
+          if (isLiveModeRef.current && !parsed.isRealTime) return;
+          if (parsed.isRealTime) isLiveModeRef.current = true;
+
           setPrice(parsed.price);
           setChange(parsed.change);
           setIsLive(true);
@@ -576,14 +590,15 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 sm:pb-0">
-          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto min-w-max">
-             <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>大盤與熱門個股</button>
-             <button onClick={() => setActiveTab('DAYTRADE')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖潛力雷達</button>
-             <button onClick={() => setActiveTab('DIVIDEND')} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>💰 高股息與存股推薦</button>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
+          {/* 【版面修復】：大幅簡化文字標題，避免手機版超出螢幕 */}
+          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto min-w-max overflow-x-auto scrollbar-hide">
+             <button onClick={() => setActiveTab('ALL')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>🔥 熱門</button>
+             <button onClick={() => setActiveTab('DAYTRADE')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}>⚠️ 隔日沖</button>
+             <button onClick={() => setActiveTab('DIVIDEND')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>💰 存股</button>
           </div>
           <button onClick={handleLiveScan} disabled={isScanning} className="w-full sm:w-auto bg-[#121620] px-4 py-2 rounded-lg border border-[#2a2f3a] text-blue-400 hover:bg-[#2a2f3a] hover:text-blue-300 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0 text-sm">
-            <RefreshCw className={`w-4 h-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} /> {isScanning ? `即時數據掃描中 ${scanProgress}%` : '全域即時掃描'}
+            <RefreshCw className={`w-4 h-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} /> {isScanning ? `即時掃描 ${scanProgress}%` : '全域掃描'}
           </button>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full xl:w-auto shrink-0">
@@ -606,11 +621,11 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
         {filtered.map(stock => (
           <TwLiveStockCard key={stock.symbol} stock={stock} activeTab={activeTab} isScanned={!!liveData[stock.symbol]} />
         ))}
-        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之標的。</div>}
+        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之即時標的。</div>}
       </div>
       <div className="text-center mt-6">
         <p className="text-xs text-slate-500 bg-[#121620] inline-block px-4 py-2 rounded-full border border-[#2a2f3a]">
-          點擊上方【全域即時掃描】以獲取盤中最新隔日沖強勢股，狀態將自動為您記憶。
+          點擊上方【全域掃描】以獲取盤中最新隔日沖強勢股，狀態將自動為您記憶。
         </p>
       </div>
     </div>
@@ -880,9 +895,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
+  const fetchRef = useRef(0);
+  const isLiveModeRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
     const fetchChart = async (isBackground = false) => {
+      const currentFetch = ++fetchRef.current;
       try {
         if (!isBackground) setChartLoading(true);
         else setIsSyncing(true);
@@ -900,31 +919,40 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         if (!resHistory.ok) throw new Error('API failed');
         const historyData = await resHistory.json();
         
+        if (!isMounted || currentFetch !== fetchRef.current) return;
+        
         const parsed = parseYahooData(historyData);
-        if (isMounted) {
-            if (parsed) {
-                setCurrentPrice(parsed.price);
-                setCurrentVolume(parsed.vol);
-                setCurrentChange(parsed.change.toFixed(2));
-                if (parsed.klines.length > 0) {
-                    setChartData(calculateIndicators(parsed.klines)); 
-                } else {
-                    setChartError(true);
-                    setChartData([]);
-                }
+        if (parsed) {
+            if (isLiveModeRef.current && !parsed.isRealTime) {
+                setIsSyncing(false);
+                return;
+            }
+            if (parsed.isRealTime) isLiveModeRef.current = true;
+
+            setCurrentPrice(parsed.price);
+            setCurrentVolume(parsed.vol);
+            setCurrentChange(parsed.change.toFixed(2));
+            if (parsed.klines.length > 0) {
+                setChartData(calculateIndicators(parsed.klines)); 
             } else {
                 setChartError(true);
                 setChartData([]);
             }
+        } else {
+            setChartError(true);
+            setChartData([]);
         }
       } catch (err) {
-         if (isMounted) {
+         if (isMounted && currentFetch === fetchRef.current) {
              setChartError(true);
              setChartData([]);
          }
       } 
       finally {
-         if (isMounted) { setChartLoading(false); setIsSyncing(false); }
+         if (isMounted && currentFetch === fetchRef.current) { 
+             setChartLoading(false); 
+             setIsSyncing(false); 
+         }
       }
     };
 
@@ -1710,7 +1738,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -1724,7 +1752,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
     fetchAll();
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
+        const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
         const data = await res.json();
         if (isMounted && data.price) setCurrentPrice(parseFloat(data.price));
       } catch(e) {}
@@ -1901,24 +1929,34 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
+  const syncFetchRef = useRef(0);
+  const liveModeMapRef = useRef({});
+
   useEffect(() => {
     const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
     if (activeSymbols.length === 0) return;
     
     let isMounted = true;
     const syncTwPrices = async () => {
+      const currentFetch = ++syncFetchRef.current;
       const newPrices = {};
+      
       await Promise.all(activeSymbols.map(async (sym) => {
         try {
-          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`);
+          const res = await fetch(`/api/binance?action=tw-history&symbol=${sym}&_t=${Date.now()}`, { cache: 'no-store' });
           const data = await res.json();
           const parsed = parseYahooData(data);
+          
           if (parsed) {
+              if (liveModeMapRef.current[sym] && !parsed.isRealTime) return;
+              if (parsed.isRealTime) liveModeMapRef.current[sym] = true;
+              
               newPrices[sym] = parsed.price;
           }
         } catch(e) {}
       }));
-      if (isMounted && Object.keys(newPrices).length > 0) {
+
+      if (isMounted && currentFetch === syncFetchRef.current && Object.keys(newPrices).length > 0) {
         setTwLivePrices(prev => ({ ...prev, ...newPrices }));
       }
     };
@@ -1928,7 +1966,6 @@ export default function App() {
     return () => { isMounted = false; clearInterval(intId); };
   }, [twAccount.positions]);
 
-  // 【核心革命】：虛擬貨幣完全繞過 Vercel 緩存，前端直連 Binance 實現 0 延遲
   const fetchCryptoMarkets = async () => {
     try {
       const [tickerRes, fundingRes] = await Promise.all([
