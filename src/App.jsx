@@ -26,7 +26,7 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 統一處理 Yahoo API 的時差與嚴格計算問題
+// 統一處理 API 資料：動態補齊即時 K 線與精準漲幅 (適配最新後端 MIS 引擎)
 function parseYahooData(data) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
@@ -53,36 +53,42 @@ function parseYahooData(data) {
       }
   }
 
-  // 嚴格套用公式：(今日價 - 昨收價) / 昨收價 * 100
+  // 優先套用後端從證交所 MIS / Yahoo Quote 計算好的精準數據
   const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose || 0);
-  let change = 0;
-  if (yesterdayClose > 0) {
+  let change = Number(meta.exactChangePercent || 0);
+  
+  // 備用計算機制防呆
+  if (change === 0 && yesterdayClose > 0 && todayPrice !== yesterdayClose) {
       change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
   }
 
-  // 強制時區校準，解決 K 線少一天的問題
+  // 強制時區校準，解決 K 線少一天的問題，並生成即時最後一根 K 柱
   if (validKlines.length > 0) {
       const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
       const todayStr = new Date().toLocaleDateString('zh-TW', opt);
       const lastK = validKlines[validKlines.length - 1];
       const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
+      const realOpen = meta.regularMarketOpen || lastK.close || todayPrice;
+      const realHigh = meta.regularMarketDayHigh || todayPrice;
+      const realLow = meta.regularMarketDayLow || todayPrice;
+
       if (todayStr === lastKDate) {
-          // 若最後一根是今天，更新即時報價與高低點
+          // 更新今日的 K 柱
           validKlines[validKlines.length - 1] = {
               ...lastK,
               close: todayPrice,
-              high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
-              low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
+              high: Math.max(lastK.high, realHigh),
+              low: Math.min(lastK.low, realLow),
               volume: Math.max(lastK.volume, vol)
           };
       } else {
-          // 若歷史資料還沒更新到今天，強行推入一根當日的即時 K 線
+          // 歷史數據落後，強行插入一根即時 K 柱
           validKlines.push({
               time: Date.now(), 
-              open: meta.regularMarketOpen || lastK.close || todayPrice,
-              high: Math.max(meta.regularMarketDayHigh || todayPrice, todayPrice),
-              low: Math.min(meta.regularMarketDayLow || todayPrice, todayPrice),
+              open: realOpen,
+              high: Math.max(realHigh, todayPrice),
+              low: Math.min(realLow, todayPrice),
               close: todayPrice,
               volume: vol
           });
