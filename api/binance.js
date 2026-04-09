@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     else if (action === 'tw-history' && symbol) {
       const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
       
-      // 1. 先抓取基礎歷史 K 線
+      // 1. 先抓取基礎歷史 K 線 (Yahoo Chart)
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
       let data = await yfRes.json();
       let suffix = '.TW';
@@ -50,38 +50,64 @@ export default async function handler(req, res) {
         data = await yfRes.json();
       }
 
-      // 2. 【核心革命：直連台灣證交所 MIS 即時 API，突破 Yahoo 20 分鐘延遲】
+      // 2. 【核心革命：直連台灣證交所 MIS 即時 API，帶 Cookie 破解阻擋】
       let misSuccess = false;
       try {
+          // 先取得 Session Cookie 破解 TWSE 防爬蟲機制
+          const sessionRes = await fetch('https://mis.twse.com.tw/stock/index.jsp', { 
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } 
+          });
+          
+          // 擷取 Set-Cookie 標頭
+          const rawCookies = sessionRes.headers.get('set-cookie');
+          let cookieString = '';
+          if (rawCookies) {
+              // 解析出 JSESSIONID 以供後續請求使用
+              cookieString = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
+          }
+          
           const timestamp = Date.now();
           const misUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw|otc_${symbol}.tw&json=1&delay=0&_=${timestamp}`;
-          const misRes = await fetch(misUrl, { 
-              headers: { 
-                  'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7', 
-                  'User-Agent': 'Mozilla/5.0' 
-              } 
-          });
+          
+          const misFetchHeaders = { 
+              'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7', 
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          };
+          // 夾帶通行證
+          if (cookieString) {
+              misFetchHeaders['Cookie'] = cookieString;
+          }
+
+          const misRes = await fetch(misUrl, { headers: misFetchHeaders });
           const misData = await misRes.json();
           
           if (misData?.msgArray?.length > 0) {
               const stockInfo = misData.msgArray[0];
-              const prevClose = Number(stockInfo.y);
-              // z: 最近成交價。如果尚未開盤或盤中無量可能為 "-"，此時以昨收價代替
-              const realPrice = stockInfo.z !== '-' ? Number(stockInfo.z) : prevClose; 
-              const volumeShares = Number(stockInfo.v || 0) * 1000; // v 是「張數」，換算為「股數」
+              const prevClose = Number(stockInfo.y); // y: 真實昨收價
+              
+              // 判斷盤中成交價，若尚無成交(z為'-')則看開盤價或昨收
+              let realPrice = prevClose;
+              if (stockInfo.z && stockInfo.z !== '-') {
+                  realPrice = Number(stockInfo.z);
+              } else if (stockInfo.o && stockInfo.o !== '-') {
+                  realPrice = Number(stockInfo.o);
+              }
+
+              const volumeShares = Number(stockInfo.v || 0) * 1000; // v 為張數，換算成股數
               const high = stockInfo.h !== '-' ? Number(stockInfo.h) : realPrice;
               const low = stockInfo.l !== '-' ? Number(stockInfo.l) : realPrice;
               const open = stockInfo.o !== '-' ? Number(stockInfo.o) : realPrice;
 
               if (data?.chart?.result?.[0]?.meta) {
                   data.chart.result[0].meta.regularMarketPrice = realPrice;
-                  data.chart.result[0].meta.previousClose = prevClose;
+                  data.chart.result[0].meta.previousClose = prevClose; // 覆蓋錯誤的 chartPreviousClose
                   data.chart.result[0].meta.regularMarketVolume = volumeShares;
                   data.chart.result[0].meta.regularMarketDayHigh = high;
                   data.chart.result[0].meta.regularMarketDayLow = low;
                   data.chart.result[0].meta.regularMarketOpen = open;
+                  // 精算即時漲跌幅
                   data.chart.result[0].meta.exactChangePercent = prevClose > 0 ? ((realPrice - prevClose) / prevClose) * 100.0 : 0;
-                  data.chart.result[0].meta.isRealTime = true;
+                  data.chart.result[0].meta.isRealTime = true; // 標記為真正的 0 延遲數據
               }
               misSuccess = true;
           }
@@ -89,7 +115,7 @@ export default async function handler(req, res) {
           console.error("MIS fetch error", e);
       }
 
-      // 3. 如果證交所 MIS 拒絕連線，回退使用 Yahoo Quote 即時 API (確保精準昨收價)
+      // 3. 若 MIS 失敗 (例如非交易時段或被擋)，強制使用 Yahoo V7 Quote API 取得真昨收
       if (!misSuccess) {
           try {
               const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
@@ -98,6 +124,7 @@ export default async function handler(req, res) {
               
               if (quote && data?.chart?.result?.[0]?.meta) {
                   data.chart.result[0].meta.regularMarketPrice = quote.regularMarketPrice;
+                  // 取得 V7 API 回傳的精準昨日收盤價，覆蓋 V8 Chart 的半年錯誤收盤價
                   data.chart.result[0].meta.previousClose = quote.regularMarketPreviousClose;
                   data.chart.result[0].meta.regularMarketVolume = quote.regularMarketVolume;
                   data.chart.result[0].meta.exactChangePercent = quote.regularMarketChangePercent;
