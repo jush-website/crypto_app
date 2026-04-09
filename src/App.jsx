@@ -26,7 +26,7 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 統一處理 API 資料：動態補齊即時 K 線與精準漲幅 (適配最新後端 MIS 引擎)
+// 統一處理 API 資料：動態補齊即時 K 線與精準漲幅 (防禦 Yahoo 歷史延遲與錯位)
 function parseYahooData(data) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
@@ -53,19 +53,12 @@ function parseYahooData(data) {
       }
   }
 
-  // 優先套用後端從證交所 MIS / Yahoo Quote 計算好的精準數據
-  const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose || 0);
-  let change = Number(meta.exactChangePercent || 0);
-  
-  // 備用計算機制防呆
-  if (change === 0 && yesterdayClose > 0 && todayPrice !== yesterdayClose) {
-      change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-  }
+  // 核心修復：直接從 K 線陣列尋找真實昨收價，絕對不使用錯誤的 chartPreviousClose
+  let trueYesterdayClose = 0;
+  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const todayStr = new Date().toLocaleDateString('zh-TW', opt);
 
-  // 強制時區校準，解決 K 線少一天的問題，並生成即時最後一根 K 柱
   if (validKlines.length > 0) {
-      const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-      const todayStr = new Date().toLocaleDateString('zh-TW', opt);
       const lastK = validKlines[validKlines.length - 1];
       const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
@@ -74,7 +67,11 @@ function parseYahooData(data) {
       const realLow = meta.regularMarketDayLow || todayPrice;
 
       if (todayStr === lastKDate) {
-          // 更新今日的 K 柱
+          // 最後一根 K 柱是今天，昨收為倒數第二根
+          if (validKlines.length >= 2) {
+              trueYesterdayClose = validKlines[validKlines.length - 2].close;
+          }
+          // 即時更新今日 K 柱
           validKlines[validKlines.length - 1] = {
               ...lastK,
               close: todayPrice,
@@ -83,7 +80,9 @@ function parseYahooData(data) {
               volume: Math.max(lastK.volume, vol)
           };
       } else {
-          // 歷史數據落後，強行插入一根即時 K 柱
+          // 歷史資料延遲，最後一根是昨天，將其設為真實昨收
+          trueYesterdayClose = lastK.close;
+          // 強制繪製今天的即時 K 柱
           validKlines.push({
               time: Date.now(), 
               open: realOpen,
@@ -93,6 +92,20 @@ function parseYahooData(data) {
               volume: vol
           });
       }
+  }
+
+  // 優先使用後端精準 MIS previousClose，否則使用 K 線反推的昨收
+  const yesterdayClose = (meta.previousClose && meta.previousClose !== meta.chartPreviousClose) 
+      ? Number(meta.previousClose) 
+      : trueYesterdayClose;
+
+  let change = 0;
+  if (yesterdayClose > 0) {
+      change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+  }
+  
+  if (meta.exactChangePercent !== undefined && meta.exactChangePercent !== null) {
+      change = Number(meta.exactChangePercent);
   }
 
   return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
@@ -1577,7 +1590,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
           const chunkSignals = {};
           await Promise.all(chunk.map(async (coin) => {
             try {
-              const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=80`);
+              const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
               if (Array.isArray(data)) {
@@ -1697,7 +1710,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -1711,7 +1724,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
     fetchAll();
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/binance?action=price&symbol=${coin.symbol}`);
+        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin.symbol}`);
         const data = await res.json();
         if (isMounted && data.price) setCurrentPrice(parseFloat(data.price));
       } catch(e) {}
@@ -1915,15 +1928,20 @@ export default function App() {
     return () => { isMounted = false; clearInterval(intId); };
   }, [twAccount.positions]);
 
+  // 【核心革命】：虛擬貨幣完全繞過 Vercel 緩存，前端直連 Binance 實現 0 延遲
   const fetchCryptoMarkets = async () => {
     try {
-      const res = await fetch('/api/binance?action=overview');
-      const data = await res.json();
-      if (data && Array.isArray(data.tickers)) {
-        setAllTickers(data.tickers.filter(t => String(t.symbol).endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
+      const [tickerRes, fundingRes] = await Promise.all([
+        fetch('https://fapi.binance.com/fapi/v1/ticker/24hr'),
+        fetch('https://fapi.binance.com/fapi/v1/premiumIndex')
+      ]);
+      const tickers = await tickerRes.json();
+      const fundingRates = await fundingRes.json();
+      if (Array.isArray(tickers)) {
+        setAllTickers(tickers.filter(t => String(t.symbol).endsWith('USDT')).sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)));
       }
-      if (data && Array.isArray(data.fundingRates)) {
-        const frMap = {}; data.fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
+      if (Array.isArray(fundingRates)) {
+        const frMap = {}; fundingRates.forEach(i => { frMap[i.symbol] = i.lastFundingRate; }); setFundingRates(frMap);
       }
     } catch(e) {} finally { setLoadingCrypto(false); }
   };
