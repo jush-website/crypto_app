@@ -1,4 +1,4 @@
-// 建立全域記憶體快取，確保伺服器擁有唯一且「絕不跳動」的官方股價基準
+// 建立全域記憶體快取，確保伺服器擁有唯一且「絕不跳動」的官方昨收價基準
 let openApiCache = {};
 let cacheTime = 0;
 
@@ -37,7 +37,7 @@ async function getOfficialStockData(symbol) {
                 
                 newCache[code] = {
                     price: isNaN(price) ? 0 : price,
-                    prevClose: prevClose,
+                    prevClose: prevClose, // <--- 我們只需要這個最準的昨收價
                     percent: percent,
                     volume: parseInt(isOtc ? item.Volume : item.TradeVolume) || 0
                 };
@@ -95,7 +95,6 @@ export default async function handler(req, res) {
       const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
       return res.status(200).json(await tpexRes.json());
     }
-    // 【新增】：讀取您提供的 OpenAPI 券商分點通訊錄
     else if (action === 'tw-brokers') {
       const brokerRes = await fetch('https://openapi.twse.com.tw/v1/opendata/OpenData_BRK02');
       return res.status(200).json(await brokerRes.json());
@@ -106,24 +105,50 @@ export default async function handler(req, res) {
       // 1. 單純抓取 Yahoo 基礎歷史 K 線 (僅用於繪製圖表)
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
       let data = await yfRes.json();
+      let suffix = '.TW';
       
       if (!data?.chart?.result) {
+        suffix = '.TWO';
         yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers });
         data = await yfRes.json();
       }
 
-      // 2. 核心修正：單純抓取 OpenAPI 取得最正確的官方股價，徹底取代容易跳動的 MIS 與 Yahoo Quote
+      // 2. 獲取官方 OpenAPI 最精準的昨收價，作為不動如山的計算基準 (Anchor)
       const officialData = await getOfficialStockData(symbol);
+      const truePrevClose = officialData ? officialData.prevClose : null;
 
-      if (officialData && data?.chart?.result?.[0]?.meta) {
-          const meta = data.chart.result[0].meta;
-          // 完全捨棄 Yahoo 混亂的報價，強制寫入官方 OpenAPI 數據
-          meta.regularMarketPrice = officialData.price;
-          meta.previousClose = officialData.prevClose; 
-          meta.regularMarketVolume = officialData.volume;
-          meta.exactChangePercent = officialData.percent; 
-          // 確保前端知道這是不會跳回錯誤的官方數據
-          meta.isRealTime = true; 
+      // 3. 【核心修正】擷取 Yahoo V7 Quote 取得「會跳動」的盤中即時報價
+      try {
+          const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
+          const quoteData = await quoteRes.json();
+          const quote = quoteData?.quoteResponse?.result?.[0];
+          
+          if (quote && data?.chart?.result?.[0]?.meta) {
+              const meta = data.chart.result[0].meta;
+              
+              // 現價與交易量使用 Yahoo 即時報價 (這樣盤中股價就會一直跳動)
+              const livePrice = quote.regularMarketPrice;
+              meta.regularMarketPrice = livePrice;
+              meta.regularMarketVolume = quote.regularMarketVolume;
+              meta.regularMarketDayHigh = quote.regularMarketDayHigh;
+              meta.regularMarketDayLow = quote.regularMarketDayLow;
+              meta.regularMarketOpen = quote.regularMarketOpen;
+              meta.regularMarketTime = quote.regularMarketTime;
+
+              // 關鍵：昨收價強制使用官方的 truePrevClose。若無，才降級用 Yahoo 的昨收
+              if (truePrevClose && truePrevClose > 0) {
+                  meta.previousClose = truePrevClose;
+                  // 用跳動的現價與鎖死的官方昨收，重新精算漲跌幅
+                  meta.exactChangePercent = ((livePrice - truePrevClose) / truePrevClose) * 100.0;
+              } else {
+                  meta.previousClose = quote.regularMarketPreviousClose;
+                  meta.exactChangePercent = quote.regularMarketChangePercent;
+              }
+              
+              meta.isRealTime = true;
+          }
+      } catch(e) {
+          console.error("Quote fetch error", e);
       }
 
       return res.status(200).json(data);
