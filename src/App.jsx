@@ -26,7 +26,7 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 統一處理 Yahoo API 的時差與計算問題
+// 統一處理 Yahoo API 的時差與嚴格計算問題
 function parseYahooData(data) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
@@ -53,33 +53,22 @@ function parseYahooData(data) {
       }
   }
 
+  // 嚴格套用公式：(今日價 - 昨收價) / 昨收價 * 100
+  const yesterdayClose = Number(meta.previousClose || meta.chartPreviousClose || 0);
   let change = 0;
-  let yesterdayClose = 0;
+  if (yesterdayClose > 0) {
+      change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+  }
 
-  if (meta.exactChangePercent !== undefined) {
-      change = Number(meta.exactChangePercent);
-      yesterdayClose = meta.previousClose || 0;
-      
-      if (validKlines.length > 0) {
-          const lastK = validKlines[validKlines.length - 1];
-          validKlines[validKlines.length - 1] = {
-              ...lastK,
-              close: todayPrice,
-              high: Math.max(lastK.high, meta.regularMarketDayHigh || todayPrice),
-              low: Math.min(lastK.low, meta.regularMarketDayLow || todayPrice),
-              volume: Math.max(lastK.volume, vol)
-          };
-      }
-  } else if (validKlines.length >= 2) {
-      // 強制使用台北時區對齊日期，避免 K 線少一天或計算錯誤
+  // 強制時區校準，解決 K 線少一天的問題
+  if (validKlines.length > 0) {
       const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-      const metaTimeMs = (meta.regularMarketTime || (Date.now()/1000)) * 1000;
-      const metaDate = new Date(metaTimeMs).toLocaleDateString('zh-TW', opt);
+      const todayStr = new Date().toLocaleDateString('zh-TW', opt);
       const lastK = validKlines[validKlines.length - 1];
       const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
-      if (metaDate === lastKDate) {
-          yesterdayClose = validKlines[validKlines.length - 2].close;
+      if (todayStr === lastKDate) {
+          // 若最後一根是今天，更新即時報價與高低點
           validKlines[validKlines.length - 1] = {
               ...lastK,
               close: todayPrice,
@@ -88,19 +77,15 @@ function parseYahooData(data) {
               volume: Math.max(lastK.volume, vol)
           };
       } else {
-          yesterdayClose = lastK.close;
+          // 若歷史資料還沒更新到今天，強行推入一根當日的即時 K 線
           validKlines.push({
-              time: metaTimeMs,
+              time: Date.now(), 
               open: meta.regularMarketOpen || lastK.close || todayPrice,
               high: Math.max(meta.regularMarketDayHigh || todayPrice, todayPrice),
               low: Math.min(meta.regularMarketDayLow || todayPrice, todayPrice),
               close: todayPrice,
               volume: vol
           });
-      }
-
-      if (yesterdayClose > 0) {
-          change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
       }
   }
 
@@ -1855,11 +1840,12 @@ export default function App() {
 
           const spaceRegex = new RegExp('\\s+', 'g');
 
-          const formattedTse = arrTse.filter(i => i && i.Code).map(item => {
-              const todayPrice = parseFloat(item.ClosingPrice);
-              let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '');
-              let changeAmt = parseFloat(changeStr) || 0;
-              if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
+          const processStockData = (item) => {
+              const todayPrice = parseFloat(item.ClosingPrice || item.Close);
+              let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
+              
+              const match = changeStr.match(/-?\d+\.?\d*/);
+              let changeAmt = match ? parseFloat(match[0]) : 0;
               
               let percent = 0;
               if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
@@ -1868,30 +1854,17 @@ export default function App() {
                       percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
                   }
               }
-              return { symbol: String(item.Code), name: String(item.Name), lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), priceChangePercent: percent.toFixed(2), quoteVolume: parseInt(item.TradeVolume) || 0 };
-          });
-
-          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => {
-              const todayPrice = parseFloat(i.Close);
-              let changeStr = String(i.Change || '0').replace(spaceRegex, '').replace('+', '');
-              let changeAmt = parseFloat(changeStr) || 0;
-              if (changeStr.includes('-')) changeAmt = -Math.abs(changeAmt);
-
-              let percent = 0;
-              if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
-                  const yesterdayClose = todayPrice - changeAmt; 
-                  if (yesterdayClose > 0) {
-                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-                  }
-              }
               return { 
-                  symbol: String(i.SecuritiesCompanyCode), 
-                  name: String(i.CompanyName || i.SecuritiesCompanyName), 
+                  symbol: String(item.Code || item.SecuritiesCompanyCode), 
+                  name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
                   lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
-                  quoteVolume: parseInt(i.Volume) || 0 
+                  quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0 
               };
-          });
+          };
+
+          const formattedTse = arrTse.filter(i => i && i.Code).map(processStockData);
+          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData);
 
           const combined = [...formattedTse, ...formattedOtc]
             .filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol))
