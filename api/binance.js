@@ -1,63 +1,8 @@
-// 建立全域記憶體快取，確保伺服器擁有唯一且「絕不跳動」的官方昨收價基準
-let openApiCache = {};
-let cacheTime = 0;
-
-// 單純抓取台灣證交所官方 OpenAPI 的精準數據 (快取 5 分鐘，防阻擋)
-async function getOfficialStockData(symbol) {
-    const now = Date.now();
-    if (Object.keys(openApiCache).length === 0 || now - cacheTime > 300000) { 
-        try {
-            const [tseRes, otcRes] = await Promise.all([
-                fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
-                fetch('https://www.tpex.org.tw/openapi/v1/t1820')
-            ]);
-            const tse = await tseRes.json().catch(() => []);
-            const otc = await otcRes.json().catch(() => []);
-            
-            const newCache = {};
-            const spaceRegex = new RegExp('\\s+', 'g');
-            
-            const processItem = (item, isOtc) => {
-                const code = String(isOtc ? item.SecuritiesCompanyCode : item.Code);
-                const price = parseFloat(isOtc ? item.Close : item.ClosingPrice);
-                
-                // 嚴格過濾特殊字元 (例如除息的 'X' 與負號空白)
-                let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
-                const match = changeStr.match(/-?\d+\.?\d*/);
-                let changeAmt = match ? parseFloat(match[0]) : 0;
-                if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
-                
-                let prevClose = price;
-                let percent = 0;
-                // 利用官方 OpenAPI 的收盤價與漲跌額，絕對精準反推昨收價與漲幅
-                if (!isNaN(price) && !isNaN(changeAmt) && price !== 0) {
-                    prevClose = price - changeAmt;
-                    if (prevClose > 0) percent = (changeAmt / prevClose) * 100.0;
-                }
-                
-                newCache[code] = {
-                    price: isNaN(price) ? 0 : price,
-                    prevClose: prevClose, // <--- 我們只需要這個最準的昨收價
-                    percent: percent,
-                    volume: parseInt(isOtc ? item.Volume : item.TradeVolume) || 0
-                };
-            };
-
-            if (Array.isArray(tse)) tse.forEach(i => { if (i.Code) processItem(i, false); });
-            if (Array.isArray(otc)) otc.forEach(i => { if (i.SecuritiesCompanyCode) processItem(i, true); });
-            
-            if (Object.keys(newCache).length > 0) {
-                openApiCache = newCache;
-                cacheTime = now;
-            }
-        } catch(e) {
-            console.error("OpenAPI cache error", e);
-        }
-    }
-    return openApiCache[symbol] || null;
-}
-
 export default async function handler(req, res) {
+  // 【核心革命】：強制抹除所有 CDN 與瀏覽器快取，保證每次請求都是最新報價
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, s-maxage=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*'); 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -69,6 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
+    const yahooHeaders = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
     if (action === 'overview') {
       const [tickerRes, fundingRes] = await Promise.all([
@@ -95,62 +41,65 @@ export default async function handler(req, res) {
       const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
       return res.status(200).json(await tpexRes.json());
     }
-    else if (action === 'tw-brokers') {
-      const brokerRes = await fetch('https://openapi.twse.com.tw/v1/opendata/OpenData_BRK02');
-      return res.status(200).json(await brokerRes.json());
-    }
-    else if (action === 'tw-history' && symbol) {
-      const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+    // 【全新極速報價引擎】：專門為前端提供秒秒跳動的即時價格
+    else if (action === 'tw-quote' && symbol) {
+      let quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}.TW`, { headers: yahooHeaders });
+      let quoteData = await quoteRes.json();
+      let quote = quoteData?.quoteResponse?.result?.[0];
       
-      // 1. 單純抓取 Yahoo 基礎歷史 K 線 (僅用於繪製圖表)
-      let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers });
+      if (!quote) {
+          quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}.TWO`, { headers: yahooHeaders });
+          quoteData = await quoteRes.json();
+          quote = quoteData?.quoteResponse?.result?.[0];
+      }
+      
+      if (quote) {
+          return res.status(200).json({
+              price: quote.regularMarketPrice,
+              prevClose: quote.regularMarketPreviousClose,
+              vol: quote.regularMarketVolume,
+              time: quote.regularMarketTime
+          });
+      }
+      return res.status(404).json({ error: 'Quote not found' });
+    }
+    // 【全新批量極速掃描】：雷達全域掃描專用，一次獲取 50 檔股票的即時價格，0 延遲
+    else if (action === 'tw-quote-batch' && req.query.symbols) {
+        const symbolsArray = req.query.symbols.split(',');
+        const twList = symbolsArray.map(s => `${s}.TW`).join(',');
+        const twoList = symbolsArray.map(s => `${s}.TWO`).join(',');
+        
+        const [resTw, resTwo] = await Promise.all([
+            fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${twList}`, { headers: yahooHeaders }),
+            fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${twoList}`, { headers: yahooHeaders })
+        ]);
+        const dataTw = await resTw.json().catch(()=>({}));
+        const dataTwo = await resTwo.json().catch(()=>({}));
+        
+        const results = {};
+        const processQuote = (q) => {
+            if (q && q.symbol) {
+                const sym = q.symbol.split('.')[0];
+                results[sym] = {
+                    price: q.regularMarketPrice,
+                    vol: q.regularMarketVolume
+                };
+            }
+        };
+        dataTw?.quoteResponse?.result?.forEach(processQuote);
+        dataTwo?.quoteResponse?.result?.forEach(processQuote);
+        
+        return res.status(200).json(results);
+    }
+    // K 線歷史圖表專用
+    else if (action === 'tw-history' && symbol) {
+      let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers: yahooHeaders });
       let data = await yfRes.json();
-      let suffix = '.TW';
       
       if (!data?.chart?.result) {
-        suffix = '.TWO';
-        yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers });
+        yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d`, { headers: yahooHeaders });
         data = await yfRes.json();
       }
-
-      // 2. 獲取官方 OpenAPI 最精準的昨收價，作為不動如山的計算基準 (Anchor)
-      const officialData = await getOfficialStockData(symbol);
-      const truePrevClose = officialData ? officialData.prevClose : null;
-
-      // 3. 【核心修正】擷取 Yahoo V7 Quote 取得「會跳動」的盤中即時報價
-      try {
-          const quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}${suffix}`, { headers });
-          const quoteData = await quoteRes.json();
-          const quote = quoteData?.quoteResponse?.result?.[0];
-          
-          if (quote && data?.chart?.result?.[0]?.meta) {
-              const meta = data.chart.result[0].meta;
-              
-              // 現價與交易量使用 Yahoo 即時報價 (這樣盤中股價就會一直跳動)
-              const livePrice = quote.regularMarketPrice;
-              meta.regularMarketPrice = livePrice;
-              meta.regularMarketVolume = quote.regularMarketVolume;
-              meta.regularMarketDayHigh = quote.regularMarketDayHigh;
-              meta.regularMarketDayLow = quote.regularMarketDayLow;
-              meta.regularMarketOpen = quote.regularMarketOpen;
-              meta.regularMarketTime = quote.regularMarketTime;
-
-              // 關鍵：昨收價強制使用官方的 truePrevClose。若無，才降級用 Yahoo 的昨收
-              if (truePrevClose && truePrevClose > 0) {
-                  meta.previousClose = truePrevClose;
-                  // 用跳動的現價與鎖死的官方昨收，重新精算漲跌幅
-                  meta.exactChangePercent = ((livePrice - truePrevClose) / truePrevClose) * 100.0;
-              } else {
-                  meta.previousClose = quote.regularMarketPreviousClose;
-                  meta.exactChangePercent = quote.regularMarketChangePercent;
-              }
-              
-              meta.isRealTime = true;
-          }
-      } catch(e) {
-          console.error("Quote fetch error", e);
-      }
-
       return res.status(200).json(data);
     }
     else if (action === 'news') {
