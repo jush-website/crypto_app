@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// 1. 全域輔助函數與直連引擎
+// 1. 全域輔助函數
 // ==========================================
 function formatPrice(price) {
   const p = parseFloat(price);
@@ -26,25 +26,7 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 【終極修復】：前端直連 Yahoo API 引擎，繞過後端延遲，取得 1 分鐘級別的絕對即時報價
-async function fetchYahooDirect(symbol, isChart = false) {
-    const range = isChart ? '6mo' : '1d';
-    const interval = isChart ? '1d' : '1m'; 
-    const t = Date.now();
-    try {
-        let res = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${range}&interval=${interval}&_t=${t}`);
-        let data = await res.json();
-        if (!data?.chart?.result) {
-            res = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=${range}&interval=${interval}&_t=${t}`);
-            data = await res.json();
-        }
-        return data;
-    } catch (e) {
-        return null;
-    }
-}
-
-// 統一處理 API 資料：強制套用官方昨收價錨定，徹底消滅漲跌幅跳動錯亂
+// 處理歷史 K 線，並強制套用官方昨收價以計算正確漲跌幅
 function parseYahooData(data, officialPrevClose) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
@@ -68,7 +50,6 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  // 取得最新收盤或即時跳動價
   const lastKClose = validKlines.length > 0 ? validKlines[validKlines.length - 1].close : 0;
   const todayPrice = (meta.regularMarketPrice !== undefined && meta.regularMarketPrice !== null && meta.regularMarketPrice > 0) ? Number(meta.regularMarketPrice) : lastKClose;
   const vol = Number(meta.regularMarketVolume || (validKlines.length > 0 ? validKlines[validKlines.length - 1].volume : 0));
@@ -86,31 +67,19 @@ function parseYahooData(data, officialPrevClose) {
       const realLow = meta.regularMarketDayLow ? Math.min(meta.regularMarketDayLow, todayPrice) : todayPrice;
 
       if (todayStr === lastKDate) {
-          if (validKlines.length >= 2) {
-              trueYesterdayClose = validKlines[validKlines.length - 2].close;
-          }
+          if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
           validKlines[validKlines.length - 1] = {
-              ...lastK,
-              close: todayPrice,
-              high: Math.max(lastK.high, realHigh),
-              low: Math.min(lastK.low, realLow),
-              volume: Math.max(lastK.volume, vol)
+              ...lastK, close: todayPrice, high: Math.max(lastK.high, realHigh), low: Math.min(lastK.low, realLow), volume: Math.max(lastK.volume, vol)
           };
       } else {
           trueYesterdayClose = lastK.close;
-          // 若歷史資料未推進到今天，強制畫出一根當日即時跳動 K 柱
           validKlines.push({
-              time: Date.now(), 
-              open: realOpen,
-              high: realHigh,
-              low: realLow,
-              close: todayPrice,
-              volume: vol
+              time: Date.now(), open: realOpen, high: realHigh, low: realLow, close: todayPrice, volume: vol
           });
       }
   }
 
-  // 【核心革命】：絕對錨定！只要我們擁有官方的昨收價，就強制使用它作為分母，徹底防禦 Yahoo 亂給昨收導致的 +70% 錯誤
+  // 強制錨定官方昨收價
   const yesterdayClose = (officialPrevClose && officialPrevClose > 0) 
       ? Number(officialPrevClose) 
       : (meta.previousClose && meta.previousClose !== meta.chartPreviousClose ? Number(meta.previousClose) : trueYesterdayClose);
@@ -118,8 +87,6 @@ function parseYahooData(data, officialPrevClose) {
   let change = 0;
   if (yesterdayClose > 0) {
       change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-  } else if (meta.exactChangePercent !== undefined && meta.exactChangePercent !== null) {
-      change = Number(meta.exactChangePercent);
   }
 
   return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
@@ -472,18 +439,19 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
     let isMounted = true;
     const fetchLive = async () => {
       try {
-        // 【直連】：完全繞過後端延遲，直接向 Yahoo 取 1 分鐘即時跳動報價
-        const data = await fetchYahooDirect(stock.symbol, false);
+        // 使用極速無快取 API 獲取秒秒跳動價格
+        const res = await fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`);
+        const quote = await res.json();
         
-        if (!isMounted) return;
+        if (!isMounted || !quote || !quote.price) return;
         
-        // 【錨定】：套用官方 OpenAPI 帶來的絕對昨收價，保證漲跌幅精準
-        const parsed = parseYahooData(data, stock.officialPrevClose);
-        if (parsed) {
-          setPrice(parsed.price);
-          setChange(parsed.change);
-          setIsLive(true);
-        }
+        // 絕對錨定：用跳動的現價計算鎖死的官方昨收價，保證漲幅不暴走
+        const anchorPrevClose = stock.officialPrevClose || quote.prevClose || quote.price;
+        const exactChange = anchorPrevClose > 0 ? ((quote.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
+        
+        setPrice(quote.price);
+        setChange(exactChange);
+        setIsLive(true);
       } catch(e) {}
     };
 
@@ -495,7 +463,6 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
   const isPositive = change >= 0;
   const divInfo = activeTab === 'DIVIDEND' ? DIVIDEND_RECOMMENDATIONS[stock.symbol] : null;
 
-  // 尋找產業標籤以供顯示
   let indTag = null;
   for (const [key, symbols] of Object.entries(INDUSTRY_MAP)) {
       if (symbols.includes(stock.symbol)) { 
@@ -563,29 +530,36 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     if (isScanning || !twStocks || !twStocks.length) return;
     setTwDashState(p => ({ ...p, isScanning: true, scanProgress: 0, activeTab: 'DAYTRADE' }));
     
-    const targets = [...twStocks].sort((a,b) => b.quoteVolume - a.quoteVolume).slice(0, 100);
-    const batchSize = 10;
+    const targets = [...twStocks].sort((a,b) => b.quoteVolume - a.quoteVolume).slice(0, 150);
+    const batchSize = 30; 
     let completed = 0;
     const newLiveData = { ...liveData };
 
     for (let i = 0; i < targets.length; i += batchSize) {
       const chunk = targets.slice(i, i + batchSize);
-      await Promise.all(chunk.map(async (stock) => {
-         try {
-           const data = await fetchYahooDirect(stock.symbol, false);
-           const parsed = parseYahooData(data, stock.officialPrevClose);
-           if (parsed) {
-              newLiveData[stock.symbol] = { price: parsed.price, change: parsed.change, vol: parsed.vol };
-           }
-         } catch(e) {}
-      }));
+      const symbolsParam = chunk.map(s => s.symbol).join(',');
+      
+      try {
+        // 使用批量極速 API 一次更新多檔，加速全域刷新
+        const res = await fetch(`/api/binance?action=tw-quote-batch&symbols=${symbolsParam}&_t=${Date.now()}`);
+        const quotes = await res.json();
+        
+        chunk.forEach(stock => {
+            const q = quotes[stock.symbol];
+            if (q) {
+                const anchorPrevClose = stock.officialPrevClose || q.price;
+                const change = anchorPrevClose > 0 ? ((q.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
+                newLiveData[stock.symbol] = { price: q.price, change: change, vol: q.vol };
+            }
+        });
+      } catch(e) {}
+      
       completed += chunk.length;
       setTwDashState(p => ({ ...p, scanProgress: Math.min(100, Math.round((completed / targets.length) * 100.0)) }));
     }
     setTwDashState(p => ({ ...p, liveData: newLiveData, isScanning: false }));
   };
 
-  // 獨立精算：熱門強勢股名單 (供大盤首頁推薦使用)
   const hotStocks = useMemo(() => {
       if (activeTab !== 'ALL' || searchTerm) return [];
       let list = Array.isArray(twStocks) ? [...twStocks] : [];
@@ -599,7 +573,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
                  .slice(0, 4);
   }, [twStocks, liveData, activeTab, searchTerm]);
 
-  // 主列表過濾器
   const filtered = useMemo(() => {
     let list = Array.isArray(twStocks) ? [...twStocks] : [];
     
@@ -669,7 +642,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
       {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
 
-      {/* 強勢股自動推薦區塊 */}
       {activeTab === 'ALL' && !showManualEntry && !searchTerm && hotStocks.length > 0 && (
           <div className="mb-8">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
@@ -684,7 +656,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
           </div>
       )}
 
-      {/* 產業分類標籤列 */}
       {activeTab === 'ALL' && !showManualEntry && !searchTerm && (
           <div className="flex overflow-x-auto gap-2 pb-4 mb-2 scrollbar-hide">
               <button onClick={() => setActiveIndustry('ALL')} className={`px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === 'ALL' ? 'bg-blue-600 text-white border-blue-500' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>全市場排行</button>
@@ -719,7 +690,7 @@ function NewsDashboard() {
     const fetchRealNews = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/binance?action=news');
+        const res = await fetch('/api/binance?action=news&_t=' + Date.now());
         const data = await res.json();
         if (isMounted) { setNews(Array.isArray(data) ? data : []); setLoading(false); }
       } catch (error) { if (isMounted) setLoading(false); }
@@ -972,50 +943,49 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
+  // 分離出極速價格獲取 (繞過 K 線的慢速載入)
   useEffect(() => {
     let isMounted = true;
-    const fetchChart = async (isBackground = false) => {
-      try {
-        if (!isBackground) setChartLoading(true);
-        else setIsSyncing(true);
-        setChartError(false);
-
-        // 【直連】：直接向 Yahoo 獲取 6 個月的日 K 線
-        const historyData = await fetchYahooDirect(stock.symbol, true);
-        if (!isMounted) return;
-        
-        // 【錨定】：傳入官方昨收價進行精準校正
-        const parsed = parseYahooData(historyData, stock.officialPrevClose);
-        if (parsed) {
-            setCurrentPrice(parsed.price);
-            setCurrentVolume(parsed.vol);
-            setCurrentChange(parsed.change.toFixed(2));
-            if (parsed.klines.length > 0) {
+    const fetchQuickPrice = async () => {
+        try {
+            setIsSyncing(true);
+            const res = await fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`);
+            const q = await res.json();
+            if (isMounted && q && q.price) {
+                const anchorPrevClose = stock.officialPrevClose || q.prevClose || q.price;
+                const change = anchorPrevClose > 0 ? ((q.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
+                setCurrentPrice(q.price);
+                setCurrentChange(change.toFixed(2));
+                setCurrentVolume(q.vol || 0);
+            }
+        } catch(e) {} finally { if (isMounted) setIsSyncing(false); }
+    };
+    
+    // 初始化 K 線圖表
+    const fetchChart = async () => {
+        try {
+            setChartLoading(true);
+            const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
+            const historyData = await resHistory.json();
+            if (!isMounted) return;
+            const parsed = parseYahooData(historyData, stock.officialPrevClose);
+            if (parsed && parsed.klines.length > 0) {
                 setChartData(calculateIndicators(parsed.klines)); 
             } else {
                 setChartError(true);
-                setChartData([]);
             }
-        } else {
-            setChartError(true);
-            setChartData([]);
+        } catch (err) {
+            if (isMounted) setChartError(true);
+        } finally {
+            if (isMounted) setChartLoading(false);
         }
-      } catch (err) {
-         if (isMounted) {
-             setChartError(true);
-             setChartData([]);
-         }
-      } 
-      finally {
-         if (isMounted) { 
-             setChartLoading(false); 
-             setIsSyncing(false); 
-         }
-      }
     };
 
+    fetchQuickPrice();
     fetchChart();
-    const intId = setInterval(() => fetchChart(true), 3000); 
+    
+    // 盤中只需極速輪詢報價即可，不須一直重洗 K 線
+    const intId = setInterval(fetchQuickPrice, 3000); 
     return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol, stock.officialPrevClose]);
 
@@ -1024,7 +994,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const fetchNews = async () => {
         try {
            setNewsLoading(true);
-           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
+           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}&_t=${Date.now()}`);
            const nData = await resNews.json();
            if (isMounted) setNews(Array.isArray(nData) ? nData : []); 
         } catch(e) {}
@@ -1097,7 +1067,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             
             <h2 className="text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
             <div className="flex items-end gap-3 mt-4">
-              <div className={`text-4xl font-mono font-bold ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentPrice.toFixed(2)}</div>
+              <div className={`text-4xl font-mono font-bold ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{Number(currentPrice).toFixed(2)}</div>
               <div className={`text-lg font-bold pb-1 ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(currentChange) >= 0 ? '+' : ''}{String(currentChange)}%</div>
             </div>
             <div className="text-sm text-slate-400 mt-2">即時成交量: <span className="text-white font-mono">{formatVolume(currentVolume)}</span> 股</div>
@@ -1796,7 +1766,7 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
+          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120&_t=${Date.now()}`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -1930,19 +1900,19 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
+  // 1. 初始化台股清單，並提取官方昨收價當作定海神針
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
         const [resTse, resOtc] = await Promise.all([
-          fetch('/api/binance?action=tw-stocks').then(r => r.json()).catch(() => []),
-          fetch('/api/binance?action=tw-otc-stocks').then(r => r.json()).catch(() => [])
+          fetch(`/api/binance?action=tw-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => []),
+          fetch(`/api/binance?action=tw-otc-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => [])
         ]);
 
         if (isMounted) {
           const arrTse = Array.isArray(resTse) ? resTse : [];
           const arrOtc = Array.isArray(resOtc) ? resOtc : [];
-
           const spaceRegex = new RegExp('\\s+', 'g');
 
           const processStockData = (item) => {
@@ -1957,9 +1927,7 @@ export default function App() {
               let yesterdayClose = todayPrice; 
               if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
                   yesterdayClose = todayPrice - changeAmt; 
-                  if (yesterdayClose > 0) {
-                      percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-                  }
+                  if (yesterdayClose > 0) percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
               }
               return { 
                   symbol: String(item.Code || item.SecuritiesCompanyCode), 
@@ -1967,16 +1935,13 @@ export default function App() {
                   lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
                   quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                  officialPrevClose: yesterdayClose // 保存絕對準確的官方昨收價供全域使用
+                  officialPrevClose: yesterdayClose // 【絕對錨定點】
               };
           };
 
           const formattedTse = arrTse.filter(i => i && i.Code).map(processStockData);
           const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData);
-
-          const combined = [...formattedTse, ...formattedOtc]
-            .filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol))
-            .sort((a, b) => b.quoteVolume - a.quoteVolume);
+          const combined = [...formattedTse, ...formattedOtc].filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol)).sort((a, b) => b.quoteVolume - a.quoteVolume);
 
           setTwStocks(combined); 
           setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }));
@@ -1990,8 +1955,8 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
+  // 2. 針對持倉進行全域極速報價同步
   const syncFetchRef = useRef(0);
-
   useEffect(() => {
     const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
     if (activeSymbols.length === 0) return;
@@ -2000,15 +1965,17 @@ export default function App() {
     const syncTwPrices = async () => {
       const currentFetch = ++syncFetchRef.current;
       const newPrices = {};
-      
-      await Promise.all(activeSymbols.map(async (sym) => {
-        try {
-          const data = await fetchYahooDirect(sym, false);
-          const targetStock = twStocks.find(x => String(x.symbol) === String(sym));
-          const parsed = parseYahooData(data, targetStock?.officialPrevClose);
-          if (parsed) newPrices[sym] = parsed.price;
-        } catch(e) {}
-      }));
+      const symbolsParam = activeSymbols.join(',');
+      try {
+        const res = await fetch(`/api/binance?action=tw-quote-batch&symbols=${symbolsParam}&_t=${Date.now()}`);
+        const quotes = await res.json();
+        
+        activeSymbols.forEach(sym => {
+            if (quotes[sym] && quotes[sym].price) {
+                newPrices[sym] = quotes[sym].price;
+            }
+        });
+      } catch(e) {}
 
       if (isMounted && currentFetch === syncFetchRef.current && Object.keys(newPrices).length > 0) {
         setTwLivePrices(prev => ({ ...prev, ...newPrices }));
@@ -2018,7 +1985,7 @@ export default function App() {
     syncTwPrices();
     const intId = setInterval(syncTwPrices, 15000); 
     return () => { isMounted = false; clearInterval(intId); };
-  }, [twAccount.positions, twStocks]);
+  }, [twAccount.positions]);
 
   const fetchCryptoMarkets = async () => {
     try {
