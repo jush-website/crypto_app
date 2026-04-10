@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // 【核心革命】：強制抹除所有 CDN 與瀏覽器快取，保證每次請求都是最新報價
+  // 強制抹除所有 CDN 與瀏覽器快取，保證每次請求都是最新
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, s-maxage=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -41,57 +41,52 @@ export default async function handler(req, res) {
       const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820');
       return res.status(200).json(await tpexRes.json());
     }
-    // 【全新極速報價引擎】：專門為前端提供秒秒跳動的即時價格
     else if (action === 'tw-quote' && symbol) {
-      let quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}.TW`, { headers: yahooHeaders });
-      let quoteData = await quoteRes.json();
-      let quote = quoteData?.quoteResponse?.result?.[0];
-      
-      if (!quote) {
-          quoteRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbol}.TWO`, { headers: yahooHeaders });
-          quoteData = await quoteRes.json();
-          quote = quoteData?.quoteResponse?.result?.[0];
+      let resYahoo = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=1d&interval=1m`, { headers: yahooHeaders });
+      let data = await resYahoo.json();
+      if (!data?.chart?.result) {
+          resYahoo = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=1d&interval=1m`, { headers: yahooHeaders });
+          data = await resYahoo.json();
       }
-      
-      if (quote) {
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta) {
           return res.status(200).json({
-              price: quote.regularMarketPrice,
-              prevClose: quote.regularMarketPreviousClose,
-              vol: quote.regularMarketVolume,
-              time: quote.regularMarketTime
+              price: meta.regularMarketPrice,
+              prevClose: meta.previousClose,
+              vol: meta.regularMarketVolume,
+              time: meta.regularMarketTime
           });
       }
       return res.status(404).json({ error: 'Quote not found' });
     }
-    // 【全新批量極速掃描】：雷達全域掃描專用，一次獲取 50 檔股票的即時價格，0 延遲
     else if (action === 'tw-quote-batch' && req.query.symbols) {
         const symbolsArray = req.query.symbols.split(',');
         const twList = symbolsArray.map(s => `${s}.TW`).join(',');
         const twoList = symbolsArray.map(s => `${s}.TWO`).join(',');
         
         const [resTw, resTwo] = await Promise.all([
-            fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${twList}`, { headers: yahooHeaders }),
-            fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${twoList}`, { headers: yahooHeaders })
+            fetch(`https://query2.finance.yahoo.com/v7/finance/spark?symbols=${twList}`, { headers: yahooHeaders }),
+            fetch(`https://query2.finance.yahoo.com/v7/finance/spark?symbols=${twoList}`, { headers: yahooHeaders })
         ]);
         const dataTw = await resTw.json().catch(()=>({}));
         const dataTwo = await resTwo.json().catch(()=>({}));
         
         const results = {};
-        const processQuote = (q) => {
-            if (q && q.symbol) {
+        const processSpark = (q) => {
+            if (q && q.meta) {
                 const sym = q.symbol.split('.')[0];
                 results[sym] = {
-                    price: q.regularMarketPrice,
-                    vol: q.regularMarketVolume
+                    price: q.meta.regularMarketPrice,
+                    prevClose: q.meta.previousClose,
+                    vol: q.meta.regularMarketVolume || 0
                 };
             }
         };
-        dataTw?.quoteResponse?.result?.forEach(processQuote);
-        dataTwo?.quoteResponse?.result?.forEach(processQuote);
+        if (dataTw?.spark?.result) dataTw.spark.result.forEach(processSpark);
+        if (dataTwo?.spark?.result) dataTwo.spark.result.forEach(processSpark);
         
         return res.status(200).json(results);
     }
-    // K 線歷史圖表專用
     else if (action === 'tw-history' && symbol) {
       let yfRes = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d`, { headers: yahooHeaders });
       let data = await yfRes.json();
