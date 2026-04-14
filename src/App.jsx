@@ -79,10 +79,10 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  // 強制錨定官方昨收價
-  const yesterdayClose = (officialPrevClose && officialPrevClose > 0) 
-      ? Number(officialPrevClose) 
-      : (meta.previousClose && meta.previousClose !== meta.chartPreviousClose ? Number(meta.previousClose) : trueYesterdayClose);
+  // 優先使用 Yahoo 即時回報的昨收，若無再退回使用 TWSE 計算的值
+  const yesterdayClose = (meta.previousClose && meta.previousClose > 0) 
+      ? Number(meta.previousClose) 
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : trueYesterdayClose);
 
   let change = 0;
   if (yesterdayClose > 0) {
@@ -439,14 +439,13 @@ function TwLiveStockCard({ stock, activeTab, isScanned }) {
     let isMounted = true;
     const fetchLive = async () => {
       try {
-        // 使用極速無快取 API 獲取秒秒跳動價格
         const res = await fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`);
         const quote = await res.json();
         
         if (!isMounted || !quote || !quote.price) return;
         
-        // 絕對錨定：用跳動的現價計算鎖死的官方昨收價，保證漲幅不暴走
-        const anchorPrevClose = stock.officialPrevClose || quote.prevClose || quote.price;
+        // 修正：強勢優先使用 Yahoo 的昨收價，若無則依序退回
+        const anchorPrevClose = quote.prevClose || stock.officialPrevClose || quote.price;
         const exactChange = anchorPrevClose > 0 ? ((quote.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
         
         setPrice(quote.price);
@@ -540,14 +539,14 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       const symbolsParam = chunk.map(s => s.symbol).join(',');
       
       try {
-        // 使用批量極速 API 一次更新多檔，加速全域刷新
         const res = await fetch(`/api/binance?action=tw-quote-batch&symbols=${symbolsParam}&_t=${Date.now()}`);
         const quotes = await res.json();
         
         chunk.forEach(stock => {
             const q = quotes[stock.symbol];
             if (q) {
-                const anchorPrevClose = stock.officialPrevClose || q.price;
+                // 修正：優先提取 q.prevClose 做基準防偏移
+                const anchorPrevClose = q.prevClose || stock.officialPrevClose || q.price;
                 const change = anchorPrevClose > 0 ? ((q.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
                 newLiveData[stock.symbol] = { price: q.price, change: change, vol: q.vol };
             }
@@ -952,7 +951,8 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             const res = await fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`);
             const q = await res.json();
             if (isMounted && q && q.price) {
-                const anchorPrevClose = stock.officialPrevClose || q.prevClose || q.price;
+                // 修正：優先使用即時回傳的 prevClose 確保漲幅絕對正確
+                const anchorPrevClose = q.prevClose || stock.officialPrevClose || q.price;
                 const change = anchorPrevClose > 0 ? ((q.price - anchorPrevClose) / anchorPrevClose) * 100 : 0;
                 setCurrentPrice(q.price);
                 setCurrentChange(change.toFixed(2));
@@ -1900,7 +1900,7 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
-  // 1. 初始化台股清單，並提取官方昨收價當作定海神針
+  // 1. 初始化台股清單
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
@@ -1935,7 +1935,7 @@ export default function App() {
                   lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
                   quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                  officialPrevClose: yesterdayClose // 【絕對錨定點】
+                  officialPrevClose: yesterdayClose // 備用
               };
           };
 
