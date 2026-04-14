@@ -61,17 +61,30 @@ export default async function handler(req, res) {
       return res.status(200).json(await tpexRes.json());
     }
     else if (action === 'tw-quote' && symbol) {
-      // 加上時間戳徹底打斷快取，並處理防錯
-      let data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+      // 改用 query1 主機並加上隨機亂數，徹底擊穿快取
+      let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
       
       if (!data?.chart?.result) {
-          data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=1d&interval=1m&_t=${Date.now()}`);
+          data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
       }
 
-      const meta = data?.chart?.result?.[0]?.meta;
+      const result = data?.chart?.result?.[0];
+      const meta = result?.meta;
+      const quote = result?.indicators?.quote?.[0];
+
       if (meta) {
+          let latestPrice = meta.regularMarketPrice;
+          
+          // 🔥 破解 Yahoo 報價延遲：強制抓取即時 K 線陣列的「最後一筆有效收盤價」
+          if (quote && quote.close && quote.close.length > 0) {
+              const validCloses = quote.close.filter(c => c !== null);
+              if (validCloses.length > 0) {
+                  latestPrice = validCloses[validCloses.length - 1];
+              }
+          }
+
           return res.status(200).json({
-              price: meta.regularMarketPrice,
+              price: latestPrice,
               prevClose: meta.previousClose,
               vol: meta.regularMarketVolume,
               time: meta.regularMarketTime
@@ -83,37 +96,44 @@ export default async function handler(req, res) {
         const symbolsArray = req.query.symbols.split(',');
         if (symbolsArray.length === 0) return res.status(200).json({});
 
-        const twList = symbolsArray.map(s => `${s}.TW`).join(',');
-        const twoList = symbolsArray.map(s => `${s}.TWO`).join(',');
-        
-        const [dataTw, dataTwo] = await Promise.all([
-            fetchWithCatch(`https://query2.finance.yahoo.com/v7/finance/spark?symbols=${twList}&_t=${Date.now()}`),
-            fetchWithCatch(`https://query2.finance.yahoo.com/v7/finance/spark?symbols=${twoList}&_t=${Date.now()}`)
-        ]);
-        
         const results = {};
-        const processSpark = (q) => {
-            // 修復致命的 JSON 節點解析錯誤：q.response[0].meta 才是正確位置
-            const meta = q?.response?.[0]?.meta;
+        
+        // 🔥 放棄易出錯且常卡住的 spark API，直接使用最強的 v8 chart API 進行併發請求
+        await Promise.all(symbolsArray.map(async (sym) => {
+            let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
+            if (!data?.chart?.result) {
+                data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
+            }
+            
+            const result = data?.chart?.result?.[0];
+            const meta = result?.meta;
+            const quote = result?.indicators?.quote?.[0];
+            
             if (meta) {
-                const sym = q.symbol.split('.')[0];
+                let latestPrice = meta.regularMarketPrice;
+                
+                // 強制抓取即時 K 線陣列的最新價格
+                if (quote && quote.close && quote.close.length > 0) {
+                    const validCloses = quote.close.filter(c => c !== null);
+                    if (validCloses.length > 0) {
+                        latestPrice = validCloses[validCloses.length - 1];
+                    }
+                }
+                
                 results[sym] = {
-                    price: meta.regularMarketPrice,
+                    price: latestPrice,
                     prevClose: meta.previousClose,
                     vol: meta.regularMarketVolume || 0
                 };
             }
-        };
-
-        if (dataTw?.spark?.result) dataTw.spark.result.forEach(processSpark);
-        if (dataTwo?.spark?.result) dataTwo.spark.result.forEach(processSpark);
+        }));
         
         return res.status(200).json(results);
     }
     else if (action === 'tw-history' && symbol) {
-      let data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&_t=${Date.now()}`);
+      let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&nocache=${Math.random()}`);
       if (!data?.chart?.result) {
-        data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d&_t=${Date.now()}`);
+        data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d&nocache=${Math.random()}`);
       }
       return res.status(200).json(data || {});
     }
