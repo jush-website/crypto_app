@@ -60,10 +60,11 @@ function parseYahooData(data, officialPrevClose) {
       trueYesterdayClose = validKlines[validKlines.length - 2].close;
   }
 
-  // 強制錨定官方昨收價
-  const yesterdayClose = (officialPrevClose && officialPrevClose > 0) 
-      ? Number(officialPrevClose) 
-      : (meta.previousClose && meta.previousClose !== meta.chartPreviousClose ? Number(meta.previousClose) : trueYesterdayClose);
+  // 🔥 終極一致性：嚴格規定「推估昨收」必須使用上一根 K 線的收盤價(C)
+  // 放棄所有外部干擾數字，確保漲跌幅與 K 線圖的視覺落差達到 100% 吻合
+  const yesterdayClose = trueYesterdayClose > 0 
+      ? trueYesterdayClose 
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
 
   let change = 0;
   if (yesterdayClose > 0) {
