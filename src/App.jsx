@@ -395,14 +395,44 @@ function PortalPage() {
 }
 
 function TwLiveStockCard({ stock, activeTab }) {
-  const changeNum = parseFloat(stock.priceChangePercent) || 0;
-  const volNum = parseFloat(stock.quoteVolume) || 0;
+  const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
+  const [changeNum, setChangeNum] = useState(parseFloat(stock.priceChangePercent) || 0);
+  const [volNum, setVolNum] = useState(parseFloat(stock.quoteVolume) || 0);
+  const [isSynced, setIsSynced] = useState(false);
+  const cardRef = useRef(null);
+
+  // 🔥 核心修正：讓外部卡片自動拉取內部使用的 K 線數據，確保 100% 準確同步
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !isSynced) {
+        let isMounted = true;
+        const fetchAccurateData = async () => {
+            try {
+                const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
+                const historyData = await res.json();
+                if (!isMounted) return;
+                const parsed = parseYahooData(historyData, stock.officialPrevClose);
+                if (parsed) {
+                    setPrice(parsed.price);
+                    setChangeNum(parsed.change);
+                    setVolNum(parsed.vol);
+                    setIsSynced(true);
+                }
+            } catch(e) {}
+        };
+        fetchAccurateData();
+      }
+    });
+    if (cardRef.current) observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [stock.symbol, stock.officialPrevClose, isSynced]);
+
   const isPositive = changeNum >= 0;
 
   // 核心：短線盤末動能判定邏輯
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
-      stStatus = { text: '🔥 強勢爆發 (符合)', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
+      stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
   } else if (changeNum >= 2 && volNum > 1500) {
       stStatus = { text: '✅ 短線達標', color: 'text-[#f6465d]', icon: <CheckCircle2 className="w-5 h-5 text-[#f6465d]" /> };
   } else if (changeNum <= -3) {
@@ -424,7 +454,8 @@ function TwLiveStockCard({ stock, activeTab }) {
   }
 
   return (
-    <div onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group">
+    <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group relative overflow-hidden">
+      {!isSynced && <div className="absolute top-0 left-0 w-full h-1 bg-blue-500/10"><div className="h-full bg-blue-500/50 w-1/3 animate-pulse"></div></div>}
       <div>
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -441,7 +472,6 @@ function TwLiveStockCard({ stock, activeTab }) {
           <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</div>
         </div>
         
-        {/* 新版 UI：顯示是否達到短線要求 */}
         <div className="mt-4 pt-4 border-t border-[#2a2f3a]/50">
           <div className="flex justify-between items-center mb-1">
              <span className="text-[10px] text-slate-400 font-bold">收盤短線動能評級</span>
@@ -449,11 +479,12 @@ function TwLiveStockCard({ stock, activeTab }) {
           </div>
           <div className={`text-xl font-bold mt-1 flex items-center gap-2 ${stStatus.color}`}>
              {stStatus.icon} {stStatus.text}
+             {!isSynced && <RefreshCw className="w-3 h-3 animate-spin text-slate-500 ml-1 opacity-50" title="同步精確 K 線數據中" />}
           </div>
           
           <div className="flex justify-between items-center mt-3 text-[10px] text-slate-500 font-mono bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
-             <span>參考收盤: {formatPrice(stock.lastPrice)}</span>
-             <span>總量: {formatVolume(stock.quoteVolume)}</span>
+             <span>參考收盤: {formatPrice(price)}</span>
+             <span>總量: {formatVolume(volNum)}</span>
           </div>
         </div>
       </div>
@@ -688,9 +719,27 @@ function TwTradeForm({ symbol, name, currentPrice, balance, onOpenPosition }) {
   );
 }
 
-function TwPositionCard({ pos, currentPrice, onClose }) {
+function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
+  // 🔥 保證持倉分析的現價也是使用準確的 K 線歷史資料
+  const [livePrice, setLivePrice] = useState(fallbackPrice || pos.entryPrice);
+  
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHistory = async () => {
+        try {
+            const res = await fetch(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`);
+            const historyData = await res.json();
+            if (!isMounted) return;
+            const parsed = parseYahooData(historyData, 0); 
+            if (parsed && parsed.price > 0) setLivePrice(parsed.price);
+        } catch(e) {}
+    };
+    fetchHistory();
+    return () => { isMounted = false; };
+  }, [pos.symbol]);
+
   const isLong = pos.type === 'LONG';
-  const safeCurrentPrice = Number(currentPrice) || pos.entryPrice;
+  const safeCurrentPrice = Number(livePrice) || pos.entryPrice;
   const currentValue = safeCurrentPrice * pos.shares;
   const closeFee = Math.floor(currentValue * 0.001425);
   const tax = Math.floor(currentValue * 0.003); // 波段交易稅率 0.3%
