@@ -33,52 +33,41 @@ export default async function handler(req, res) {
     }
   };
 
-  // 🔥 新增：具備 Session Cookie 穿透技術的官方證交所 API 獲取函數
-  const fetchTwseRealtime = async (symbolsArray) => {
-    try {
-        // 1. 取得 Session Cookie (突破證交所防爬機制)
-        const initRes = await fetch('https://mis.twse.com.tw/stock/index.jsp', {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept-Language': 'zh-TW,zh;q=0.9'
-            }
-        });
-        const cookieHeader = initRes.headers.get('set-cookie');
-        const jsessionid = cookieHeader ? cookieHeader.split(';')[0] : '';
+  // 🔥 全新：Yahoo 最強底層即時報價引擎 (全球行情核心通道 v7/quote)
+  // 捨棄會被 Vercel IP 阻擋的台灣證交所 API，以及會卡頓凍結的 v8/chart API
+  const fetchRealtimeQuote = async (symbolsArray) => {
+      const twSymbols = symbolsArray.map(s => `${s}.TW`).join(',');
+      const twoSymbols = symbolsArray.map(s => `${s}.TWO`).join(',');
+      const results = {};
 
-        // 2. 組合請求字串 (盲測上市與上櫃)
-        const exChList = symbolsArray.map(sym => `tse_${sym}.tw|otc_${sym}.tw`).join('|');
-        const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exChList}&json=1&delay=0&_=${Date.now()}`;
+      const fetchAndParse = async (syms) => {
+          if (!syms) return;
+          // v7/finance/quote 是最穩定的即時報價介面，不會發生 K 線陣列解析錯誤
+          const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&nocache=${Math.random()}`;
+          const data = await fetchWithCatch(url);
 
-        // 3. 帶入 Cookie 取得 0 延遲報價
-        const dataRes = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Cookie': jsessionid,
-                'Accept': 'application/json'
-            }
-        });
+          if (data?.quoteResponse?.result) {
+              data.quoteResponse.result.forEach(q => {
+                  if (q.regularMarketPrice) {
+                      const baseSym = q.symbol.split('.')[0];
+                      results[baseSym] = {
+                          price: q.regularMarketPrice,
+                          prevClose: q.regularMarketPreviousClose || q.regularMarketPrice,
+                          vol: q.regularMarketVolume || 0,
+                          time: q.regularMarketTime
+                      };
+                  }
+              });
+          }
+      };
 
-        const data = await dataRes.json();
-        const results = {};
+      // 併發請求上市與上櫃
+      await Promise.all([
+          fetchAndParse(twSymbols),
+          fetchAndParse(twoSymbols)
+      ]);
 
-        if (data && data.msgArray) {
-            data.msgArray.forEach(info => {
-                const sym = info.c;
-                const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
-                results[sym] = {
-                    price: price,
-                    prevClose: parseFloat(info.y),
-                    vol: parseInt(info.v || 0) * 1000,
-                    time: parseInt(info.tlong || Date.now())
-                };
-            });
-        }
-        return results;
-    } catch (error) {
-        console.error("TWSE Fetch Error", error);
-        return {};
-    }
+      return results;
   };
 
   try {
@@ -110,39 +99,10 @@ export default async function handler(req, res) {
       return res.status(200).json(await tpexRes.json());
     }
     else if (action === 'tw-quote' && symbol) {
-      // 🔥 1. 呼叫新的 Cookie 穿透證交所 API
-      const twseData = await fetchTwseRealtime([symbol]);
-      if (twseData[symbol]) {
-          return res.status(200).json(twseData[symbol]);
-      }
-
-      // 🛡️ 2. 若官方 API 無回應 (例如半夜維護)，退回 Yahoo Query1 主機
-      let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
-      
-      if (!data?.chart?.result) {
-          data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
-      }
-
-      const result = data?.chart?.result?.[0];
-      const meta = result?.meta;
-      const quote = result?.indicators?.quote?.[0];
-
-      if (meta) {
-          let latestPrice = meta.regularMarketPrice;
-          
-          if (quote && quote.close && quote.close.length > 0) {
-              const validCloses = quote.close.filter(c => c !== null);
-              if (validCloses.length > 0) {
-                  latestPrice = validCloses[validCloses.length - 1];
-              }
-          }
-
-          return res.status(200).json({
-              price: latestPrice,
-              prevClose: meta.previousClose,
-              vol: meta.regularMarketVolume,
-              time: meta.regularMarketTime
-          });
+      // 呼叫最新 Quote 引擎
+      const data = await fetchRealtimeQuote([symbol]);
+      if (data[symbol]) {
+          return res.status(200).json(data[symbol]);
       }
       return res.status(404).json({ error: 'Quote not found' });
     }
@@ -150,44 +110,9 @@ export default async function handler(req, res) {
         const symbolsArray = req.query.symbols.split(',');
         if (symbolsArray.length === 0) return res.status(200).json({});
 
-        // 🔥 1. 優先嘗試官方證交所 API 批次查詢 (0 延遲 + Cookie 穿透)
-        const results = await fetchTwseRealtime(symbolsArray);
-        
-        // 找出證交所查不到的剩餘標的
-        const missingSymbols = symbolsArray.filter(sym => !results[sym]);
-
-        // 🛡️ 2. 若有遺漏或官方 API 無回應，備用切換為 Yahoo 併發請求
-        if (missingSymbols.length > 0) {
-            await Promise.all(missingSymbols.map(async (sym) => {
-                let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
-                if (!data?.chart?.result) {
-                    data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
-                }
-                
-                const result = data?.chart?.result?.[0];
-                const meta = result?.meta;
-                const quote = result?.indicators?.quote?.[0];
-                
-                if (meta) {
-                    let latestPrice = meta.regularMarketPrice;
-                    
-                    if (quote && quote.close && quote.close.length > 0) {
-                        const validCloses = quote.close.filter(c => c !== null);
-                        if (validCloses.length > 0) {
-                            latestPrice = validCloses[validCloses.length - 1];
-                        }
-                    }
-                    
-                    results[sym] = {
-                        price: latestPrice,
-                        prevClose: meta.previousClose,
-                        vol: meta.regularMarketVolume || 0
-                    };
-                }
-            }));
-        }
-        
-        return res.status(200).json(results);
+        // 呼叫最新 Quote 引擎進行大批量查詢
+        const data = await fetchRealtimeQuote(symbolsArray);
+        return res.status(200).json(data);
     }
     else if (action === 'tw-history' && symbol) {
       let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&nocache=${Math.random()}`);
