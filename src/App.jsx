@@ -97,6 +97,36 @@ const INDUSTRY_MAP = {
 };
 
 // ==========================================
+// 1.8 佇列請求系統 (防 API 阻擋與限流機制)
+// ==========================================
+const fetchHistoryQueue = (() => {
+    let queue = [];
+    let isProcessing = false;
+    const process = async () => {
+        if (isProcessing || queue.length === 0) return;
+        isProcessing = true;
+        const { url, resolve } = queue.shift();
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            resolve(data);
+        } catch(e) {
+            resolve(null);
+        }
+        setTimeout(() => {
+            isProcessing = false;
+            process();
+        }, 200); // 間隔 200ms 確保外部儀表板滑動時不會被源頭阻擋
+    };
+    return {
+        push: (url) => new Promise((resolve) => {
+            queue.push({ url, resolve });
+            process();
+        })
+    };
+})();
+
+// ==========================================
 // 2. 核心演算法：技術指標與 SMC 量化引擎
 // ==========================================
 function calculateIndicators(klines) {
@@ -398,24 +428,25 @@ function TwLiveStockCard({ stock, activeTab }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [changeNum, setChangeNum] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [volNum, setVolNum] = useState(parseFloat(stock.quoteVolume) || 0);
+  const [prevClose, setPrevClose] = useState(stock.officialPrevClose || 0);
   const [isSynced, setIsSynced] = useState(false);
   const cardRef = useRef(null);
 
-  // 🔥 核心修正：讓外部卡片自動拉取內部使用的 K 線數據，確保 100% 準確同步
+  // 🔥 核心修正：讓外部卡片自動拉取內部使用的 K 線數據，並透過佇列系統確保 100% 準確同步
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !isSynced) {
         let isMounted = true;
         const fetchAccurateData = async () => {
             try {
-                const res = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
-                const historyData = await res.json();
-                if (!isMounted) return;
+                const historyData = await fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
+                if (!isMounted || !historyData) return;
                 const parsed = parseYahooData(historyData, stock.officialPrevClose);
                 if (parsed) {
                     setPrice(parsed.price);
                     setChangeNum(parsed.change);
                     setVolNum(parsed.vol);
+                    setPrevClose(parsed.yesterdayClose);
                     setIsSynced(true);
                 }
             } catch(e) {}
@@ -483,8 +514,14 @@ function TwLiveStockCard({ stock, activeTab }) {
           </div>
           
           <div className="flex justify-between items-center mt-3 text-[10px] text-slate-500 font-mono bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
-             <span>參考收盤: {formatPrice(price)}</span>
-             <span>總量: {formatVolume(volNum)}</span>
+             <div className="flex flex-col">
+                 <span>推估收盤: <span className="text-white">{formatPrice(price)}</span></span>
+                 <span className="opacity-70 mt-0.5">基準昨收: <span className="text-white">{formatPrice(prevClose)}</span></span>
+             </div>
+             <div className="flex flex-col text-right">
+                 <span>推算總量: <span className="text-white">{formatVolume(volNum)}</span></span>
+                 <span className="opacity-70 mt-0.5">漲跌幅: <span className={isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</span></span>
+             </div>
           </div>
         </div>
       </div>
@@ -727,9 +764,8 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
     let isMounted = true;
     const fetchHistory = async () => {
         try {
-            const res = await fetch(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`);
-            const historyData = await res.json();
-            if (!isMounted) return;
+            const historyData = await fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`);
+            if (!isMounted || !historyData) return;
             const parsed = parseYahooData(historyData, 0); 
             if (parsed && parsed.price > 0) setLivePrice(parsed.price);
         } catch(e) {}
@@ -897,6 +933,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [currentVolume, setCurrentVolume] = useState(parseFloat(stock.quoteVolume) || 0);
+  const [currentPrevClose, setCurrentPrevClose] = useState(stock.officialPrevClose || 0);
   
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
@@ -922,6 +959,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 setCurrentPrice(parsed.price);
                 setCurrentChange(parsed.change.toFixed(2));
                 setCurrentVolume(parsed.vol);
+                setCurrentPrevClose(parsed.yesterdayClose);
             } else {
                 setChartError(true);
             }
@@ -1031,6 +1069,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                   <div>
                      <div className="text-[10px] text-slate-500">K線推算收盤</div>
                      <div className="text-lg font-mono text-white">{Number(currentPrice).toFixed(2)}</div>
+                     <div className="text-[9px] text-slate-500 mt-1">基準昨收: <span className="text-slate-300">{formatPrice(currentPrevClose)}</span></div>
                   </div>
                   <div>
                      <div className="text-[10px] text-slate-500">推算漲跌幅</div>
