@@ -33,6 +33,54 @@ export default async function handler(req, res) {
     }
   };
 
+  // 🔥 新增：具備 Session Cookie 穿透技術的官方證交所 API 獲取函數
+  const fetchTwseRealtime = async (symbolsArray) => {
+    try {
+        // 1. 取得 Session Cookie (突破證交所防爬機制)
+        const initRes = await fetch('https://mis.twse.com.tw/stock/index.jsp', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept-Language': 'zh-TW,zh;q=0.9'
+            }
+        });
+        const cookieHeader = initRes.headers.get('set-cookie');
+        const jsessionid = cookieHeader ? cookieHeader.split(';')[0] : '';
+
+        // 2. 組合請求字串 (盲測上市與上櫃)
+        const exChList = symbolsArray.map(sym => `tse_${sym}.tw|otc_${sym}.tw`).join('|');
+        const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exChList}&json=1&delay=0&_=${Date.now()}`;
+
+        // 3. 帶入 Cookie 取得 0 延遲報價
+        const dataRes = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': jsessionid,
+                'Accept': 'application/json'
+            }
+        });
+
+        const data = await dataRes.json();
+        const results = {};
+
+        if (data && data.msgArray) {
+            data.msgArray.forEach(info => {
+                const sym = info.c;
+                const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
+                results[sym] = {
+                    price: price,
+                    prevClose: parseFloat(info.y),
+                    vol: parseInt(info.v || 0) * 1000,
+                    time: parseInt(info.tlong || Date.now())
+                };
+            });
+        }
+        return results;
+    } catch (error) {
+        console.error("TWSE Fetch Error", error);
+        return {};
+    }
+  };
+
   try {
     const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
@@ -62,19 +110,10 @@ export default async function handler(req, res) {
       return res.status(200).json(await tpexRes.json());
     }
     else if (action === 'tw-quote' && symbol) {
-      // 🔥 1. 優先採用「台灣證交所官方 Realtime API (FIBER)」，享受 0 延遲
-      const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw|otc_${symbol}.tw&json=1&delay=0&_=${Date.now()}`;
-      const twseData = await fetchWithCatch(twseUrl);
-      
-      if (twseData?.msgArray?.length > 0) {
-          const info = twseData.msgArray[0];
-          const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
-          return res.status(200).json({
-              price: price,
-              prevClose: parseFloat(info.y),
-              vol: parseInt(info.v || 0) * 1000,
-              time: parseInt(info.tlong || Date.now())
-          });
+      // 🔥 1. 呼叫新的 Cookie 穿透證交所 API
+      const twseData = await fetchTwseRealtime([symbol]);
+      if (twseData[symbol]) {
+          return res.status(200).json(twseData[symbol]);
       }
 
       // 🛡️ 2. 若官方 API 無回應 (例如半夜維護)，退回 Yahoo Query1 主機
@@ -111,56 +150,42 @@ export default async function handler(req, res) {
         const symbolsArray = req.query.symbols.split(',');
         if (symbolsArray.length === 0) return res.status(200).json({});
 
-        const results = {};
+        // 🔥 1. 優先嘗試官方證交所 API 批次查詢 (0 延遲 + Cookie 穿透)
+        const results = await fetchTwseRealtime(symbolsArray);
         
-        // 🔥 1. 優先嘗試官方證交所 API 批次查詢 (0 延遲)
-        // 技巧：同時請求 tse (上市) 與 otc (上櫃) 以涵蓋所有股票
-        const exChList = symbolsArray.map(sym => `tse_${sym}.tw|otc_${sym}.tw`).join('|');
-        const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exChList}&json=1&delay=0&_=${Date.now()}`;
-        const twseData = await fetchWithCatch(twseUrl);
-        
-        if (twseData?.msgArray && twseData.msgArray.length > 0) {
-            twseData.msgArray.forEach(info => {
-                const sym = info.c;
-                // z 代表最新成交價，若是 "-" (如盤前或試撮) 則回退使用 y (昨收)
-                const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
-                results[sym] = {
-                    price: price,
-                    prevClose: parseFloat(info.y),
-                    vol: parseInt(info.v || 0) * 1000 // 官方回傳的是張數，轉換為股數
-                };
-            });
-            return res.status(200).json(results);
-        }
+        // 找出證交所查不到的剩餘標的
+        const missingSymbols = symbolsArray.filter(sym => !results[sym]);
 
-        // 🛡️ 2. 若官方 API 無回應，備用切換為 Yahoo 併發請求
-        await Promise.all(symbolsArray.map(async (sym) => {
-            let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
-            if (!data?.chart?.result) {
-                data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
-            }
-            
-            const result = data?.chart?.result?.[0];
-            const meta = result?.meta;
-            const quote = result?.indicators?.quote?.[0];
-            
-            if (meta) {
-                let latestPrice = meta.regularMarketPrice;
-                
-                if (quote && quote.close && quote.close.length > 0) {
-                    const validCloses = quote.close.filter(c => c !== null);
-                    if (validCloses.length > 0) {
-                        latestPrice = validCloses[validCloses.length - 1];
-                    }
+        // 🛡️ 2. 若有遺漏或官方 API 無回應，備用切換為 Yahoo 併發請求
+        if (missingSymbols.length > 0) {
+            await Promise.all(missingSymbols.map(async (sym) => {
+                let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
+                if (!data?.chart?.result) {
+                    data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TWO?range=1d&interval=1m&nocache=${Math.random()}`);
                 }
                 
-                results[sym] = {
-                    price: latestPrice,
-                    prevClose: meta.previousClose,
-                    vol: meta.regularMarketVolume || 0
-                };
-            }
-        }));
+                const result = data?.chart?.result?.[0];
+                const meta = result?.meta;
+                const quote = result?.indicators?.quote?.[0];
+                
+                if (meta) {
+                    let latestPrice = meta.regularMarketPrice;
+                    
+                    if (quote && quote.close && quote.close.length > 0) {
+                        const validCloses = quote.close.filter(c => c !== null);
+                        if (validCloses.length > 0) {
+                            latestPrice = validCloses[validCloses.length - 1];
+                        }
+                    }
+                    
+                    results[sym] = {
+                        price: latestPrice,
+                        prevClose: meta.previousClose,
+                        vol: meta.regularMarketVolume || 0
+                    };
+                }
+            }));
+        }
         
         return res.status(200).json(results);
     }
