@@ -50,33 +50,14 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  const lastKClose = validKlines.length > 0 ? validKlines[validKlines.length - 1].close : 0;
-  const todayPrice = (meta.regularMarketPrice !== undefined && meta.regularMarketPrice !== null && meta.regularMarketPrice > 0) ? Number(meta.regularMarketPrice) : lastKClose;
-  const vol = Number(meta.regularMarketVolume || (validKlines.length > 0 ? validKlines[validKlines.length - 1].volume : 0));
+  // 🔥 核心修正：完全拋棄常卡住的 meta.regularMarketPrice，強制使用 K 線陣列最後一筆的收盤價
+  const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
+  const todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
+  const vol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
 
   let trueYesterdayClose = 0;
-  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-  const todayStr = new Date().toLocaleDateString('zh-TW', opt);
-
-  if (validKlines.length > 0) {
-      const lastK = validKlines[validKlines.length - 1];
-      const lastKDate = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
-
-      const realOpen = meta.regularMarketOpen || lastK.close || todayPrice;
-      const realHigh = Math.max(meta.regularMarketDayHigh || todayPrice, todayPrice);
-      const realLow = meta.regularMarketDayLow ? Math.min(meta.regularMarketDayLow, todayPrice) : todayPrice;
-
-      if (todayStr === lastKDate) {
-          if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
-          validKlines[validKlines.length - 1] = {
-              ...lastK, close: todayPrice, high: Math.max(lastK.high, realHigh), low: Math.min(lastK.low, realLow), volume: Math.max(lastK.volume, vol)
-          };
-      } else {
-          trueYesterdayClose = lastK.close;
-          validKlines.push({
-              time: Date.now(), open: realOpen, high: realHigh, low: realLow, close: todayPrice, volume: vol
-          });
-      }
+  if (validKlines.length >= 2) {
+      trueYesterdayClose = validKlines[validKlines.length - 2].close;
   }
 
   // 強制錨定官方昨收價
@@ -413,7 +394,6 @@ function PortalPage() {
   );
 }
 
-// 🔥 重構：台股盤末分析卡片 (取代原本的即時股價卡)
 function TwLiveStockCard({ stock, activeTab }) {
   const changeNum = parseFloat(stock.priceChangePercent) || 0;
   const volNum = parseFloat(stock.quoteVolume) || 0;
@@ -865,17 +845,17 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
   
+  const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
+  const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
+  const [currentVolume, setCurrentVolume] = useState(parseFloat(stock.quoteVolume) || 0);
+  
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
   
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
-  const currentPrice = parseFloat(stock.lastPrice) || 0;
-  const currentChange = parseFloat(stock.priceChangePercent) || 0;
-  const currentVolume = parseFloat(stock.quoteVolume) || 0;
-
-  // 初始化 K 線圖表
+  // 初始化 K 線圖表 (現在成為唯一最精準的數據源)
   useEffect(() => {
     let isMounted = true;
     const fetchChart = async () => {
@@ -884,9 +864,15 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
             const historyData = await resHistory.json();
             if (!isMounted) return;
+            
             const parsed = parseYahooData(historyData, stock.officialPrevClose);
             if (parsed && parsed.klines.length > 0) {
                 setChartData(calculateIndicators(parsed.klines)); 
+                
+                // 🔥 將整個分析畫面的價格、漲跌幅，完全綁定在 K 線圖推算出的精準數字
+                setCurrentPrice(parsed.price);
+                setCurrentChange(parsed.change.toFixed(2));
+                setCurrentVolume(parsed.vol);
             } else {
                 setChartError(true);
             }
@@ -897,7 +883,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         }
     };
     fetchChart();
-    return () => { isMounted = false; };
+    
+    // 每 60 秒更新一次 K 線資料即足夠波段分析使用
+    const intId = setInterval(fetchChart, 60000);
+    return () => { isMounted = false; clearInterval(intId); };
   }, [stock.symbol, stock.officialPrevClose]);
 
   useEffect(() => {
@@ -960,15 +949,14 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   };
 
   const recommendations = chartError ? null : getRecommendations();
-  const latestData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
 
-  const formatDate = (timestamp) => timestamp ? `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()}` : '';
-  const latestDateStr = latestData ? formatDate(latestData.time) : '';
-
-  let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-6 h-6" /> };
-  if (currentChange >= 5) stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-6 h-6 text-[#f6465d]" /> };
-  else if (currentChange >= 2 && currentVolume > 1500) stStatus = { text: '✅ 短線達標', color: 'text-[#f6465d]', icon: <CheckCircle2 className="w-6 h-6 text-[#f6465d]" /> };
-  else if (currentChange <= -3) stStatus = { text: '⚠️ 弱勢退場', color: 'text-[#0ecb81]', icon: <AlertCircle className="w-6 h-6 text-[#0ecb81]" /> };
+  // 13:00 盤末短線動能判定邏輯
+  let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-8 h-8" /> };
+  if (currentChange >= 5) stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-8 h-8 text-[#f6465d]" /> };
+  else if (currentChange >= 2 && currentVolume > 1500) stStatus = { text: '✅ 短線達標', color: 'text-[#f6465d]', icon: <CheckCircle2 className="w-8 h-8 text-[#f6465d]" /> };
+  else if (currentChange <= -3) stStatus = { text: '⚠️ 弱勢退場', color: 'text-[#0ecb81]', icon: <AlertCircle className="w-8 h-8 text-[#0ecb81]" /> };
+  else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
+  else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -981,18 +969,30 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             
             <h2 className="text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
             
-            <div className="mt-6 p-4 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
-                <div className="text-xs text-slate-500 mb-2 font-bold">13:00 盤末短線評級</div>
-                <div className={`text-3xl font-bold flex items-center gap-2 ${stStatus.color}`}>
+            {/* 新版：將跳動股價替換成強烈的短線目標評級 */}
+            <div className="mt-6 p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
+                <div className="text-sm text-slate-400 mb-2 font-bold flex items-center gap-2">
+                  <Target className="w-4 h-4 text-purple-500"/> 13:00 盤末短線動能評級
+                </div>
+                <div className={`text-4xl font-black flex items-center gap-3 ${stStatus.color} my-3`}>
                    {stStatus.icon} {stStatus.text}
                 </div>
+                
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#2a2f3a]">
+                  <div>
+                     <div className="text-[10px] text-slate-500">K線推算收盤</div>
+                     <div className="text-lg font-mono text-white">{Number(currentPrice).toFixed(2)}</div>
+                  </div>
+                  <div>
+                     <div className="text-[10px] text-slate-500">推算漲跌幅</div>
+                     <div className={`text-lg font-mono font-bold ${currentChange >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentChange >= 0 ? '+' : ''}{currentChange}%</div>
+                  </div>
+                  <div className="text-right">
+                     <div className="text-[10px] text-slate-500">推算成交量</div>
+                     <div className="text-lg font-mono text-white">{formatVolume(currentVolume)}</div>
+                  </div>
+                </div>
             </div>
-
-            <div className="flex items-end gap-3 mt-4">
-              <div className="text-xl font-mono text-slate-300">收盤參考: {Number(currentPrice).toFixed(2)}</div>
-              <div className={`text-sm font-bold pb-0.5 ${parseFloat(currentChange) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(currentChange) >= 0 ? '+' : ''}{String(currentChange)}%</div>
-            </div>
-            <div className="text-sm text-slate-400 mt-2">結算成交量: <span className="text-white font-mono">{formatVolume(currentVolume)}</span> 股</div>
           </div>
 
           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg">
@@ -1147,17 +1147,18 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   );
 }
 
-function TwPositionsPage({ twStocks, twAccount, closeTwPosition }) {
+function TwPositionsPage({ twStocks, twAccount, closeTwPosition, twLivePrices }) {
   const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
   const activeTickers = Array.isArray(twStocks) ? twStocks.filter(t => activeSymbols.includes(t.symbol)) : [];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (波段交易)</h2>
+      <h2 className="text-xl font-bold text-white flex items-center gap-2"><Layers className="w-6 h-6 text-blue-500" /> 當前持倉 (台股波段)</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {Array.isArray(twAccount.positions) && twAccount.positions.map(pos => {
             const t = activeTickers.find(x => String(x.symbol) === String(pos.symbol));
-            const currentPrice = t ? parseFloat(t.lastPrice) : pos.entryPrice;
+            const fallbackPrice = t ? parseFloat(t.lastPrice) : pos.entryPrice;
+            const currentPrice = twLivePrices[pos.symbol] || fallbackPrice;
             return <TwPositionCard key={pos.id} pos={pos} currentPrice={currentPrice} onClose={() => closeTwPosition(pos.id, currentPrice)} />;
         })}
         {(!twAccount.positions || twAccount.positions.length === 0) && <div className="col-span-full py-10 text-center text-slate-500">目前無任何台股持倉</div>}
@@ -1789,7 +1790,7 @@ export default function App() {
       const s = sessionStorage.getItem('protrade_twDashState');
       if (s) {
          const parsed = JSON.parse(s);
-         return { ...parsed };
+         return { activeTab: parsed.activeTab || 'ALL', searchTerm: parsed.searchTerm || '' };
       }
     } catch(e) {}
     return { activeTab: 'ALL', searchTerm: '' };
@@ -1798,6 +1799,8 @@ export default function App() {
   const [paperAccount, setPaperAccount] = useState(() => { try { const s = localStorage.getItem('paperAccount'); return s ? JSON.parse(s) : { balance: 10000, positions: [], history: [] }; } catch(e) { return { balance: 10000, positions: [], history: [] }; } });
   const [twAccount, setTwAccount] = useState(() => { try { const s = localStorage.getItem('twAccount'); return s ? JSON.parse(s) : { balance: 10000000, positions: [], history: [] }; } catch(e) { return { balance: 10000000, positions: [], history: [] }; } });
   
+  const [twLivePrices, setTwLivePrices] = useState({});
+
   useEffect(() => { sessionStorage.setItem('protrade_dashState', JSON.stringify(dashState)); }, [dashState]);
   useEffect(() => { sessionStorage.setItem('protrade_twDashState', JSON.stringify(twDashState)); }, [twDashState]);
   useEffect(() => { localStorage.setItem('paperAccount', JSON.stringify(paperAccount)); }, [paperAccount]);
@@ -1810,7 +1813,7 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
-  // 1. 讀取台股盤末靜態清單
+  // 1. 初始化台股清單，並提取官方昨收價當作定海神針
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
@@ -1845,7 +1848,7 @@ export default function App() {
                   lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                   priceChangePercent: percent.toFixed(2), 
                   quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                  officialPrevClose: yesterdayClose 
+                  officialPrevClose: yesterdayClose // 【絕對錨定點】
               };
           };
 
@@ -2033,7 +2036,7 @@ export default function App() {
         {currentRoute === 'news' && <NewsDashboard />}
         {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} />}
-        {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} />}
+        {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
         
         {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} />}
