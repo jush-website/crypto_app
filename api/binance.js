@@ -16,7 +16,8 @@ export default async function handler(req, res) {
   const fetchConfig = { 
     headers: { 
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json'
+      'Accept': 'application/json',
+      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
     },
     cache: 'no-store' // 徹底防範 Next.js / Vercel Edge 擅自快取
   };
@@ -61,7 +62,22 @@ export default async function handler(req, res) {
       return res.status(200).json(await tpexRes.json());
     }
     else if (action === 'tw-quote' && symbol) {
-      // 改用 query1 主機並加上隨機亂數，徹底擊穿快取
+      // 🔥 1. 優先採用「台灣證交所官方 Realtime API (FIBER)」，享受 0 延遲
+      const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw|otc_${symbol}.tw&json=1&delay=0&_=${Date.now()}`;
+      const twseData = await fetchWithCatch(twseUrl);
+      
+      if (twseData?.msgArray?.length > 0) {
+          const info = twseData.msgArray[0];
+          const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
+          return res.status(200).json({
+              price: price,
+              prevClose: parseFloat(info.y),
+              vol: parseInt(info.v || 0) * 1000,
+              time: parseInt(info.tlong || Date.now())
+          });
+      }
+
+      // 🛡️ 2. 若官方 API 無回應 (例如半夜維護)，退回 Yahoo Query1 主機
       let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
       
       if (!data?.chart?.result) {
@@ -75,7 +91,6 @@ export default async function handler(req, res) {
       if (meta) {
           let latestPrice = meta.regularMarketPrice;
           
-          // 🔥 破解 Yahoo 報價延遲：強制抓取即時 K 線陣列的「最後一筆有效收盤價」
           if (quote && quote.close && quote.close.length > 0) {
               const validCloses = quote.close.filter(c => c !== null);
               if (validCloses.length > 0) {
@@ -98,7 +113,27 @@ export default async function handler(req, res) {
 
         const results = {};
         
-        // 🔥 放棄易出錯且常卡住的 spark API，直接使用最強的 v8 chart API 進行併發請求
+        // 🔥 1. 優先嘗試官方證交所 API 批次查詢 (0 延遲)
+        // 技巧：同時請求 tse (上市) 與 otc (上櫃) 以涵蓋所有股票
+        const exChList = symbolsArray.map(sym => `tse_${sym}.tw|otc_${sym}.tw`).join('|');
+        const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exChList}&json=1&delay=0&_=${Date.now()}`;
+        const twseData = await fetchWithCatch(twseUrl);
+        
+        if (twseData?.msgArray && twseData.msgArray.length > 0) {
+            twseData.msgArray.forEach(info => {
+                const sym = info.c;
+                // z 代表最新成交價，若是 "-" (如盤前或試撮) 則回退使用 y (昨收)
+                const price = info.z !== '-' ? parseFloat(info.z) : parseFloat(info.y);
+                results[sym] = {
+                    price: price,
+                    prevClose: parseFloat(info.y),
+                    vol: parseInt(info.v || 0) * 1000 // 官方回傳的是張數，轉換為股數
+                };
+            });
+            return res.status(200).json(results);
+        }
+
+        // 🛡️ 2. 若官方 API 無回應，備用切換為 Yahoo 併發請求
         await Promise.all(symbolsArray.map(async (sym) => {
             let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}.TW?range=1d&interval=1m&nocache=${Math.random()}`);
             if (!data?.chart?.result) {
@@ -112,7 +147,6 @@ export default async function handler(req, res) {
             if (meta) {
                 let latestPrice = meta.regularMarketPrice;
                 
-                // 強制抓取即時 K 線陣列的最新價格
                 if (quote && quote.close && quote.close.length > 0) {
                     const validCloses = quote.close.filter(c => c !== null);
                     if (validCloses.length > 0) {
