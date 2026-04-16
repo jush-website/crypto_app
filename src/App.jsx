@@ -1056,7 +1056,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
-  const isVolumeBreakout = latestData && prevData && latestData.volume > prevData.volume * 1.3 && latestData.close > latestData.open;
   
   let momentumScore = 0;
   let maStatusMsg = "均線糾結";
@@ -1095,11 +1094,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
   const momentumText = momentumScore >= 2 ? '趨勢向上 (強勢)' : '動能不足 (震盪或偏空)';
   const momentumColor = momentumScore >= 2 ? 'text-[#f6465d]' : 'text-slate-400';
-  
-  // 以分點動向輔助判斷法人情緒
-  const hasInstitutionBuy = branchData && branchData.buyers.some(b => b.type === '外資機構' || b.type === '波段主力');
-  const sentimentText = hasInstitutionBuy ? '大戶/法人進駐' : '缺乏法人買超';
-  const sentimentColor = hasInstitutionBuy ? 'text-[#f6465d]' : 'text-slate-400';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -1150,13 +1144,14 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
-                      <div className="text-sm text-slate-400 font-bold mb-2">1. 流動性 (成交量)</div>
+                      <div className="text-sm text-slate-400 font-bold mb-2">1. 流動性與滑價</div>
                       <div className={`text-xl font-black mb-1 ${isHighlyLiquid ? 'text-[#f6465d]' : 'text-amber-400'}`}>
                           {isHighlyLiquid ? '優良 (達標)' : '偏低 (注意滑價)'}
                       </div>
-                      <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          標準：百元以上需大於 5000 張；百元以下大於 10000 張。<br/>
-                          狀態：{isVolumeBreakout ? <span className="text-[#f6465d] font-bold">出現「帶量上漲」，主力資金進場特徵。</span> : '尚未出現明顯帶量突破，無量上漲易回檔。'}
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• <span className="text-white">基準量能：</span>百元以上需大於 5000 張；百元以下大於 10000 張。</div>
+                          <div>• <span className="text-[#f6465d]">避開滑價：</span>注意買賣五檔，若價差大於 2 個 Tick 應避免交易。</div>
+                          <div>• <span className="text-blue-400">熱門時段：</span>開盤前 15 分與收盤前 15 分鐘撮合最快。</div>
                       </div>
                   </div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
@@ -1169,22 +1164,30 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                           <div>• K線：<span className={hasStrongKline ? 'text-[#f6465d]' : 'text-slate-300'}>{klinePatternMsg}</span></div>
                       </div>
                   </div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
-                      <div className="text-sm text-slate-400 font-bold mb-2">3. 熱度 (市場情緒)</div>
-                      <div className={`text-xl font-black mb-1 ${sentimentColor}`}>
-                          {sentimentText}
-                      </div>
-                      <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          {hasInstitutionBuy ? '目前有機構或主力買超，有利短線動能。' : '目前缺乏明顯法人買盤，須注意流動性陷阱。'}
-                      </div>
-                  </div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
-                      <div className="text-sm text-slate-400 font-bold mb-2">4. 成本與策略</div>
-                      <div className="text-xl font-black mb-1 text-blue-400">
-                          分批佈局 / 波段
-                      </div>
-                      <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          零股撮合不連續，適合小資金分批布局，切勿頻繁當沖。並強烈建議使用「最低 1 元手續費」之券商以避免成本侵蝕。
+                  
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330] md:col-span-2">
+                      <div className="text-sm text-slate-400 font-bold mb-2">3. 成本與綜合戰略</div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-2">
+                          <div className="flex items-start gap-1">
+                              <span className="text-amber-400 shrink-0">• 折溢價陷阱：</span>
+                              <span>零股與整股常有落差，下單前務必比對整股價格，若零股溢價超過 <span className="text-white font-bold">0.5%</span> 等於先賠在起跑點。熱門股收盤前常有溢價，為短線套利好時機。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-[#f6465d] shrink-0">• 嚴格停損：</span>
+                              <span>零股無法當沖，若買入當天收盤情勢不對，隔天一早須果斷處理 (建議設定 <span className="text-white font-bold">3%~5%</span> 停損點)。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-emerald-400 shrink-0">• 分批彈性：</span>
+                              <span>善用零股彈性分批布局 (例如：早盤試單，午盤確認轉強再加碼)，降低單一價位風險。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-slate-300 shrink-0">• 除權息陷阱：</span>
+                              <span>短線賺價差應避開除息日，以免被課徵額外的股利所得稅與健保補充保費。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-blue-400 shrink-0">• 交易成本：</span>
+                              <span>零股切忌使用 20 元低消券商，務必使用提供<span className="text-white font-bold">「最低 1 元手續費」</span>之帳戶操作。</span>
+                          </div>
                       </div>
                   </div>
               </div>
