@@ -1052,14 +1052,47 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
   else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
-  // 🔥 零股四象限戰法解析變數
+  // 🔥 零股四象限戰法解析變數 (全面升級版)
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
+  
+  const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
+  const isVolumeBreakout = latestData && prevData && latestData.volume > prevData.volume * 1.3 && latestData.close > latestData.open;
+  
   let momentumScore = 0;
+  let maStatusMsg = "均線糾結";
+  let klinePatternMsg = "目前無明顯強勢K線型態";
+  let hasStrongKline = false;
+
   if (latestData) {
       if (latestData.close > (latestData.ma5 || 0)) momentumScore++;
       if (latestData.close > (latestData.ma10 || 0)) momentumScore++;
       if (latestData.macd && latestData.macd.hist > 0) momentumScore++;
+      
+      // 均線狀態細部判定
+      if (latestData.close > latestData.ma5 && latestData.close > latestData.ma10) {
+          maStatusMsg = "站穩 5日 與 10日線 (回踩不破可進場)";
+      } else if (latestData.close > latestData.ma10 && latestData.close < latestData.ma5) {
+          maStatusMsg = "跌破 5日線，測試 10日線支撐";
+      } else if (latestData.close < latestData.ma10) {
+          maStatusMsg = "跌破 10日均線 (需提高警覺或停損)";
+      }
+      
+      // K線型態判定
+      if (prevData) {
+          const isBullishEngulfing = prevData.close < prevData.open && latestData.close > latestData.open && latestData.open <= prevData.close && latestData.close >= prevData.open;
+          const isLongRed = (latestData.close - latestData.open) / latestData.open > 0.035; 
+          const isBreakout = latestData.close > Math.max(...chartData.slice(-15, -1).map(k => k.high)); 
+          const upperShadow = latestData.high - latestData.close;
+          const body = Math.abs(latestData.close - latestData.open);
+
+          if (isBullishEngulfing) { klinePatternMsg = "出現紅K吞噬 (強勢轉強訊號)"; hasStrongKline = true; }
+          else if (isLongRed && isBreakout) { klinePatternMsg = "長紅突破近期高點 (熱門題材創高)"; hasStrongKline = true; }
+          else if (isLongRed) { klinePatternMsg = "長紅K棒確認 (買盤強勁進駐)"; hasStrongKline = true; }
+          else if (body > 0 && upperShadow > body * 1.5) { klinePatternMsg = "出現長上影線 (需留意上方短線賣壓)"; }
+          else if (latestData.close < latestData.open && latestData.volume > prevData.volume * 1.5) { klinePatternMsg = "爆量黑K (短線恐見頂，避免追進)"; }
+      }
   }
+
   const momentumText = momentumScore >= 2 ? '趨勢向上 (強勢)' : '動能不足 (震盪或偏空)';
   const momentumColor = momentumScore >= 2 ? 'text-[#f6465d]' : 'text-slate-400';
   
@@ -1122,7 +1155,8 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                           {isHighlyLiquid ? '優良 (達標)' : '偏低 (注意滑價)'}
                       </div>
                       <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          標準：百元以上需大於 5000 張；百元以下大於 10000 張。
+                          標準：百元以上需大於 5000 張；百元以下大於 10000 張。<br/>
+                          狀態：{isVolumeBreakout ? <span className="text-[#f6465d] font-bold">出現「帶量上漲」，主力資金進場特徵。</span> : '尚未出現明顯帶量突破，無量上漲易回檔。'}
                       </div>
                   </div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
@@ -1130,8 +1164,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                       <div className={`text-xl font-black mb-1 ${momentumColor}`}>
                           {momentumText}
                       </div>
-                      <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          觀測 5 日、10 日均線及 MACD 訊號，站上短期均線適合零股波段操作。
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• 均線：<span className={latestData?.close < latestData?.ma10 ? 'text-[#0ecb81]' : 'text-slate-300'}>{maStatusMsg}</span></div>
+                          <div>• K線：<span className={hasStrongKline ? 'text-[#f6465d]' : 'text-slate-300'}>{klinePatternMsg}</span></div>
                       </div>
                   </div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
@@ -1144,12 +1179,12 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                       </div>
                   </div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
-                      <div className="text-sm text-slate-400 font-bold mb-2">4. 成本 (手續費)</div>
+                      <div className="text-sm text-slate-400 font-bold mb-2">4. 成本與策略</div>
                       <div className="text-xl font-black mb-1 text-blue-400">
-                          注意折溢價
+                          分批佈局 / 波段
                       </div>
                       <div className="text-xs text-slate-500 leading-relaxed mt-2">
-                          請比對整股報價。建議使用提供「最低 1 元手續費」之券商，以避免 20 元低消侵蝕利潤。
+                          零股撮合不連續，適合小資金分批布局，切勿頻繁當沖。並強烈建議使用「最低 1 元手續費」之券商以避免成本侵蝕。
                       </div>
                   </div>
               </div>
