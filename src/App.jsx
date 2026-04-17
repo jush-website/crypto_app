@@ -625,19 +625,20 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
-          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto min-w-max overflow-x-auto scrollbar-hide">
-             <button onClick={() => setActiveTabSafe('ALL')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>🔥 熱門總覽</button>
-             <button onClick={() => setActiveTabSafe('STRATEGY')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white font-bold' : 'text-slate-400'}`}><Target className="w-4 h-4"/> 盤末達標</button>
-             <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}><Zap className="w-4 h-4"/> 隔日沖獵物</button>
-             <button onClick={() => setActiveTabSafe('ODDLOT')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white font-bold' : 'text-slate-400'}`}><PieChart className="w-4 h-4"/> 零股推薦</button>
-             <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>💰 定存股</button>
+      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
+        <div className="w-full xl:w-auto relative">
+          {/* 🔥 優化：改用觸控滑動 (touch-pan-x) 與 shrink-0，解決手機版擠壓變形的問題 */}
+          <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
+             <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門總覽</button>
+             <button onClick={() => setActiveTabSafe('STRATEGY')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Target className="w-4 h-4"/> 盤末達標</button>
+             <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Zap className="w-4 h-4"/> 隔日沖獵物</button>
+             <button onClick={() => setActiveTabSafe('ODDLOT')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><PieChart className="w-4 h-4"/> 零股推薦</button>
+             <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold flex items-center gap-1.5 ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>💰 定存股</button>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full xl:w-auto shrink-0">
             {twUpdateTime && <div className="text-xs text-slate-400 flex items-center gap-1 justify-end sm:justify-start shrink-0"><Clock className="w-3 h-3"/> 基準時間: {twUpdateTime}</div>}
-            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
         </div>
       </div>
 
@@ -666,10 +667,11 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       )}
 
       {activeTab === 'ALL' && !showManualEntry && !searchTerm && (
-          <div className="flex overflow-x-auto gap-2 pb-4 mb-2 scrollbar-hide">
-              <button onClick={() => setActiveIndustry('ALL')} className={`px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === 'ALL' ? 'bg-blue-600 text-white border-blue-500' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>全市場排行</button>
+          {/* 🔥 產業標籤過濾器也一併加入防變形與優化滑動效果 */}
+          <div className="flex overflow-x-auto gap-2 pb-4 mb-2 scrollbar-hide snap-x touch-pan-x">
+              <button onClick={() => setActiveIndustry('ALL')} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === 'ALL' ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>全市場排行</button>
               {Object.keys(INDUSTRY_MAP).map(ind => (
-                  <button key={ind} onClick={() => setActiveIndustry(ind)} className={`px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === ind ? 'bg-blue-600 text-white border-blue-500' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>{ind}</button>
+                  <button key={ind} onClick={() => setActiveIndustry(ind)} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === ind ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>{ind}</button>
               ))}
           </div>
       )}
