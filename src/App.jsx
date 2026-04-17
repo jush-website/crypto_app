@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   TrendingUp, RefreshCw, ArrowLeft, Search, Target, AlertCircle, Zap, Wallet, 
-  ZoomIn, ZoomOut, MoveHorizontal, Pencil, Trash2, X, Layers, BarChart2, Waves, 
-  Menu, Filter, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
+  ZoomIn, ZoomOut, MoveHorizontal, X, Layers, BarChart2, Waves, 
+  Menu, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
   Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2
 } from 'lucide-react';
 
@@ -667,8 +667,8 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       )}
 
       {activeTab === 'ALL' && !showManualEntry && !searchTerm && (
-          {/* 🔥 產業標籤過濾器也一併加入防變形與優化滑動效果 */}
           <div className="flex overflow-x-auto gap-2 pb-4 mb-2 scrollbar-hide snap-x touch-pan-x">
+              {/* 🔥 產業標籤過濾器也一併加入防變形與優化滑動效果 (註解移入標籤內部) */}
               <button onClick={() => setActiveIndustry('ALL')} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === 'ALL' ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>全市場排行</button>
               {Object.keys(INDUSTRY_MAP).map(ind => (
                   <button key={ind} onClick={() => setActiveIndustry(ind)} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === ind ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>{ind}</button>
