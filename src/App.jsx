@@ -178,7 +178,7 @@ function calculateIndicators(klines) {
 
   for (let i = 0; i < klines.length; i++) {
     let ma5 = i >= 4 ? closePrices.slice(i-4, i+1).reduce((a,b)=>a+b) / 5.0 : null;
-    let ma10 = i >= 9 ? closePrices.slice(i-9, i+1).reduce((a,b)=>a+b) / 10.0 : null; // 新增零股所需 10 日線
+    let ma10 = i >= 9 ? closePrices.slice(i-9, i+1).reduce((a,b)=>a+b) / 10.0 : null; 
     let ma20 = null, upperBB = null, lowerBB = null;
     let ma60 = i >= 59 ? closePrices.slice(i-59, i+1).reduce((a,b)=>a+b) / 60.0 : null;
 
@@ -476,7 +476,7 @@ function TwLiveStockCard({ stock, activeTab }) {
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
       stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
-  } else if (changeNum >= 2 && volNum > 1500000) { // 修正為股數
+  } else if (changeNum >= 2 && volNum > 1500000) { 
       stStatus = { text: '✅ 短線達標', color: 'text-[#f6465d]', icon: <CheckCircle2 className="w-5 h-5 text-[#f6465d]" /> };
   } else if (changeNum <= -3) {
       stStatus = { text: '⚠️ 弱勢退場', color: 'text-[#0ecb81]', icon: <AlertCircle className="w-5 h-5 text-[#0ecb81]" /> };
@@ -583,13 +583,10 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     let list = Array.isArray(twStocks) ? [...twStocks] : [];
 
     if (activeTab === 'STRATEGY') {
-       // 🔥 盤末短線達標過濾器：漲幅大於 2% 且成交量大於 1,500,000 股 (1500張)
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 2 && parseFloat(t.quoteVolume) > 1500000);
     } else if (activeTab === 'DAYTRADE') {
-       // 🔥 隔日沖獵物：漲停或漲幅大於 5% 且成交量大於 2,000,000 股 (2000張)
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 5 && parseFloat(t.quoteVolume) > 2000000);
     } else if (activeTab === 'ODDLOT') {
-       // 🔥 零股推薦：百元以上 > 5000張 (5,000,000股)，百元以下 > 10000張 (10,000,000股)
        list = list.filter(t => {
            const price = parseFloat(t.lastPrice);
            const vol = parseFloat(t.quoteVolume);
@@ -627,7 +624,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
         <div className="w-full xl:w-auto relative">
-          {/* 🔥 優化：改用觸控滑動 (touch-pan-x) 與 shrink-0，解決手機版擠壓變形的問題 */}
           <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
              <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門總覽</button>
              <button onClick={() => setActiveTabSafe('STRATEGY')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Target className="w-4 h-4"/> 盤末達標</button>
@@ -668,7 +664,6 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
       {activeTab === 'ALL' && !showManualEntry && !searchTerm && (
           <div className="flex overflow-x-auto gap-2 pb-4 mb-2 scrollbar-hide snap-x touch-pan-x">
-              {/* 🔥 產業標籤過濾器也一併加入防變形與優化滑動效果 (註解移入標籤內部) */}
               <button onClick={() => setActiveIndustry('ALL')} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === 'ALL' ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>全市場排行</button>
               {Object.keys(INDUSTRY_MAP).map(ind => (
                   <button key={ind} onClick={() => setActiveIndustry(ind)} className={`shrink-0 snap-start px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-all border ${activeIndustry === ind ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-[#121620] text-slate-400 border-[#2a2f3a] hover:border-blue-500/50'}`}>{ind}</button>
@@ -1073,7 +1068,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
   else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
-  // 🔥 零股四象限戰法解析變數 (全面升級版)
+  // 🔥 零股四象限戰法解析變數
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
@@ -1098,7 +1093,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
       if (latestData.close > (latestData.ma10 || 0)) momentumScore++;
       if (latestData.macd && latestData.macd.hist > 0) momentumScore++;
       
-      // 均線狀態細部判定 (包含多頭排列)
       isBullishMA = (latestData.ma5 > latestData.ma10) && (latestData.ma10 > latestData.ma20) && (latestData.close > latestData.ma5);
 
       if (latestData.close > latestData.ma5 && latestData.close > latestData.ma10) {
@@ -1109,7 +1103,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           maStatusMsg = "跌破 10日均線 (需提高警覺或停損)";
       }
       
-      // K線型態判定 (長紅、上下影線計算)
       const body = Math.abs(latestData.close - latestData.open);
       const upperShadow = latestData.high - Math.max(latestData.close, latestData.open);
       const lowerShadow = Math.min(latestData.close, latestData.open) - latestData.low;
@@ -1123,7 +1116,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           const isBullishEngulfing = prevData.close < prevData.open && latestData.close > latestData.open && latestData.open <= prevData.close && latestData.close >= prevData.open;
           const isBreakout = latestData.close > Math.max(...chartData.slice(-15, -1).map(k => k.high)); 
 
-          // 避開條件：高檔爆量黑K 與 成交量萎縮
           isHighVolBlack = (latestData.close < latestData.open) && (latestData.volume > prevData.volume * 1.5) && (latestData.high >= Math.max(...chartData.slice(-10).map(k=>k.high)));
           if (prevPrevData) {
               isVolShrinking = (latestData.volume < prevData.volume) && (prevData.volume < prevPrevData.volume);
@@ -1139,13 +1131,21 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
   const momentumText = momentumScore >= 2 ? '趨勢向上 (強勢)' : '動能不足 (震盪或偏空)';
   const momentumColor = momentumScore >= 2 ? 'text-[#f6465d]' : 'text-slate-400';
+  
+  const hasInstitutionBuy = branchData && branchData.buyers.some(b => b.type === '外資機構' || b.type === '波段主力');
+  const sentimentText = hasInstitutionBuy ? '大戶/法人進駐' : '缺乏法人買超';
+  const sentimentColor = hasInstitutionBuy ? 'text-[#f6465d]' : 'text-slate-400';
 
   return (
     <div className="animate-in fade-in duration-300">
       <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
       
+      {/* 🔥 優化：重組版面配置。將輕量資訊留左側(col-4)，重型分析移到右側(col-8)，解決擠壓問題 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* === 左側欄位 (4/12 寬度) === */}
         <div className="lg:col-span-4 space-y-6">
+          {/* 基本資訊與評級 */}
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
             
@@ -1177,11 +1177,97 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             </div>
           </div>
 
+          {/* 模擬下單區塊 */}
           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg">
              <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
           </div>
 
-          {/* 🔥 新增：零股短線戰情室 */}
+          {/* 三大法人區塊 (適合窄版面) */}
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
+                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
+              </h3>
+              {chipData.loading ? (
+                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-[#2a2f3a] text-slate-500">
+                        <th className="pb-2 font-normal">指標</th>
+                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2f3a]/50">
+                      <tr>
+                        <td className="py-2.5 text-slate-400">外資買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">投信買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">融資餘額</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
+          </div>
+
+          {/* 新聞列表 (適合窄版面垂直排列) */}
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+             <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
+             {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
+                <div className="space-y-3">
+                  {news.slice(0, 5).map((item, idx) => (
+                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
+                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
+                      <div className="flex justify-between items-center text-[10px] text-slate-500">
+                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
+                        <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
+          </div>
+
+        </div>
+
+        {/* === 右側欄位 (8/12 寬度) === */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* K線圖 */}
+          <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
+            <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
+              <span className="text-amber-500 font-bold">MA5 (周線)</span>
+              <span className="text-purple-400 font-bold">MA10 (雙週線)</span>
+              <span className="text-fuchsia-400 font-bold">MA20 (月線)</span>
+              <span className="text-emerald-500 font-bold">MA60 (季線)</span>
+            </div>
+            {chartLoading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
+          </div>
+
+          {/* AI 操作建議區塊 */}
+          {recommendations && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{String(recommendations.midTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.midTerm.desc)}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{String(recommendations.longTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.longTerm.desc)}</div></div>
+               </div>
+            </div>
+          )}
+
+          {/* 零股短線戰情室 (移至右欄，網格排版不擠壓) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <PieChart className="w-5 h-5 text-pink-500" /> 零股短線實戰解析
@@ -1238,7 +1324,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </div>
           </div>
 
-          {/* 🔥 新增：隔日沖指標綜合分析戰情室 */}
+          {/* 隔日沖指標綜合分析戰情室 (移至右欄，網格排版不擠壓) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <Zap className="w-5 h-5 text-amber-500" /> 隔日沖指標綜合分析
@@ -1281,7 +1367,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </div>
           </div>
 
-          {/* 全方位 AI 擬真即時籌碼儀表板 */}
+          {/* 全方位 AI 擬真即時籌碼儀表板 (移至右欄，加入 grid-cols-1 md:grid-cols-2 防變形) */}
           {branchData && (
             <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1302,7 +1388,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 </div>
 
                 {/* 買賣超前五大分點對照 */}
-                <div className="grid grid-cols-2 gap-3 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     {/* 買方 */}
                     <div>
                         <div className="text-[10px] text-center bg-[#f6465d]/10 text-[#f6465d] border border-[#f6465d]/30 rounded py-1 mb-2 font-bold">主力買超前五大</div>
@@ -1329,24 +1415,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                                 <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
                                     <div className="flex justify-between items-center text-[10px]">
                                         <span className="text-white truncate" title={b.name}>{b.name}</span>
-                                        <span className="text-[#f6465d] font-mono">+{Math.floor(b.vol * 0.001)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
-                                        <span>均價 {b.cost}</span>
-                                        <span>{b.type}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    {/* 賣方 */}
-                    <div>
-                        <div className="text-[10px] text-center bg-[#0ecb81]/10 text-[#0ecb81] border border-[#0ecb81]/30 rounded py-1 mb-2 font-bold">主力賣超前五大</div>
-                        <div className="space-y-1.5">
-                            {branchData.sellers.map((b, i) => (
-                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
-                                    <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
                                         <span className="text-[#0ecb81] font-mono">-{Math.floor(b.vol * 0.001)}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
@@ -1365,86 +1433,15 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             </div>
           )}
 
-          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
-                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
-              </h3>
-              {chipData.loading ? (
-                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
-              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-[#2a2f3a] text-slate-500">
-                        <th className="pb-2 font-normal">指標</th>
-                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#2a2f3a]/50">
-                      <tr>
-                        <td className="py-2.5 text-slate-400">外資買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">投信買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
-                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-400">融資餘額</td>
-                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
-          </div>
         </div>
-
-        <div className="lg:col-span-8 space-y-6">
-          <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
-            <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
-              <span className="text-amber-500 font-bold">MA5 (周線)</span>
-              <span className="text-purple-400 font-bold">MA10 (雙週線)</span>
-              <span className="text-fuchsia-400 font-bold">MA20 (月線)</span>
-              <span className="text-emerald-500 font-bold">MA60 (季線)</span>
-            </div>
-            {chartLoading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
-          </div>
-
-          {/* AI 操作建議區塊 */}
-          {recommendations && (
-            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
-               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{String(recommendations.midTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.midTerm.desc)}</div></div>
-                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{String(recommendations.longTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.longTerm.desc)}</div></div>
-               </div>
-            </div>
-          )}
-
-          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
-             <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
-             {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
-                <div className="space-y-3">
-                  {news.slice(0, 5).map((item, idx) => (
-                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
-                      <div className="flex justify-between items-center text-[10px] text-slate-500">
-                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
-                        <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
-          </div>
-        </div>
+      </div>
+      
+      {/* 新增的數據來源連結 */}
+      <div className="mt-8 text-center text-xs text-slate-500 bg-[#121620] py-3 rounded-xl border border-[#2a2f3a]">
+        即時報價與 K 線數據來源：
+        <a href={`https://tw.stock.yahoo.com/quote/${stock.symbol}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors ml-1 font-bold inline-flex items-center">
+          Yahoo Finance ({stock.name} {stock.symbol}) <ExternalLink className="w-3 h-3 ml-1" />
+        </a>
       </div>
     </div>
   );
