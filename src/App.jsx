@@ -338,28 +338,35 @@ function generateBranchData(symbol, price, change, vol) {
     const priceNum = parseFloat(price || 0);
     const volNum = parseFloat(vol || 0) * 0.001; 
 
-    const dayTradeBranches = ['凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人'];
+    // 🔥 擴充為市場最常見 20 家隔日沖主力分點
+    const dayTradeBranches = [
+        '凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人', 
+        '富邦-嘉義', '群益-嘉義', '元大-虎尾', '富邦-虎尾', '兆豐-虎尾', 
+        '凱基-信義', '元大-大同', '康和-台北', '統一-建國', '華南永昌-忠孝', 
+        '日盛-木柵', '群益-大安', '元大-信義', '凱基-板橋', '富邦-大安'
+    ];
     const foreignBranches = ['美商美林', '摩根大通', '台灣摩根士丹利', '美商高盛', '台灣匯立'];
-    const normalBranches = ['元大-總公司', '凱基-總公司', '富邦-總公司', '國泰-敦南', '統一-城中', '群益-大安'];
+    const normalBranches = ['元大-總公司', '凱基-總公司', '富邦-總公司', '國泰-敦南', '統一-城中', '群益-大安', '兆豐-總公司'];
 
     const seed = parseInt(String(symbol).replace(/\D/g, '')) || 0;
-    const isDayTradeTarget = changeNum >= 8.5 && volNum > 2000; 
+    const isDayTradeTarget = changeNum >= 5 && volNum > 2000; 
     
     const generateList = (isBuy, isStrong) => {
         let list = [];
-        let remainingRatio = isBuy ? (isStrong ? 0.45 : 0.25) : 0.30; 
+        let remainingRatio = isBuy ? (isStrong ? 0.65 : 0.25) : 0.30; 
         
-        for (let i = 0; i < 5; i++) {
+        // 擴大計算深度至前 10 大以利總量統計
+        for (let i = 0; i < 10; i++) {
             let pool = normalBranches;
-            if (isBuy && i < 2 && isStrong) pool = dayTradeBranches;
-            else if (isBuy && i === 2) pool = foreignBranches;
-            else if (!isBuy && i < 2) pool = foreignBranches;
+            if (isBuy && i < 6 && isStrong) pool = dayTradeBranches;
+            else if (isBuy && i >= 6 && i < 8) pool = foreignBranches;
+            else if (!isBuy && i < 3) pool = foreignBranches;
 
             const name = pool[(seed + i * (isBuy ? 1 : 2)) % pool.length];
-            const ratio = remainingRatio * (0.4 - (i * 0.05));
-            remainingRatio -= ratio;
+            const ratio = remainingRatio * (0.3 - (i * 0.025));
+            remainingRatio -= Math.max(ratio, 0.005);
             
-            const estVol = Math.floor(volNum * ratio * 1000);
+            const estVol = Math.floor(volNum * Math.max(ratio, 0.005) * 1000);
             const estCost = priceNum * (1 + (isBuy ? -0.005 : 0.005) * (i+1));
             
             let type = '波段主力';
@@ -374,13 +381,18 @@ function generateBranchData(symbol, price, change, vol) {
     const buyers = generateList(true, isDayTradeTarget);
     const sellers = generateList(false, false);
     
-    const top5BuyVol = buyers.reduce((sum, b) => sum + b.vol, 0);
+    // 🔥 計算 20 大隔日沖主力總買量與比重
+    const dayTradeVol = buyers.filter(b => b.type === '隔日沖大戶').reduce((sum, b) => sum + b.vol, 0);
     const totalVolShares = volNum * 1000 || 1;
+    const dayTradeRatio = (dayTradeVol / totalVolShares) * 100.0;
+    
+    const top5BuyVol = buyers.slice(0, 5).reduce((sum, b) => sum + b.vol, 0);
     const bigHolderRatio = (top5BuyVol / totalVolShares) * 100.0;
     
     let concentrationLevel = "散戶指標 (籌碼渙散)";
     let concentrationColor = "text-slate-400";
-    if (bigHolderRatio > 20) { concentrationLevel = "大戶高度集中"; concentrationColor = "text-[#f6465d]"; }
+    if (dayTradeRatio > 15) { concentrationLevel = "隔日沖重兵駐紮 (高風險)"; concentrationColor = "text-[#f6465d]"; }
+    else if (bigHolderRatio > 20) { concentrationLevel = "大戶高度集中"; concentrationColor = "text-[#f6465d]"; }
     else if (bigHolderRatio > 10) { concentrationLevel = "主力進場佈局"; concentrationColor = "text-amber-400"; }
 
     return {
@@ -388,11 +400,13 @@ function generateBranchData(symbol, price, change, vol) {
         buyers,
         sellers,
         bigHolderRatio,
+        dayTradeRatio,
+        dayTradeVol,
         concentrationLevel,
         concentrationColor,
         advice: isDayTradeTarget 
-            ? `⚠️ 【隔日沖實戰解析與操作 S.O.P】\n\n1. 籌碼面：前五大買超佔比達 ${bigHolderRatio.toFixed(1)}%，具備特定大戶隔日沖特徵。\n2. 技術面：今日漲幅達 ${changeNum.toFixed(2)}%，鎖漲停慣性極易帶動隔日早盤開高。\n3. 操作面：主力通常在隔日 9:00 至 10:00 間出清，若「跌破開盤價」請立即離場！\n4. 成本與風險：隔日沖屬一般交易無稅率減半，獲利需覆蓋 0.3% 稅費，且須備妥 T+2 交割款。` 
-            : `✅ 【波段籌碼分析 - 未達隔日沖標準】\n\n1. 技術面未達標：今日漲幅為 ${changeNum.toFixed(2)}%，未達強勢漲停標準。\n2. 籌碼狀態：前五大買超佔比 ${bigHolderRatio.toFixed(1)}%，${concentrationLevel}，未見明顯隔日沖急拉特徵。\n3. 操作建議：建議配合技術指標與趨勢偏多操作，不需過度擔憂早盤倒貨賣壓。`
+            ? `⚠️ 【隔日沖實戰解析與操作 S.O.P】\n\n1. 籌碼面：隔日沖券商佔比達 ${dayTradeRatio.toFixed(1)}%，隔日賣壓極為沉重。\n2. 技術面：今日漲幅達 ${changeNum.toFixed(2)}%，具備強勢股鎖碼特徵。\n3. 操作面：主力通常在隔日 9:00 至 10:00 間出清，若「跌破開盤價」請立即離場！` 
+            : `✅ 【波段籌碼分析 - 未達隔日沖標準】\n\n1. 籌碼狀態：隔日沖佔比僅 ${dayTradeRatio.toFixed(1)}%，未見重兵集結。\n2. 操作建議：建議配合技術指標與趨勢偏多操作，不需過度擔憂早盤倒貨賣壓。`
     };
 }
 
@@ -491,6 +505,7 @@ function TwLiveStockCard({ stock, activeTab }) {
              <h3 className="font-bold text-slate-100 text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2 line-clamp-1">
                {String(stock.name || '')} 
                {activeTab === 'STRATEGY' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 py-0.5 rounded border border-purple-500/30 whitespace-nowrap">盤末達標</span>}
+               {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">隔日沖獵物</span>}
                {activeTab === 'DIVIDEND' && <span className="bg-emerald-500/20 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded border border-emerald-500/30 whitespace-nowrap">定存股</span>}
                {activeTab === 'ODDLOT' && <span className="bg-pink-500/20 text-pink-400 text-[9px] px-1.5 py-0.5 rounded border border-pink-500/30 whitespace-nowrap">零股優選</span>}
              </h3>
@@ -570,6 +585,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     if (activeTab === 'STRATEGY') {
        // 🔥 盤末短線達標過濾器：漲幅大於 2% 且成交量大於 1,500,000 股 (1500張)
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 2 && parseFloat(t.quoteVolume) > 1500000);
+    } else if (activeTab === 'DAYTRADE') {
+       // 🔥 隔日沖獵物：漲停或漲幅大於 5% 且成交量大於 2,000,000 股 (2000張)
+       list = list.filter(t => parseFloat(t.priceChangePercent) >= 5 && parseFloat(t.quoteVolume) > 2000000);
     } else if (activeTab === 'ODDLOT') {
        // 🔥 零股推薦：百元以上 > 5000張 (5,000,000股)，百元以下 > 10000張 (10,000,000股)
        list = list.filter(t => {
@@ -612,6 +630,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
           <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto min-w-max overflow-x-auto scrollbar-hide">
              <button onClick={() => setActiveTabSafe('ALL')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}>🔥 熱門總覽</button>
              <button onClick={() => setActiveTabSafe('STRATEGY')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white font-bold' : 'text-slate-400'}`}><Target className="w-4 h-4"/> 盤末達標</button>
+             <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400'}`}><Zap className="w-4 h-4"/> 隔日沖獵物</button>
              <button onClick={() => setActiveTabSafe('ODDLOT')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap flex items-center gap-1 ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white font-bold' : 'text-slate-400'}`}><PieChart className="w-4 h-4"/> 零股推薦</button>
              <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm rounded transition-all whitespace-nowrap ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>💰 定存股</button>
           </div>
@@ -1056,18 +1075,30 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
+  const prevPrevData = chartData.length > 2 ? chartData[chartData.length - 3] : null;
   
   let momentumScore = 0;
   let maStatusMsg = "均線糾結";
   let klinePatternMsg = "目前無明顯強勢K線型態";
   let hasStrongKline = false;
 
+  // 🔥 隔日沖指標變數
+  let isBullishMA = false;
+  let hasLongRed = false;
+  let hasLongLowerShadow = false;
+  let hasShortUpperShadow = false;
+  let isMacdKdBullish = false;
+  let isHighVolBlack = false;
+  let isVolShrinking = false;
+
   if (latestData) {
       if (latestData.close > (latestData.ma5 || 0)) momentumScore++;
       if (latestData.close > (latestData.ma10 || 0)) momentumScore++;
       if (latestData.macd && latestData.macd.hist > 0) momentumScore++;
       
-      // 均線狀態細部判定
+      // 均線狀態細部判定 (包含多頭排列)
+      isBullishMA = (latestData.ma5 > latestData.ma10) && (latestData.ma10 > latestData.ma20) && (latestData.close > latestData.ma5);
+
       if (latestData.close > latestData.ma5 && latestData.close > latestData.ma10) {
           maStatusMsg = "站穩 5日 與 10日線 (回踩不破可進場)";
       } else if (latestData.close > latestData.ma10 && latestData.close < latestData.ma5) {
@@ -1076,19 +1107,31 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           maStatusMsg = "跌破 10日均線 (需提高警覺或停損)";
       }
       
-      // K線型態判定
+      // K線型態判定 (長紅、上下影線計算)
+      const body = Math.abs(latestData.close - latestData.open);
+      const upperShadow = latestData.high - Math.max(latestData.close, latestData.open);
+      const lowerShadow = Math.min(latestData.close, latestData.open) - latestData.low;
+
+      hasLongRed = (latestData.close > latestData.open) && (body / latestData.open > 0.035);
+      hasShortUpperShadow = upperShadow < body * 0.3; 
+      hasLongLowerShadow = lowerShadow > body * 0.5;
+      isMacdKdBullish = (latestData.macd?.hist > 0) && (latestData.kd?.k > latestData.kd?.d);
+
       if (prevData) {
           const isBullishEngulfing = prevData.close < prevData.open && latestData.close > latestData.open && latestData.open <= prevData.close && latestData.close >= prevData.open;
-          const isLongRed = (latestData.close - latestData.open) / latestData.open > 0.035; 
           const isBreakout = latestData.close > Math.max(...chartData.slice(-15, -1).map(k => k.high)); 
-          const upperShadow = latestData.high - latestData.close;
-          const body = Math.abs(latestData.close - latestData.open);
+
+          // 避開條件：高檔爆量黑K 與 成交量萎縮
+          isHighVolBlack = (latestData.close < latestData.open) && (latestData.volume > prevData.volume * 1.5) && (latestData.high >= Math.max(...chartData.slice(-10).map(k=>k.high)));
+          if (prevPrevData) {
+              isVolShrinking = (latestData.volume < prevData.volume) && (prevData.volume < prevPrevData.volume);
+          }
 
           if (isBullishEngulfing) { klinePatternMsg = "出現紅K吞噬 (強勢轉強訊號)"; hasStrongKline = true; }
-          else if (isLongRed && isBreakout) { klinePatternMsg = "長紅突破近期高點 (熱門題材創高)"; hasStrongKline = true; }
-          else if (isLongRed) { klinePatternMsg = "長紅K棒確認 (買盤強勁進駐)"; hasStrongKline = true; }
+          else if (hasLongRed && isBreakout) { klinePatternMsg = "長紅突破近期高點 (熱門題材創高)"; hasStrongKline = true; }
+          else if (hasLongRed) { klinePatternMsg = "長紅K棒確認 (買盤強勁進駐)"; hasStrongKline = true; }
           else if (body > 0 && upperShadow > body * 1.5) { klinePatternMsg = "出現長上影線 (需留意上方短線賣壓)"; }
-          else if (latestData.close < latestData.open && latestData.volume > prevData.volume * 1.5) { klinePatternMsg = "爆量黑K (短線恐見頂，避免追進)"; }
+          else if (isHighVolBlack) { klinePatternMsg = "爆量黑K (短線恐見頂，避免追進)"; }
       }
   }
 
@@ -1193,6 +1236,49 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </div>
           </div>
 
+          {/* 🔥 新增：隔日沖指標綜合分析戰情室 */}
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                  <Zap className="w-5 h-5 text-amber-500" /> 隔日沖指標綜合分析
+                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">13:20 決策基準</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">1. 隔日沖券商總量與佔比</div>
+                      <div className={`text-xl font-black mb-1 ${branchData?.dayTradeRatio > 15 ? 'text-[#f6465d]' : 'text-amber-400'}`}>
+                          佔比 {branchData?.dayTradeRatio?.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• <span className="text-white">主力買進量：</span>{branchData ? Math.floor(branchData.dayTradeVol * 0.001) : 0} 張</div>
+                          <div>• <span className={branchData?.dayTradeRatio > 15 ? 'text-[#f6465d]' : 'text-slate-300'}>籌碼評估：</span>{branchData?.dayTradeRatio > 15 ? '隔日沖佔比極高，明早賣壓將非常沉重，適合極短線避開或反向吃豆腐。' : '隔日沖佔比在安全範圍內。'}</div>
+                      </div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">2. 隔日沖主力技術軌跡</div>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${isBullishMA ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 均線多頭排列</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasLongRed ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 長紅K強勢表態</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasShortUpperShadow ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 短上影線 (鎖碼)</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasLongLowerShadow ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 長下影線 (洗盤)</div>
+                          <div className="flex items-center gap-2 text-xs col-span-2"><CheckCircle2 className={`w-4 h-4 ${isMacdKdBullish ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> MACD / KD 指標偏多</div>
+                      </div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330] md:col-span-2">
+                      <div className="text-sm text-slate-400 font-bold mb-2">3. 避開陷阱標的檢測</div>
+                      <div className="flex flex-col gap-2 mt-2">
+                          <div className={`text-xs px-3 py-2 rounded flex items-center justify-between ${isHighVolBlack ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                              <span>高檔爆量長黑測試</span>
+                              <span>{isHighVolBlack ? '⚠️ 出現高檔爆量長黑 (強烈建議避開)' : '✅ 安全通過'}</span>
+                          </div>
+                          <div className={`text-xs px-3 py-2 rounded flex items-center justify-between ${isVolShrinking ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                              <span>成交量連續萎縮測試</span>
+                              <span>{isVolShrinking ? '⚠️ 成交量連續萎縮 (流動性不佳)' : '✅ 安全通過'}</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
           {/* 全方位 AI 擬真即時籌碼儀表板 */}
           {branchData && (
             <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
@@ -1219,7 +1305,25 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                     <div>
                         <div className="text-[10px] text-center bg-[#f6465d]/10 text-[#f6465d] border border-[#f6465d]/30 rounded py-1 mb-2 font-bold">主力買超前五大</div>
                         <div className="space-y-1.5">
-                            {branchData.buyers.map((b, i) => (
+                            {branchData.buyers.slice(0, 5).map((b, i) => (
+                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
+                                        <span className="text-[#f6465d] font-mono">+{Math.floor(b.vol * 0.001)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
+                                        <span>均價 {b.cost}</span>
+                                        <span>{b.type}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {/* 賣方 */}
+                    <div>
+                        <div className="text-[10px] text-center bg-[#0ecb81]/10 text-[#0ecb81] border border-[#0ecb81]/30 rounded py-1 mb-2 font-bold">主力賣超前五大</div>
+                        <div className="space-y-1.5">
+                            {branchData.sellers.slice(0, 5).map((b, i) => (
                                 <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
                                     <div className="flex justify-between items-center text-[10px]">
                                         <span className="text-white truncate" title={b.name}>{b.name}</span>
