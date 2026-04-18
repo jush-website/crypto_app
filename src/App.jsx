@@ -242,11 +242,13 @@ function detectLiquiditySweep(klines) {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 }
 
+// 🔥 核心更新：虛擬貨幣 SMC 融合影片技術型態過濾器
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
   const klines = klinesRaw;
   const latest = klines[klines.length - 1];
+  const prevK = klines[klines.length - 2];
   
   const vp = calculateVolumeProfile(klines);
   const sweep = detectLiquiditySweep(klines);
@@ -256,6 +258,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
 
   let score = 0, logs = [];
 
+  // 1. Order Flow (訂單流分析)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
@@ -264,15 +267,18 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
   else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
-  if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`Volume Profile: 價格站上 POC (${formatPrice(vp.poc)})`); }
-  else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`Volume Profile: 價格跌破 POC (${formatPrice(vp.poc)})`); }
+  // 2. Volume Profile (籌碼分佈)
+  if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
+  else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
   if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
   else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
-  if (sweep.sweepLong) { score += 3; logs.push("Liquidity Sweep: 獵取賣方流動性，主力吸籌"); }
-  if (sweep.sweepShort) { score -= 3; logs.push("Liquidity Sweep: 獵取買方流動性，主力派發"); }
+  // 3. Liquidity Sweep (流動性獵取)
+  if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵取賣方流動性，主力吸籌"); }
+  if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵取買方流動性，主力派發"); }
 
+  // 4. Fair Value Gaps (影片中提及的 FVG)
   let bullishFVG = false, bearishFVG = false;
   let bullishIFVG = false, bearishIFVG = false;
   for (let i = klines.length - 15; i < klines.length - 1; i++) {
@@ -287,12 +293,13 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
           if (latest.close > k1.low) bullishIFVG = true;
       }
   }
-  if (bullishIFVG) { score += 2; logs.push("IFVG: 突破空頭缺口轉為支撐 (多頭反轉)"); }
+  if (bullishIFVG) { score += 2; logs.push("FVG: 突破空頭缺口轉為支撐 (反轉)"); }
   else if (bullishFVG) { score += 1; logs.push("FVG: 存在多頭合理價值缺口"); }
   
-  if (bearishIFVG) { score -= 2; logs.push("IFVG: 跌破多頭缺口轉為阻力 (空頭反轉)"); }
+  if (bearishIFVG) { score -= 2; logs.push("FVG: 跌破多頭缺口轉為阻力 (反轉)"); }
   else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
 
+  // 5. AMD Model (威科夫/SMC 模型)
   const accRange = klines.slice(-30, -10);
   const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
   const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
@@ -303,15 +310,75 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   const isAccumulation = (accHigh - accLow) / (accLow || 1) < 0.035;
   if (isAccumulation) {
       if (manLow < accLow && latest.close > accHigh) {
-          score += 3; logs.push("AMD Model: 向下洗盤後急拉突破 (多頭獵取)");
+          score += 3; logs.push("AMD: 向下洗盤後急拉突破 (獵取止損)");
       } else if (manHigh > accHigh && latest.close < accLow) {
-          score -= 3; logs.push("AMD Model: 向上誘多後急跌破底 (空頭獵取)");
+          score -= 3; logs.push("AMD: 向上誘多後急跌破底 (多頭陷阱)");
       }
   }
 
+  // 🔥 6. 影片新增指標：Candlestick Patterns (K線反轉型態)
+  if (prevK) {
+      const body = Math.abs(latest.close - latest.open);
+      const upperShadow = latest.high - Math.max(latest.close, latest.open);
+      const lowerShadow = Math.min(latest.close, latest.open) - latest.low;
+      
+      const isBullishEngulfing = prevK.close < prevK.open && latest.close > latest.open && latest.open <= prevK.close && latest.close >= prevK.open;
+      const isBearishEngulfing = prevK.close > prevK.open && latest.close < latest.open && latest.open >= prevK.close && latest.close <= prevK.open;
+      const isHammer = lowerShadow > body * 2 && upperShadow < body * 0.5 && body > 0;
+      const isShootingStar = upperShadow > body * 2 && lowerShadow < body * 0.5 && body > 0;
+      
+      if (isBullishEngulfing) { score += 2.5; logs.push("K線型態: 看漲吞沒 (Bullish Engulfing)"); }
+      else if (isBearishEngulfing) { score -= 2.5; logs.push("K線型態: 看跌吞沒 (Bearish Engulfing)"); }
+      
+      if (isHammer) { score += 2; logs.push("K線型態: 鎚子線/長下影線探底"); }
+      else if (isShootingStar) { score -= 2; logs.push("K線型態: 流星線/長上影線承壓"); }
+  }
+
+  // 🔥 7. 影片新增指標：Breakout Patterns (矩形/三角突破)
+  const consolidationKlines = klines.slice(-20, -1);
+  const consMax = Math.max(...consolidationKlines.map(k => k.high));
+  const consMin = Math.min(...consolidationKlines.map(k => k.low));
+  const consRange = (consMax - consMin) / consMin;
+  
+  if (consRange < 0.02) { 
+      if (latest.close > consMax && latest.close > latest.open) {
+          score += 3; logs.push("Breakout: 向上突破近期盤整區間");
+      } else if (latest.close < consMin && latest.close < latest.open) {
+          score -= 3; logs.push("Breakout: 向下跌破近期盤整區間");
+      }
+  }
+
+  // 🔥 8. 影片新增指標：Fibonacci Retracements & Elliot Wave (斐波那契回調)
+  const recent40 = klines.slice(-40); 
+  const waveHigh = Math.max(...recent40.map(k => k.high));
+  const waveLow = Math.min(...recent40.map(k => k.low));
+  const waveRange = waveHigh - waveLow;
+  
+  if (waveRange / waveLow > 0.03) { 
+      const fib0382 = waveHigh - waveRange * 0.382;
+      const fib0618 = waveHigh - waveRange * 0.618;
+      
+      // 測試波浪理論中的 0.618 或 0.382 支撐
+      const near0618 = Math.abs(latest.low - fib0618) / fib0618 < 0.005;
+      const near0382 = Math.abs(latest.low - fib0382) / fib0382 < 0.005;
+      
+      if (near0618 && latest.close > latest.open) {
+          score += 2; logs.push("Fibonacci: 完美回踩 0.618 支撐位並反彈");
+      } else if (near0382 && latest.close > latest.open) {
+          score += 1.5; logs.push("Fibonacci: 回踩 0.382 淺回調支撐位");
+      }
+      
+      const fibBear0618 = waveLow + waveRange * 0.618;
+      const nearBear0618 = Math.abs(latest.high - fibBear0618) / fibBear0618 < 0.005;
+      if (nearBear0618 && latest.close < latest.open) {
+          score -= 2; logs.push("Fibonacci: 反彈受阻於 0.618 壓力位");
+      }
+  }
+
+  // 總分研判 (因應新增指標，調高觸發門檻以提升準確率)
   let signal = 'NEUTRAL';
-  if (score >= 4) signal = 'LONG';
-  else if (score <= -4) signal = 'SHORT';
+  if (score >= 5) signal = 'LONG';
+  else if (score <= -5) signal = 'SHORT';
 
   let entry = currentPrice, sl = 0, tp = 0;
   const recentLows = klines.slice(-15).map(k => k.low).filter(n => !isNaN(n));
@@ -328,9 +395,13 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       if ((sl - entry) / entry < 0.005) sl = entry * 1.015;
       tp = entry - (sl - entry) * 2;
   }
+  
   if (logs.length === 0) logs.push("市場於 POC / aVWAP 附近盤整，流動性建構中");
+  
+  // 保持 UI 乾淨，最多只顯示最重要的前 4 個判斷理由
+  const finalLogs = logs.slice(0, 4);
 
-  return { signal, score, logs, entry, tp, sl, poc: vp.poc, avwap };
+  return { signal, score, logs: finalLogs, entry, tp, sl, poc: vp.poc, avwap };
 }
 
 function generateBranchData(symbol, price, change, vol) {
@@ -1140,7 +1211,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     <div className="animate-in fade-in duration-300">
       <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
       
-      {/* 🔥 優化：重組版面配置。將輕量資訊留左側(col-4)，重型分析移到右側(col-8)，解決擠壓問題 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* === 左側欄位 (4/12 寬度) === */}
