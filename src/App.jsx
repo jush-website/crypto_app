@@ -797,7 +797,6 @@ function NewsDashboard() {
     const fetchRealNews = async () => {
       try {
         setLoading(true);
-        // 純前端抓取 RSS (繞過 Node API)
         const feeds = [
           { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
           { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
@@ -805,7 +804,7 @@ function NewsDashboard() {
         let allArticles = [];
         for (const feed of feeds) {
           try {
-             const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
+             const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`);
              const data = await res.json();
              if (data && data.status === 'ok') {
                const items = data.items.map(item => ({
@@ -2234,9 +2233,21 @@ export default function App() {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
+        const fetchWithProxyFallback = async (url) => {
+            try {
+                const r = await fetch(url);
+                if (r.ok) return await r.json();
+            } catch(e) {}
+            try {
+                const r2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+                if (r2.ok) return await r2.json();
+            } catch(e) {}
+            return [];
+        };
+
         const [resTse, resOtc] = await Promise.all([
-          fetch(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`).then(r => r.json()).catch(() => []),
-          fetch(`https://www.tpex.org.tw/openapi/v1/t1820`).then(r => r.json()).catch(() => [])
+          fetchWithProxyFallback(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL?_t=${Date.now()}`),
+          fetchWithProxyFallback(`https://www.tpex.org.tw/openapi/v1/t1820?_t=${Date.now()}`)
         ]);
 
         if (isMounted) {
