@@ -54,20 +54,21 @@ function parseYahooData(data, officialPrevClose, quoteData = null) {
   let todayVol = 0;
   let trueYesterdayClose = 0;
 
-  // 動態 K 線補丁：若有取得即時報價，自動修補或新增今日 K 線 (解決跨週末 4/17 延遲問題)
-  if (quoteData && quoteData.price) {
+  // 🔥 強制取得台灣當前真實日期 (徹底解決跨週末與 API 時間戳錯誤的問題)
+  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const todayStr = new Date().toLocaleDateString('zh-TW', opt);
+
+  // 動態 K 線補丁：若有取得即時報價，自動修補或強制新增今日 K 線
+  if (quoteData && quoteData.price > 0) {
       const livePrice = quoteData.price;
-      const liveVol = quoteData.vol;
-      const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-      // Yahoo 的 time 是秒數，轉為毫秒後取日期
-      const marketDateStr = new Date((quoteData.time || Date.now() / 1000) * 1000).toLocaleDateString('zh-TW', opt);
+      const liveVol = quoteData.vol || 0;
 
       if (validKlines.length > 0) {
           const lastK = validKlines[validKlines.length - 1];
           const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
-          if (lastKDateStr === marketDateStr) {
-              // 覆寫今日未完成的 K 線
+          if (lastKDateStr === todayStr) {
+              // 今日 K 線已經存在，直接覆寫更新最新即時市價
               lastK.close = livePrice;
               lastK.volume = Math.max(lastK.volume, liveVol);
               lastK.high = Math.max(lastK.high, livePrice);
@@ -76,21 +77,22 @@ function parseYahooData(data, officialPrevClose, quoteData = null) {
               todayVol = lastK.volume;
               if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
           } else {
-              // 新增今日 K 線 (當日線陣列還停留在上週五時觸發)
+              // 今日 K 線尚未生成 (跨週末、或盤中延遲)，強制手工畫出最新的一根 K 棒！
               trueYesterdayClose = lastK.close;
               todayPrice = livePrice;
               todayVol = liveVol;
               validKlines.push({
-                  time: (quoteData.time || Date.now() / 1000) * 1000,
+                  time: Date.now(), // 直接標記為此時此刻
                   open: meta.regularMarketOpen || livePrice, 
-                  high: meta.regularMarketDayHigh || livePrice,
-                  low: meta.regularMarketDayLow || livePrice,
+                  high: Math.max(meta.regularMarketDayHigh || livePrice, livePrice),
+                  low: Math.min(meta.regularMarketDayLow || livePrice, livePrice),
                   close: livePrice,
                   volume: liveVol
               });
           }
       }
   } else {
+      // 無即時報價時的備用退回機制
       const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
       todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
       todayVol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
@@ -296,6 +298,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
 
   let score = 0, logs = [];
 
+  // 1. Order Flow (訂單流分析)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
@@ -304,15 +307,18 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
   else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
+  // 2. Volume Profile (籌碼分佈)
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
   if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
   else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
+  // 3. Liquidity Sweep (流動性獵取)
   if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵取賣方流動性，主力吸籌"); }
   if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵取買方流動性，主力派發"); }
 
+  // 4. Fair Value Gaps (影片中提及的 FVG)
   let bullishFVG = false, bearishFVG = false;
   let bullishIFVG = false, bearishIFVG = false;
   for (let i = klines.length - 15; i < klines.length - 1; i++) {
@@ -333,6 +339,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (bearishIFVG) { score -= 2; logs.push("FVG: 跌破多頭缺口轉為阻力 (反轉)"); }
   else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
 
+  // 5. AMD Model (威科夫/SMC 模型)
   const accRange = klines.slice(-30, -10);
   const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
   const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
@@ -1171,7 +1178,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
   else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
-  // 🔥 零股四象限戰法解析變數 (全面升級版)
+  // 🔥 零股四象限戰法解析變數
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
@@ -2219,10 +2226,19 @@ export default function App() {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
-        const [resTse, resOtc] = await Promise.all([
+        let [resTse, resOtc] = await Promise.all([
           fetch(`/api/binance?action=tw-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => []),
           fetch(`/api/binance?action=tw-otc-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => [])
         ]);
+
+        // 🔥 終極防護：雙通道備援系統。若 Vercel 後端被證交所阻擋導致回傳空陣列，
+        // 系統會立刻動用使用者本地端瀏覽器的 IP 直接抓取，保證大廳絕不空白！
+        if (!Array.isArray(resTse) || resTse.length === 0) {
+            try { const directRes = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); if (directRes.ok) resTse = await directRes.json(); } catch(e) {}
+        }
+        if (!Array.isArray(resOtc) || resOtc.length === 0) {
+            try { const directOtc = await fetch('https://www.tpex.org.tw/openapi/v1/t1820'); if (directOtc.ok) resOtc = await directOtc.json(); } catch(e) {}
+        }
 
         if (isMounted) {
           const arrTse = Array.isArray(resTse) ? resTse : [];
