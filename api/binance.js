@@ -12,12 +12,14 @@ export default async function handler(req, res) {
 
   const { action, symbol, limit = 120, interval = '15m' } = req.query;
 
-  // 統一防快取設定與 Request Headers
+  // 統一防快取設定與 Request Headers (加入 Origin 與 Referer 模擬正常用戶，防阻擋)
   const fetchConfig = { 
     headers: { 
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'application/json',
-      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Origin': 'https://tw.stock.yahoo.com',
+      'Referer': 'https://tw.stock.yahoo.com/'
     },
     cache: 'no-store' // 徹底防範 Next.js / Vercel Edge 擅自快取
   };
