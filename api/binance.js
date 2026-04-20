@@ -12,16 +12,13 @@ export default async function handler(req, res) {
 
   const { action, symbol, limit = 120, interval = '15m' } = req.query;
 
-  // 統一防快取設定與 Request Headers (加入 Origin 與 Referer 模擬正常用戶，防阻擋)
+  // 統一防快取設定與 Request Headers (移除 Origin 與 Referer，避免觸發 Yahoo 跨域 CSRF 阻擋)
   const fetchConfig = { 
     headers: { 
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'application/json',
-      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-      'Origin': 'https://tw.stock.yahoo.com',
-      'Referer': 'https://tw.stock.yahoo.com/'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': '*/*'
     },
-    cache: 'no-store' // 徹底防範 Next.js / Vercel Edge 擅自快取
+    cache: 'no-store' 
   };
 
   // 具備防崩潰機制的共用請求函數
@@ -117,9 +114,10 @@ export default async function handler(req, res) {
         return res.status(200).json(data);
     }
     else if (action === 'tw-history' && symbol) {
-      let data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&nocache=${Math.random()}`);
+      // 改用較不常封鎖 IP 的 query2 伺服器
+      let data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&nocache=${Date.now()}`);
       if (!data?.chart?.result) {
-        data = await fetchWithCatch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d&nocache=${Math.random()}`);
+        data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d&nocache=${Date.now()}`);
       }
       return res.status(200).json(data || {});
     }
