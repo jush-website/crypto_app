@@ -26,8 +26,8 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 🔥 處理歷史 K 線，並融合「即時報價」進行動態 K 線補丁
-function parseYahooData(data, officialPrevClose, quoteData = null) {
+// 處理歷史 K 線，並強制套用官方昨收價以計算正確漲跌幅
+function parseYahooData(data, officialPrevClose) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
   const meta = result.meta;
@@ -50,53 +50,13 @@ function parseYahooData(data, officialPrevClose, quoteData = null) {
       }
   }
 
-  let todayPrice = 0;
-  let todayVol = 0;
+  const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
+  const todayPrice = (meta.regularMarketPrice > 0) ? meta.regularMarketPrice : (lastK ? lastK.close : 0);
+  const vol = (meta.regularMarketVolume > 0) ? meta.regularMarketVolume : (lastK ? lastK.volume : 0);
+
   let trueYesterdayClose = 0;
-
-  // 🔥 強制取得台灣當前真實日期 (徹底解決跨週末與 API 時間戳錯誤的問題)
-  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-  const todayStr = new Date().toLocaleDateString('zh-TW', opt);
-
-  // 動態 K 線補丁：若有取得即時報價，自動修補或強制新增今日 K 線
-  if (quoteData && quoteData.price > 0) {
-      const livePrice = quoteData.price;
-      const liveVol = quoteData.vol || 0;
-
-      if (validKlines.length > 0) {
-          const lastK = validKlines[validKlines.length - 1];
-          const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
-
-          if (lastKDateStr === todayStr) {
-              // 今日 K 線已經存在，直接覆寫更新最新即時市價
-              lastK.close = livePrice;
-              lastK.volume = Math.max(lastK.volume, liveVol);
-              lastK.high = Math.max(lastK.high, livePrice);
-              lastK.low = Math.min(lastK.low, livePrice);
-              todayPrice = livePrice;
-              todayVol = lastK.volume;
-              if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
-          } else {
-              // 今日 K 線尚未生成 (跨週末、或盤中延遲)，強制手工畫出最新的一根 K 棒！
-              trueYesterdayClose = lastK.close;
-              todayPrice = livePrice;
-              todayVol = liveVol;
-              validKlines.push({
-                  time: Date.now(), // 直接標記為此時此刻
-                  open: meta.regularMarketOpen || livePrice, 
-                  high: Math.max(meta.regularMarketDayHigh || livePrice, livePrice),
-                  low: Math.min(meta.regularMarketDayLow || livePrice, livePrice),
-                  close: livePrice,
-                  volume: liveVol
-              });
-          }
-      }
-  } else {
-      // 無即時報價時的備用退回機制
-      const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
-      todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
-      todayVol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
-      if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
+  if (validKlines.length >= 2) {
+      trueYesterdayClose = validKlines[validKlines.length - 2].close;
   }
 
   const yesterdayClose = trueYesterdayClose > 0 
@@ -108,7 +68,7 @@ function parseYahooData(data, officialPrevClose, quoteData = null) {
       change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
   }
 
-  return { price: todayPrice, change, vol: todayVol, yesterdayClose, klines: validKlines };
+  return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
 }
 
 // ==========================================
@@ -135,32 +95,78 @@ const INDUSTRY_MAP = {
 };
 
 // ==========================================
-// 1.8 佇列請求系統 (防 API 阻擋與限流機制)
+// 1.8 全域即時報價引擎 (純前端無伺服器架構)
+// 突破 Yahoo API 限制，使用 CORS 代理批次抓取 v7/quote
 // ==========================================
-const fetchHistoryQueue = (() => {
-    let queue = [];
+const fetchQuoteQueue = (() => {
+    let queue = new Set();
     let isProcessing = false;
+    let subscribers = {};
+
     const process = async () => {
-        if (isProcessing || queue.length === 0) return;
+        if (isProcessing || queue.size === 0) return;
         isProcessing = true;
-        const { url, resolve } = queue.shift();
+        
+        // 每次批次取 25 筆，避免 URL 過長
+        const symbolsArray = Array.from(queue).slice(0, 25);
+        symbolsArray.forEach(s => queue.delete(s));
+
         try {
-            const res = await fetch(url);
-            const data = await res.json();
-            resolve(data);
-        } catch(e) {
-            resolve(null);
+            const twSymbols = symbolsArray.map(s => `${s}.TW`).join(',');
+            const twoSymbols = symbolsArray.map(s => `${s}.TWO`).join(',');
+            
+            const fetchAndNotify = async (syms) => {
+                if (!syms) return;
+                const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
+                try {
+                    // 使用 allorigins 作為安全的跨域請求中繼站
+                    const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+                    const data = await res.json();
+                    
+                    if (data?.quoteResponse?.result) {
+                        data.quoteResponse.result.forEach(q => {
+                            const baseSym = q.symbol.split('.')[0];
+                            if (subscribers[baseSym]) {
+                                const price = q.regularMarketPrice;
+                                const prevClose = q.regularMarketPreviousClose;
+                                const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+                                subscribers[baseSym].forEach(cb => cb({
+                                    price: price,
+                                    change: change,
+                                    vol: q.regularMarketVolume || 0,
+                                    prevClose: prevClose
+                                }));
+                            }
+                        });
+                    }
+                } catch(err) {
+                    console.error('Yahoo Quote fetch failed:', err);
+                }
+            };
+
+            await Promise.all([fetchAndNotify(twSymbols), fetchAndNotify(twoSymbols)]);
+        } catch (e) {
+            console.error(e);
         }
-        setTimeout(() => {
-            isProcessing = false;
-            process();
-        }, 200); 
+
+        isProcessing = false;
+        if (queue.size > 0) {
+            setTimeout(process, 800); // 節流處理
+        }
     };
+
     return {
-        push: (url) => new Promise((resolve) => {
-            queue.push({ url, resolve });
-            process();
-        })
+        subscribe: (symbol, callback) => {
+            if (!subscribers[symbol]) subscribers[symbol] = [];
+            subscribers[symbol].push(callback);
+            queue.add(symbol);
+            if (!isProcessing) process();
+        },
+        unsubscribe: (symbol, callback) => {
+            if (subscribers[symbol]) {
+                subscribers[symbol] = subscribers[symbol].filter(cb => cb !== callback);
+            }
+        }
     };
 })();
 
@@ -282,7 +288,6 @@ function detectLiquiditySweep(klines) {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 }
 
-// 虛擬貨幣 SMC 融合影片技術型態過濾器
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
@@ -298,7 +303,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
 
   let score = 0, logs = [];
 
-  // 1. Order Flow (訂單流分析)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
@@ -307,18 +311,15 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
   else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
-  // 2. Volume Profile (籌碼分佈)
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
   if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
   else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
-  // 3. Liquidity Sweep (流動性獵取)
   if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵取賣方流動性，主力吸籌"); }
   if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵取買方流動性，主力派發"); }
 
-  // 4. Fair Value Gaps (影片中提及的 FVG)
   let bullishFVG = false, bearishFVG = false;
   let bullishIFVG = false, bearishIFVG = false;
   for (let i = klines.length - 15; i < klines.length - 1; i++) {
@@ -339,7 +340,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (bearishIFVG) { score -= 2; logs.push("FVG: 跌破多頭缺口轉為阻力 (反轉)"); }
   else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
 
-  // 5. AMD Model (威科夫/SMC 模型)
   const accRange = klines.slice(-30, -10);
   const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
   const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
@@ -548,33 +548,29 @@ function TwLiveStockCard({ stock, activeTab }) {
   const cardRef = useRef(null);
 
   useEffect(() => {
+    let handleQuote;
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !isSynced) {
-        let isMounted = true;
-        const fetchAccurateData = async () => {
-            try {
-                // 同時獲取歷史 K 線與絕對即時報價，解決跨週末延遲問題
-                const [historyData, quoteData] = await Promise.all([
-                    fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`),
-                    fetchHistoryQueue.push(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`)
-                ]);
-                if (!isMounted || !historyData) return;
-                const parsed = parseYahooData(historyData, stock.officialPrevClose, quoteData);
-                if (parsed) {
-                    setPrice(parsed.price);
-                    setChangeNum(parsed.change);
-                    setVolNum(parsed.vol);
-                    setPrevClose(parsed.yesterdayClose);
-                    setIsSynced(true);
-                }
-            } catch(e) {}
+        // 利用全新的 fetchQuoteQueue (純前端) 訂閱最新即時報價，告別卡頓轉圈圈！
+        handleQuote = (data) => {
+            if (data.price > 0) {
+                setPrice(data.price);
+                setChangeNum(data.change);
+                setVolNum(data.vol);
+                setPrevClose(data.prevClose);
+                setIsSynced(true);
+            }
         };
-        fetchAccurateData();
+        fetchQuoteQueue.subscribe(stock.symbol, handleQuote);
       }
     });
     if (cardRef.current) observer.observe(cardRef.current);
-    return () => observer.disconnect();
-  }, [stock.symbol, stock.officialPrevClose, isSynced]);
+    
+    return () => {
+        observer.disconnect();
+        if (handleQuote) fetchQuoteQueue.unsubscribe(stock.symbol, handleQuote);
+    };
+  }, [stock.symbol, isSynced]);
 
   const isPositive = changeNum >= 0;
 
@@ -629,17 +625,17 @@ function TwLiveStockCard({ stock, activeTab }) {
           </div>
           <div className={`text-xl font-bold mt-1 flex items-center gap-2 ${stStatus.color}`}>
              {stStatus.icon} {stStatus.text}
-             {!isSynced && <RefreshCw className="w-3 h-3 animate-spin text-slate-500 ml-1 opacity-50" title="同步精確 K 線數據中" />}
+             {!isSynced && <RefreshCw className="w-3 h-3 animate-spin text-slate-500 ml-1 opacity-50" title="同步精確數據中" />}
           </div>
           
           <div className="flex justify-between items-center mt-3 text-[10px] text-slate-500 font-mono bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
              <div className="flex flex-col">
-                 <span>推估收盤: <span className="text-white">{formatPrice(price)}</span></span>
-                 <span className="opacity-70 mt-0.5">基準昨收: <span className="text-white">{formatPrice(prevClose)}</span></span>
+                 <span>報價: <span className="text-white">{formatPrice(price)}</span></span>
+                 <span className="opacity-70 mt-0.5">昨收: <span className="text-white">{formatPrice(prevClose)}</span></span>
              </div>
              <div className="flex flex-col text-right">
-                 <span>推算總量: <span className="text-white">{formatVolume(volNum)}</span></span>
-                 <span className="opacity-70 mt-0.5">漲跌幅: <span className={isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</span></span>
+                 <span>總量: <span className="text-white">{formatVolume(volNum)}</span></span>
+                 <span className="opacity-70 mt-0.5">漲跌: <span className={isPositive ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</span></span>
              </div>
           </div>
         </div>
@@ -757,7 +753,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
           <div className="mb-8">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <Zap className="w-5 h-5 text-amber-400" /> 市場焦點強勢股
-                  <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">每日收盤結算</span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">系統自動推薦</span>
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {hotStocks.map(stock => (
@@ -784,7 +780,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       </div>
       <div className="text-center mt-6">
         <p className="text-xs text-slate-500 bg-[#121620] inline-block px-4 py-2 rounded-full border border-[#2a2f3a]">
-          資料來源為台灣證交所盤末/盤後數據，適合中短線波段與零股操作決策。
+          資料來源為台灣證交所與各大即時數據通道，純前端跨域獲取。
         </p>
       </div>
     </div>
@@ -801,9 +797,26 @@ function NewsDashboard() {
     const fetchRealNews = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/binance?action=news&_t=' + Date.now());
-        const data = await res.json();
-        if (isMounted) { setNews(Array.isArray(data) ? data : []); setLoading(false); }
+        // 純前端抓取 RSS (繞過 Node API)
+        const feeds = [
+          { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
+          { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
+        ];
+        let allArticles = [];
+        for (const feed of feeds) {
+          try {
+             const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
+             const data = await res.json();
+             if (data && data.status === 'ok') {
+               const items = data.items.map(item => ({
+                 id: item.guid || item.link, title: item.title, link: item.link, time: new Date(item.pubDate).toLocaleString(), rawDate: new Date(item.pubDate).getTime(), source: feed.category === '加密貨幣' ? 'Cointelegraph' : 'Yahoo 股市', category: feed.category
+               }));
+               allArticles = [...allArticles, ...items];
+             }
+          } catch(e) {}
+        }
+        allArticles.sort((a, b) => b.rawDate - a.rawDate);
+        if (isMounted) { setNews(allArticles); setLoading(false); }
       } catch (error) { if (isMounted) setLoading(false); }
     };
     fetchRealNews();
@@ -890,19 +903,15 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
   
   useEffect(() => {
     let isMounted = true;
-    const fetchHistory = async () => {
-        try {
-            const [historyData, quoteData] = await Promise.all([
-                fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`),
-                fetchHistoryQueue.push(`/api/binance?action=tw-quote&symbol=${pos.symbol}&_t=${Date.now()}`)
-            ]);
-            if (!isMounted || !historyData) return;
-            const parsed = parseYahooData(historyData, 0, quoteData); 
-            if (parsed && parsed.price > 0) setLivePrice(parsed.price);
-        } catch(e) {}
+    const handleQuote = (data) => {
+        if (isMounted && data.price > 0) setLivePrice(data.price);
     };
-    fetchHistory();
-    return () => { isMounted = false; };
+    fetchQuoteQueue.subscribe(pos.symbol, handleQuote);
+    
+    return () => { 
+        isMounted = false; 
+        fetchQuoteQueue.unsubscribe(pos.symbol, handleQuote);
+    };
   }, [pos.symbol]);
 
   const isLong = pos.type === 'LONG';
@@ -951,7 +960,7 @@ function TwKLineChart({ klines }) {
           <div className="w-full h-[580px] flex flex-col items-center justify-center text-slate-500 bg-[#0b0e14] rounded-2xl border border-[#2a2f3a]">
              <AlertCircle className="w-10 h-10 mb-3 opacity-50" />
              <p className="font-bold">無法取得該標的之歷史 K 線數據</p>
-             <p className="text-xs mt-1 opacity-60">可能為新上市標的、或伺服器遭到來源端暫時阻擋</p>
+             <p className="text-xs mt-1 opacity-60">此標的可能為新上市，或需稍後再試</p>
           </div>
       );
   }
@@ -1072,21 +1081,27 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
+  // 獨立抓取 Yahoo K線歷史資料 (使用 allorigins 中繼突破 CORS)
   useEffect(() => {
     let isMounted = true;
     const fetchChart = async () => {
         try {
             setChartLoading(true);
-            const [historyData, quoteData] = await Promise.all([
-                fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`).then(r => r.json()),
-                fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`).then(r => r.json())
-            ]);
+            const urlTW = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TW?range=6mo&interval=1d`;
+            let resHistory = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlTW)}`);
+            let historyData = await resHistory.json();
+            
+            if (!historyData?.chart?.result) {
+                const urlTWO = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TWO?range=6mo&interval=1d`;
+                resHistory = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlTWO)}`);
+                historyData = await resHistory.json();
+            }
+
             if (!isMounted) return;
             
-            const parsed = parseYahooData(historyData, stock.officialPrevClose, quoteData);
+            const parsed = parseYahooData(historyData, stock.officialPrevClose);
             if (parsed && parsed.klines.length > 0) {
                 setChartData(calculateIndicators(parsed.klines)); 
-                
                 setCurrentPrice(parsed.price);
                 setCurrentChange(parsed.change.toFixed(2));
                 setCurrentVolume(parsed.vol);
@@ -1102,18 +1117,33 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
     fetchChart();
     
-    const intId = setInterval(fetchChart, 60000);
-    return () => { isMounted = false; clearInterval(intId); };
+    // 定期抓取即時報價，更新畫面上的數據
+    const handleQuote = (data) => {
+        if (data.price > 0 && isMounted) {
+            setCurrentPrice(data.price);
+            setCurrentChange(data.change.toFixed(2));
+            setCurrentVolume(data.vol);
+            setCurrentPrevClose(data.prevClose);
+        }
+    };
+    fetchQuoteQueue.subscribe(stock.symbol, handleQuote);
+
+    return () => { 
+        isMounted = false; 
+        fetchQuoteQueue.unsubscribe(stock.symbol, handleQuote);
+    };
   }, [stock.symbol, stock.officialPrevClose]);
 
+  // 純前端透過 allorigins 抓取 Yahoo 新聞
   useEffect(() => {
     let isMounted = true;
     const fetchNews = async () => {
         try {
            setNewsLoading(true);
-           const resNews = await fetch(`/api/binance?action=news&symbol=${stock.symbol}&_t=${Date.now()}`);
+           const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${stock.symbol}.TW&newsCount=10`;
+           const resNews = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`);
            const nData = await resNews.json();
-           if (isMounted) setNews(Array.isArray(nData) ? nData : []); 
+           if (isMounted) setNews(Array.isArray(nData?.news) ? nData.news : []); 
         } catch(e) {}
         finally {
            if (isMounted) setNewsLoading(false);
@@ -1178,7 +1208,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
   else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
-  // 🔥 零股四象限戰法解析變數
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
@@ -1189,7 +1218,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   let klinePatternMsg = "目前無明顯強勢K線型態";
   let hasStrongKline = false;
 
-  // 🔥 隔日沖指標變數
   let isBullishMA = false;
   let hasLongRed = false;
   let hasLongLowerShadow = false;
@@ -1243,18 +1271,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const momentumColor = momentumScore >= 2 ? 'text-[#f6465d]' : 'text-slate-400';
   
   const hasInstitutionBuy = branchData && branchData.buyers.some(b => b.type === '外資機構' || b.type === '波段主力');
-  const sentimentText = hasInstitutionBuy ? '大戶/法人進駐' : '缺乏法人買超';
-  const sentimentColor = hasInstitutionBuy ? 'text-[#f6465d]' : 'text-slate-400';
 
   return (
     <div className="animate-in fade-in duration-300">
       <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* === 左側欄位 (4/12 寬度) === */}
         <div className="lg:col-span-4 space-y-6">
-          {/* 基本資訊與評級 */}
           <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
             
@@ -1262,7 +1285,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             
             <div className="mt-6 p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
                 <div className="text-sm text-slate-400 mb-2 font-bold flex items-center gap-2">
-                  <Target className="w-4 h-4 text-purple-500"/> 13:00 盤末短線動能評級
+                  <Target className="w-4 h-4 text-purple-500"/> 盤中/盤末短線動能評級
                 </div>
                 <div className={`text-4xl font-black flex items-center gap-3 ${stStatus.color} my-3`}>
                    {stStatus.icon} {stStatus.text}
@@ -1270,28 +1293,26 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 
                 <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#2a2f3a]">
                   <div>
-                     <div className="text-[10px] text-slate-500">K線推算收盤</div>
+                     <div className="text-[10px] text-slate-500">最新報價</div>
                      <div className="text-lg font-mono text-white">{Number(currentPrice).toFixed(2)}</div>
                      <div className="text-[9px] text-slate-500 mt-1">基準昨收: <span className="text-slate-300">{formatPrice(currentPrevClose)}</span></div>
                   </div>
                   <div>
-                     <div className="text-[10px] text-slate-500">推算漲跌幅</div>
+                     <div className="text-[10px] text-slate-500">即時漲跌幅</div>
                      <div className={`text-lg font-mono font-bold ${currentChange >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentChange >= 0 ? '+' : ''}{currentChange}%</div>
                   </div>
                   <div className="text-right">
-                     <div className="text-[10px] text-slate-500">推算成交量</div>
+                     <div className="text-[10px] text-slate-500">目前總量</div>
                      <div className="text-lg font-mono text-white">{formatVolume(currentVolume)}</div>
                   </div>
                 </div>
             </div>
           </div>
 
-          {/* 模擬下單區塊 */}
           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg">
              <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
           </div>
 
-          {/* 三大法人區塊 (適合窄版面) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
@@ -1331,7 +1352,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
           </div>
 
-          {/* 新聞列表 (適合窄版面垂直排列) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
              <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
              {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
@@ -1351,9 +1371,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
         </div>
 
-        {/* === 右側欄位 (8/12 寬度) === */}
         <div className="lg:col-span-8 space-y-6">
-          {/* K線圖 */}
           <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
             <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
               <span className="text-amber-500 font-bold">MA5 (周線)</span>
@@ -1364,7 +1382,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             {chartLoading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
           </div>
 
-          {/* AI 操作建議區塊 */}
           {recommendations && (
             <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
@@ -1376,7 +1393,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             </div>
           )}
 
-          {/* 零股短線戰情室 (移至右欄，網格排版不擠壓) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <PieChart className="w-5 h-5 text-pink-500" /> 零股短線實戰解析
@@ -1433,7 +1449,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </div>
           </div>
 
-          {/* 隔日沖指標綜合分析戰情室 (移至右欄，網格排版不擠壓) */}
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <Zap className="w-5 h-5 text-amber-500" /> 隔日沖指標綜合分析
@@ -1476,7 +1491,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               </div>
           </div>
 
-          {/* 全方位 AI 擬真即時籌碼儀表板 (移至右欄，加入 grid-cols-1 md:grid-cols-2 防變形) */}
           {branchData && (
             <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1484,7 +1498,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                     <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">AI 擬真推算</span>
                 </h3>
                 
-                {/* 控盤率進度條 */}
                 <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330]">
                    <div className="flex justify-between items-center mb-2">
                        <span className="text-xs text-slate-400 font-bold">大戶控盤率 (買超前五大佔比)</span>
@@ -1496,9 +1509,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                    <div className={`text-right text-[10px] mt-1 ${branchData.concentrationColor}`}>{branchData.concentrationLevel}</div>
                 </div>
 
-                {/* 買賣超前五大分點對照 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    {/* 買方 */}
                     <div>
                         <div className="text-[10px] text-center bg-[#f6465d]/10 text-[#f6465d] border border-[#f6465d]/30 rounded py-1 mb-2 font-bold">主力買超前五大</div>
                         <div className="space-y-1.5">
@@ -1516,7 +1527,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                             ))}
                         </div>
                     </div>
-                    {/* 賣方 */}
                     <div>
                         <div className="text-[10px] text-center bg-[#0ecb81]/10 text-[#0ecb81] border border-[#0ecb81]/30 rounded py-1 mb-2 font-bold">主力賣超前五大</div>
                         <div className="space-y-1.5">
@@ -1545,9 +1555,8 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         </div>
       </div>
       
-      {/* 新增的數據來源連結 */}
       <div className="mt-8 text-center text-xs text-slate-500 bg-[#121620] py-3 rounded-xl border border-[#2a2f3a]">
-        即時報價與 K 線數據來源：
+        即時報價與 K 線數據來源：純前端 API 直連與跨域代理技術
         <a href={`https://tw.stock.yahoo.com/quote/${stock.symbol}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors ml-1 font-bold inline-flex items-center">
           Yahoo Finance ({stock.name} {stock.symbol}) <ExternalLink className="w-3 h-3 ml-1" />
         </a>
@@ -1969,6 +1978,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
           const chunkSignals = {};
           await Promise.all(chunk.map(async (coin) => {
             try {
+              // 直接向 Binance API 請求
               const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
@@ -1995,7 +2005,7 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
     if (allTickers.length > 0 && !initialScanned && !isScanning) handleManualScan();
   }, [allTickers.length, initialScanned, isScanning]);
 
-  if (loading && !allTickers.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取幣安真實數據中...</div>;
+  if (loading && !allTickers.length) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取幣安即時數據中...</div>;
 
   let filtered = allTickers.slice(0, scanLimit);
   
@@ -2089,7 +2099,8 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          const res = await fetch(`/api/binance?action=klines&symbol=${coin.symbol}&interval=${tf}&limit=120&_t=${Date.now()}`);
+          // 直接向 Binance 請求
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
               const parsed = data.map(d => ({ open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), takerBuyVol: parseFloat(d[9]), time: d[0] }));
@@ -2222,23 +2233,15 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
+  // 抓取台股盤後資訊 (純前端直接請求 OpenAPI)
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
-        let [resTse, resOtc] = await Promise.all([
-          fetch(`/api/binance?action=tw-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => []),
-          fetch(`/api/binance?action=tw-otc-stocks&_t=${Date.now()}`).then(r => r.json()).catch(() => [])
+        const [resTse, resOtc] = await Promise.all([
+          fetch(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`).then(r => r.json()).catch(() => []),
+          fetch(`https://www.tpex.org.tw/openapi/v1/t1820`).then(r => r.json()).catch(() => [])
         ]);
-
-        // 🔥 終極防護：雙通道備援系統。若 Vercel 後端被證交所阻擋導致回傳空陣列，
-        // 系統會立刻動用使用者本地端瀏覽器的 IP 直接抓取，保證大廳絕不空白！
-        if (!Array.isArray(resTse) || resTse.length === 0) {
-            try { const directRes = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); if (directRes.ok) resTse = await directRes.json(); } catch(e) {}
-        }
-        if (!Array.isArray(resOtc) || resOtc.length === 0) {
-            try { const directOtc = await fetch('https://www.tpex.org.tw/openapi/v1/t1820'); if (directOtc.ok) resOtc = await directOtc.json(); } catch(e) {}
-        }
 
         if (isMounted) {
           const arrTse = Array.isArray(resTse) ? resTse : [];
@@ -2285,6 +2288,7 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
+  // 台股持倉的全域即時同步 (採用 allorigins 與 v7/quote)
   const syncFetchRef = useRef(0);
   useEffect(() => {
     const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
@@ -2294,17 +2298,28 @@ export default function App() {
     const syncTwPrices = async () => {
       const currentFetch = ++syncFetchRef.current;
       const newPrices = {};
-      const symbolsParam = activeSymbols.join(',');
-      try {
-        const res = await fetch(`/api/binance?action=tw-quote-batch&symbols=${symbolsParam}&_t=${Date.now()}`);
-        const quotes = await res.json();
-        
-        activeSymbols.forEach(sym => {
-            if (quotes[sym] && quotes[sym].price) {
-                newPrices[sym] = quotes[sym].price;
-            }
-        });
-      } catch(e) {}
+      
+      const twSymbols = activeSymbols.map(s => `${s}.TW`).join(',');
+      const twoSymbols = activeSymbols.map(s => `${s}.TWO`).join(',');
+
+      const fetchAndParse = async (syms) => {
+          if (!syms) return;
+          try {
+              const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
+              const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+              const data = await res.json();
+              if (data?.quoteResponse?.result) {
+                  data.quoteResponse.result.forEach(q => {
+                      if (q.regularMarketPrice) {
+                          const baseSym = q.symbol.split('.')[0];
+                          newPrices[baseSym] = q.regularMarketPrice;
+                      }
+                  });
+              }
+          } catch(e) {}
+      };
+
+      await Promise.all([fetchAndParse(twSymbols), fetchAndParse(twoSymbols)]);
 
       if (isMounted && currentFetch === syncFetchRef.current && Object.keys(newPrices).length > 0) {
         setTwLivePrices(prev => ({ ...prev, ...newPrices }));
@@ -2383,7 +2398,7 @@ export default function App() {
         if (!p) return prev;
         const grossVal = currentPrice * p.shares;
         const closeFee = Math.floor(grossVal * 0.001425);
-        const tax = Math.floor(grossVal * 0.003); // 波段稅
+        const tax = Math.floor(grossVal * 0.003); 
         let pnl = 0;
         if (p.type === 'LONG') pnl = (currentPrice - p.entryPrice) * p.shares - p.fee - closeFee - tax;
         else pnl = (p.entryPrice - currentPrice) * p.shares - p.fee - closeFee - tax;
