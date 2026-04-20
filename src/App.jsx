@@ -119,9 +119,12 @@ const fetchQuoteQueue = (() => {
                 if (!syms) return;
                 const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
                 try {
-                    // 使用 allorigins 作為安全的跨域請求中繼站
-                    const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-                    const data = await res.json();
+                    // 改用 /get 取得 JSON 包裝，確保 CORS Headers 絕對存在
+                    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                    const proxyData = await res.json();
+                    if (!proxyData || !proxyData.contents) return;
+                    
+                    const data = JSON.parse(proxyData.contents);
                     
                     if (data?.quoteResponse?.result) {
                         data.quoteResponse.result.forEach(q => {
@@ -309,7 +312,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) * 0.1;
   
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
-  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
+  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主主動賣盤砸盤"); }
 
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
@@ -804,7 +807,8 @@ function NewsDashboard() {
         let allArticles = [];
         for (const feed of feeds) {
           try {
-             const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`);
+             // RSS 必須透過 rss2json 才能正確轉換成前端可用的 JSON 陣列
+             const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
              const data = await res.json();
              if (data && data.status === 'ok') {
                const items = data.items.map(item => ({
@@ -1086,13 +1090,15 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         try {
             setChartLoading(true);
             const urlTW = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TW?range=6mo&interval=1d`;
-            let resHistory = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlTW)}`);
-            let historyData = await resHistory.json();
+            let resHistory = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(urlTW)}`);
+            let proxyData = await resHistory.json();
+            let historyData = proxyData.contents ? JSON.parse(proxyData.contents) : null;
             
             if (!historyData?.chart?.result) {
                 const urlTWO = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TWO?range=6mo&interval=1d`;
-                resHistory = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlTWO)}`);
-                historyData = await resHistory.json();
+                resHistory = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(urlTWO)}`);
+                proxyData = await resHistory.json();
+                historyData = proxyData.contents ? JSON.parse(proxyData.contents) : null;
             }
 
             if (!isMounted) return;
@@ -1138,8 +1144,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
         try {
            setNewsLoading(true);
            const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${stock.symbol}.TW&newsCount=10`;
-           const resNews = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`);
-           const nData = await resNews.json();
+           const resNews = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`);
+           const proxyData = await resNews.json();
+           const nData = proxyData.contents ? JSON.parse(proxyData.contents) : {};
            if (isMounted) setNews(Array.isArray(nData?.news) ? nData.news : []); 
         } catch(e) {}
         finally {
@@ -2235,19 +2242,24 @@ export default function App() {
       try {
         const fetchWithProxyFallback = async (url) => {
             try {
+                // 1. 直連 OpenAPI (重要：不可帶 query string 否則會觸發台股 WAF 阻擋 CORS)
                 const r = await fetch(url);
                 if (r.ok) return await r.json();
             } catch(e) {}
             try {
-                const r2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-                if (r2.ok) return await r2.json();
+                // 2. 備援：使用 allorigins /get 保證 CORS 標頭通過
+                const r2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                if (r2.ok) {
+                    const proxyData = await r2.json();
+                    if (proxyData.contents) return JSON.parse(proxyData.contents);
+                }
             } catch(e) {}
             return [];
         };
 
         const [resTse, resOtc] = await Promise.all([
-          fetchWithProxyFallback(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL?_t=${Date.now()}`),
-          fetchWithProxyFallback(`https://www.tpex.org.tw/openapi/v1/t1820?_t=${Date.now()}`)
+          fetchWithProxyFallback(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`),
+          fetchWithProxyFallback(`https://www.tpex.org.tw/openapi/v1/t1820`)
         ]);
 
         if (isMounted) {
@@ -2312,8 +2324,11 @@ export default function App() {
           if (!syms) return;
           try {
               const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
-              const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-              const data = await res.json();
+              const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+              const proxyData = await res.json();
+              if (!proxyData || !proxyData.contents) return;
+              
+              const data = JSON.parse(proxyData.contents);
               if (data?.quoteResponse?.result) {
                   data.quoteResponse.result.forEach(q => {
                       if (q.regularMarketPrice) {
