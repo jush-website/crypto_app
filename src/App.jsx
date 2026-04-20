@@ -26,8 +26,8 @@ function formatVolume(vol) {
   return v.toLocaleString('en-US'); 
 }
 
-// 處理歷史 K 線，並強制套用官方昨收價以計算正確漲跌幅
-function parseYahooData(data, officialPrevClose) {
+// 🔥 處理歷史 K 線，並融合「即時報價」進行動態 K 線補丁
+function parseYahooData(data, officialPrevClose, quoteData = null) {
   if (!data?.chart?.result?.[0]) return null;
   const result = data.chart.result[0];
   const meta = result.meta;
@@ -50,56 +50,56 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  // 🔥 動態 K 線補丁技術：完美融合「即時報價」與「K線歷史」
-  const livePrice = Number(meta.regularMarketPrice || 0);
-  const liveVol = Number(meta.regularMarketVolume || 0);
-  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
-  const marketDateStr = new Date((meta.regularMarketTime || Date.now() / 1000) * 1000).toLocaleDateString('zh-TW', opt);
+  let todayPrice = 0;
+  let todayVol = 0;
+  let trueYesterdayClose = 0;
 
-  let todayPrice = livePrice;
-  let todayVol = liveVol;
-  let trueYesterdayClose = meta.previousClose || 0;
+  // 動態 K 線補丁：若有取得即時報價，自動修補或新增今日 K 線 (解決跨週末 4/17 延遲問題)
+  if (quoteData && quoteData.price) {
+      const livePrice = quoteData.price;
+      const liveVol = quoteData.vol;
+      const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+      // Yahoo 的 time 是秒數，轉為毫秒後取日期
+      const marketDateStr = new Date((quoteData.time || Date.now() / 1000) * 1000).toLocaleDateString('zh-TW', opt);
 
-  if (validKlines.length > 0) {
-      const lastK = validKlines[validKlines.length - 1];
-      const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
+      if (validKlines.length > 0) {
+          const lastK = validKlines[validKlines.length - 1];
+          const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
-      if (lastKDateStr === marketDateStr) {
-          // 狀況A：最後一根 K 線已經是今天，覆寫注入最新即時價格確保不卡頓
-          lastK.close = livePrice > 0 ? livePrice : lastK.close;
-          lastK.volume = liveVol > 0 ? liveVol : lastK.volume;
-          lastK.high = Math.max(lastK.high, lastK.close);
-          lastK.low = Math.min(lastK.low, lastK.close);
-
-          todayPrice = lastK.close;
-          todayVol = lastK.volume;
-          
-          if (validKlines.length >= 2) {
-              trueYesterdayClose = validKlines[validKlines.length - 2].close;
-          }
-      } else {
-          // 狀況B：最後一根是昨天 (今日 K 線尚未生成)，手動補上今日即時 K 線
-          trueYesterdayClose = lastK.close;
-          todayPrice = livePrice > 0 ? livePrice : lastK.close;
-          todayVol = liveVol;
-
-          if (livePrice > 0) {
+          if (lastKDateStr === marketDateStr) {
+              // 覆寫今日未完成的 K 線
+              lastK.close = livePrice;
+              lastK.volume = Math.max(lastK.volume, liveVol);
+              lastK.high = Math.max(lastK.high, livePrice);
+              lastK.low = Math.min(lastK.low, livePrice);
+              todayPrice = livePrice;
+              todayVol = lastK.volume;
+              if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
+          } else {
+              // 新增今日 K 線 (當日線陣列還停留在上週五時觸發)
+              trueYesterdayClose = lastK.close;
+              todayPrice = livePrice;
+              todayVol = liveVol;
               validKlines.push({
-                  time: (meta.regularMarketTime || Date.now() / 1000) * 1000,
-                  open: meta.regularMarketOpen || todayPrice,
-                  high: meta.regularMarketDayHigh || todayPrice,
-                  low: meta.regularMarketDayLow || todayPrice,
-                  close: todayPrice,
-                  volume: todayVol
+                  time: (quoteData.time || Date.now() / 1000) * 1000,
+                  open: meta.regularMarketOpen || livePrice, 
+                  high: meta.regularMarketDayHigh || livePrice,
+                  low: meta.regularMarketDayLow || livePrice,
+                  close: livePrice,
+                  volume: liveVol
               });
           }
       }
+  } else {
+      const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
+      todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
+      todayVol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
+      if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
   }
 
-  // 嚴格規定「推估昨收」必須使用上一根 K 線的收盤價
   const yesterdayClose = trueYesterdayClose > 0 
       ? trueYesterdayClose 
-      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 1));
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
 
   let change = 0;
   if (yesterdayClose > 0) {
@@ -280,7 +280,7 @@ function detectLiquiditySweep(klines) {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 }
 
-// 🔥 核心更新：虛擬貨幣 SMC 融合影片技術型態過濾器
+// 虛擬貨幣 SMC 融合影片技術型態過濾器
 function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
@@ -296,7 +296,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
 
   let score = 0, logs = [];
 
-  // 1. Order Flow (訂單流分析)
   const takerBuy = latest.takerBuyVol || 0;
   const takerSell = latest.volume - takerBuy;
   const delta = takerBuy - takerSell;
@@ -305,18 +304,15 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
   else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
-  // 2. Volume Profile (籌碼分佈)
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
 
   if (currentPrice > avwap * 1.001) { score += 1.5; logs.push(`aVWAP: 價格維持在均價線之上 (${formatPrice(avwap)})`); }
   else if (currentPrice < avwap * 0.999) { score -= 1.5; logs.push(`aVWAP: 價格受壓於均價線之下 (${formatPrice(avwap)})`); }
 
-  // 3. Liquidity Sweep (流動性獵取)
   if (sweep.sweepLong) { score += 3; logs.push("SMC: 獵取賣方流動性，主力吸籌"); }
   if (sweep.sweepShort) { score -= 3; logs.push("SMC: 獵取買方流動性，主力派發"); }
 
-  // 4. Fair Value Gaps (影片中提及的 FVG)
   let bullishFVG = false, bearishFVG = false;
   let bullishIFVG = false, bearishIFVG = false;
   for (let i = klines.length - 15; i < klines.length - 1; i++) {
@@ -337,7 +333,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   if (bearishIFVG) { score -= 2; logs.push("FVG: 跌破多頭缺口轉為阻力 (反轉)"); }
   else if (bearishFVG) { score -= 1; logs.push("FVG: 存在空頭合理價值缺口"); }
 
-  // 5. AMD Model (威科夫/SMC 模型)
   const accRange = klines.slice(-30, -10);
   const accHigh = Math.max(...accRange.map(k=>k.high).filter(n => !isNaN(n)));
   const accLow = Math.min(...accRange.map(k=>k.low).filter(n => !isNaN(n)));
@@ -354,7 +349,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       }
   }
 
-  // 🔥 6. 影片新增指標：Candlestick Patterns (K線反轉型態)
   if (prevK) {
       const body = Math.abs(latest.close - latest.open);
       const upperShadow = latest.high - Math.max(latest.close, latest.open);
@@ -372,7 +366,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       else if (isShootingStar) { score -= 2; logs.push("K線型態: 流星線/長上影線承壓"); }
   }
 
-  // 🔥 7. 影片新增指標：Breakout Patterns (矩形/三角突破)
   const consolidationKlines = klines.slice(-20, -1);
   const consMax = Math.max(...consolidationKlines.map(k => k.high));
   const consMin = Math.min(...consolidationKlines.map(k => k.low));
@@ -386,7 +379,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       }
   }
 
-  // 🔥 8. 影片新增指標：Fibonacci Retracements & Elliot Wave (斐波那契回調)
   const recent40 = klines.slice(-40); 
   const waveHigh = Math.max(...recent40.map(k => k.high));
   const waveLow = Math.min(...recent40.map(k => k.low));
@@ -396,7 +388,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       const fib0382 = waveHigh - waveRange * 0.382;
       const fib0618 = waveHigh - waveRange * 0.618;
       
-      // 測試波浪理論中的 0.618 或 0.382 支撐
       const near0618 = Math.abs(latest.low - fib0618) / fib0618 < 0.005;
       const near0382 = Math.abs(latest.low - fib0382) / fib0382 < 0.005;
       
@@ -413,7 +404,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
       }
   }
 
-  // 總分研判 (因應新增指標，調高觸發門檻以提升準確率)
   let signal = 'NEUTRAL';
   if (score >= 5) signal = 'LONG';
   else if (score <= -5) signal = 'SHORT';
@@ -436,7 +426,6 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   
   if (logs.length === 0) logs.push("市場於 POC / aVWAP 附近盤整，流動性建構中");
   
-  // 保持 UI 乾淨，最多只顯示最重要的前 4 個判斷理由
   const finalLogs = logs.slice(0, 4);
 
   return { signal, score, logs: finalLogs, entry, tp, sl, poc: vp.poc, avwap };
@@ -447,7 +436,6 @@ function generateBranchData(symbol, price, change, vol) {
     const priceNum = parseFloat(price || 0);
     const volNum = parseFloat(vol || 0) * 0.001; 
 
-    // 🔥 擴充為市場最常見 20 家隔日沖主力分點
     const dayTradeBranches = [
         '凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人', 
         '富邦-嘉義', '群益-嘉義', '元大-虎尾', '富邦-虎尾', '兆豐-虎尾', 
@@ -464,7 +452,6 @@ function generateBranchData(symbol, price, change, vol) {
         let list = [];
         let remainingRatio = isBuy ? (isStrong ? 0.65 : 0.25) : 0.30; 
         
-        // 擴大計算深度至前 10 大以利總量統計
         for (let i = 0; i < 10; i++) {
             let pool = normalBranches;
             if (isBuy && i < 6 && isStrong) pool = dayTradeBranches;
@@ -490,7 +477,6 @@ function generateBranchData(symbol, price, change, vol) {
     const buyers = generateList(true, isDayTradeTarget);
     const sellers = generateList(false, false);
     
-    // 🔥 計算 20 大隔日沖主力總買量與比重
     const dayTradeVol = buyers.filter(b => b.type === '隔日沖大戶').reduce((sum, b) => sum + b.vol, 0);
     const totalVolShares = volNum * 1000 || 1;
     const dayTradeRatio = (dayTradeVol / totalVolShares) * 100.0;
@@ -560,9 +546,13 @@ function TwLiveStockCard({ stock, activeTab }) {
         let isMounted = true;
         const fetchAccurateData = async () => {
             try {
-                const historyData = await fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
+                // 同時獲取歷史 K 線與絕對即時報價，解決跨週末延遲問題
+                const [historyData, quoteData] = await Promise.all([
+                    fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`),
+                    fetchHistoryQueue.push(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`)
+                ]);
                 if (!isMounted || !historyData) return;
-                const parsed = parseYahooData(historyData, stock.officialPrevClose);
+                const parsed = parseYahooData(historyData, stock.officialPrevClose, quoteData);
                 if (parsed) {
                     setPrice(parsed.price);
                     setChangeNum(parsed.change);
@@ -581,7 +571,6 @@ function TwLiveStockCard({ stock, activeTab }) {
 
   const isPositive = changeNum >= 0;
 
-  // 核心：短線盤末動能判定邏輯
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
       stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
@@ -896,9 +885,12 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
     let isMounted = true;
     const fetchHistory = async () => {
         try {
-            const historyData = await fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`);
+            const [historyData, quoteData] = await Promise.all([
+                fetchHistoryQueue.push(`/api/binance?action=tw-history&symbol=${pos.symbol}&_t=${Date.now()}`),
+                fetchHistoryQueue.push(`/api/binance?action=tw-quote&symbol=${pos.symbol}&_t=${Date.now()}`)
+            ]);
             if (!isMounted || !historyData) return;
-            const parsed = parseYahooData(historyData, 0); 
+            const parsed = parseYahooData(historyData, 0, quoteData); 
             if (parsed && parsed.price > 0) setLivePrice(parsed.price);
         } catch(e) {}
     };
@@ -1078,11 +1070,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const fetchChart = async () => {
         try {
             setChartLoading(true);
-            const resHistory = await fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`);
-            const historyData = await resHistory.json();
+            const [historyData, quoteData] = await Promise.all([
+                fetch(`/api/binance?action=tw-history&symbol=${stock.symbol}&_t=${Date.now()}`).then(r => r.json()),
+                fetch(`/api/binance?action=tw-quote&symbol=${stock.symbol}&_t=${Date.now()}`).then(r => r.json())
+            ]);
             if (!isMounted) return;
             
-            const parsed = parseYahooData(historyData, stock.officialPrevClose);
+            const parsed = parseYahooData(historyData, stock.officialPrevClose, quoteData);
             if (parsed && parsed.klines.length > 0) {
                 setChartData(calculateIndicators(parsed.klines)); 
                 
@@ -1177,7 +1171,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   else if (currentChange > 0) stStatus = { text: '📈 溫和偏多', color: 'text-amber-400', icon: <TrendingUp className="w-8 h-8 text-amber-400" /> };
   else stStatus = { text: '📉 溫和偏空', color: 'text-[#0ecb81]', icon: <TrendingUp className="w-8 h-8 text-[#0ecb81] rotate-180" /> };
 
-  // 🔥 零股四象限戰法解析變數
+  // 🔥 零股四象限戰法解析變數 (全面升級版)
   const isHighlyLiquid = (currentPrice >= 100 && currentVolume >= 5000000) || (currentPrice < 100 && currentVolume >= 10000000);
   
   const prevData = chartData.length > 1 ? chartData[chartData.length - 2] : null;
