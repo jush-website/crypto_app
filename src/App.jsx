@@ -50,25 +50,63 @@ function parseYahooData(data, officialPrevClose) {
       }
   }
 
-  const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
-  const todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
-  const vol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
+  // 🔥 動態 K 線補丁技術：完美融合「即時報價」與「K線歷史」
+  const livePrice = Number(meta.regularMarketPrice || 0);
+  const liveVol = Number(meta.regularMarketVolume || 0);
+  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const marketDateStr = new Date((meta.regularMarketTime || Date.now() / 1000) * 1000).toLocaleDateString('zh-TW', opt);
 
-  let trueYesterdayClose = 0;
-  if (validKlines.length >= 2) {
-      trueYesterdayClose = validKlines[validKlines.length - 2].close;
+  let todayPrice = livePrice;
+  let todayVol = liveVol;
+  let trueYesterdayClose = meta.previousClose || 0;
+
+  if (validKlines.length > 0) {
+      const lastK = validKlines[validKlines.length - 1];
+      const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
+
+      if (lastKDateStr === marketDateStr) {
+          // 狀況A：最後一根 K 線已經是今天，覆寫注入最新即時價格確保不卡頓
+          lastK.close = livePrice > 0 ? livePrice : lastK.close;
+          lastK.volume = liveVol > 0 ? liveVol : lastK.volume;
+          lastK.high = Math.max(lastK.high, lastK.close);
+          lastK.low = Math.min(lastK.low, lastK.close);
+
+          todayPrice = lastK.close;
+          todayVol = lastK.volume;
+          
+          if (validKlines.length >= 2) {
+              trueYesterdayClose = validKlines[validKlines.length - 2].close;
+          }
+      } else {
+          // 狀況B：最後一根是昨天 (今日 K 線尚未生成)，手動補上今日即時 K 線
+          trueYesterdayClose = lastK.close;
+          todayPrice = livePrice > 0 ? livePrice : lastK.close;
+          todayVol = liveVol;
+
+          if (livePrice > 0) {
+              validKlines.push({
+                  time: (meta.regularMarketTime || Date.now() / 1000) * 1000,
+                  open: meta.regularMarketOpen || todayPrice,
+                  high: meta.regularMarketDayHigh || todayPrice,
+                  low: meta.regularMarketDayLow || todayPrice,
+                  close: todayPrice,
+                  volume: todayVol
+              });
+          }
+      }
   }
 
+  // 嚴格規定「推估昨收」必須使用上一根 K 線的收盤價
   const yesterdayClose = trueYesterdayClose > 0 
       ? trueYesterdayClose 
-      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 1));
 
   let change = 0;
   if (yesterdayClose > 0) {
       change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
   }
 
-  return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
+  return { price: todayPrice, change, vol: todayVol, yesterdayClose, klines: validKlines };
 }
 
 // ==========================================
