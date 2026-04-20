@@ -551,7 +551,6 @@ function TwLiveStockCard({ stock, activeTab }) {
     let handleQuote;
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !isSynced) {
-        // 利用全新的 fetchQuoteQueue (純前端) 訂閱最新即時報價，告別卡頓轉圈圈！
         handleQuote = (data) => {
             if (data.price > 0) {
                 setPrice(data.price);
@@ -574,6 +573,7 @@ function TwLiveStockCard({ stock, activeTab }) {
 
   const isPositive = changeNum >= 0;
 
+  // 核心：短線盤末動能判定邏輯
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
       stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
@@ -1081,7 +1081,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
   const [branchData, setBranchData] = useState(null);
 
-  // 獨立抓取 Yahoo K線歷史資料 (使用 allorigins 中繼突破 CORS)
   useEffect(() => {
     let isMounted = true;
     const fetchChart = async () => {
@@ -1102,6 +1101,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
             const parsed = parseYahooData(historyData, stock.officialPrevClose);
             if (parsed && parsed.klines.length > 0) {
                 setChartData(calculateIndicators(parsed.klines)); 
+                
                 setCurrentPrice(parsed.price);
                 setCurrentChange(parsed.change.toFixed(2));
                 setCurrentVolume(parsed.vol);
@@ -1117,7 +1117,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
     fetchChart();
     
-    // 定期抓取即時報價，更新畫面上的數據
     const handleQuote = (data) => {
         if (data.price > 0 && isMounted) {
             setCurrentPrice(data.price);
@@ -1134,7 +1133,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     };
   }, [stock.symbol, stock.officialPrevClose]);
 
-  // 純前端透過 allorigins 抓取 Yahoo 新聞
   useEffect(() => {
     let isMounted = true;
     const fetchNews = async () => {
@@ -2099,7 +2097,6 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
       const signals = {};
       await Promise.all(intervals.map(async (tf) => {
         try {
-          // 直接向 Binance 請求
           const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=120`);
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -2233,7 +2230,6 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
-  // 抓取台股盤後資訊 (純前端直接請求 OpenAPI)
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
@@ -2288,7 +2284,6 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
-  // 台股持倉的全域即時同步 (採用 allorigins 與 v7/quote)
   const syncFetchRef = useRef(0);
   useEffect(() => {
     const activeSymbols = [...new Set((twAccount.positions || []).map(p => p.symbol))];
