@@ -1,155 +1,169 @@
-export default async function handler(req, res) {
-  // 強制抹除所有 CDN 與瀏覽器快取，保證每次請求都是最新
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, s-maxage=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*'); 
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+<<<<
+// 🔥 處理歷史 K 線，並融合「即時報價」進行動態 K 線補丁
+function parseYahooData(data, officialPrevClose, quoteData = null) {
+  if (!data?.chart?.result?.[0]) return null;
+  const result = data.chart.result[0];
+  const meta = result.meta;
+  if (!meta) return null;
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0] || {};
+  
+  let validKlines = [];
+  for (let i = 0; i < timestamps.length; i++) {
+      if (quote.close && quote.close[i] != null) {
+          validKlines.push({ 
+              time: timestamps[i] * 1000, 
+              open: Number(quote.open[i]), 
+              high: Number(quote.high[i]), 
+              low: Number(quote.low[i]), 
+              close: Number(quote.close[i]), 
+              volume: Number(quote.volume[i] || 0) 
+          });
+      }
+  }
 
-  const { action, symbol, limit = 120, interval = '15m' } = req.query;
+  let todayPrice = 0;
+  let todayVol = 0;
+  let trueYesterdayClose = 0;
 
-  // 統一防快取設定與 Request Headers (移除 Origin 與 Referer，避免觸發 Yahoo 跨域 CSRF 阻擋)
-  const fetchConfig = { 
-    headers: { 
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': '*/*'
-    },
-    cache: 'no-store' 
-  };
+  // 動態 K 線補丁：若有取得即時報價，自動修補或新增今日 K 線 (解決跨週末 4/17 延遲問題)
+  if (quoteData && quoteData.price) {
+      const livePrice = quoteData.price;
+      const liveVol = quoteData.vol;
+      const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+      // Yahoo 的 time 是秒數，轉為毫秒後取日期
+      const marketDateStr = new Date((quoteData.time || Date.now() / 1000) * 1000).toLocaleDateString('zh-TW', opt);
 
-  // 具備防崩潰機制的共用請求函數
-  const fetchWithCatch = async (url) => {
-    try {
-        const r = await fetch(url, fetchConfig);
-        if (!r.ok) return null;
-        return await r.json();
-    } catch (e) {
-        return null;
-    }
-  };
+      if (validKlines.length > 0) {
+          const lastK = validKlines[validKlines.length - 1];
+          const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
 
-  // 🔥 全新：Yahoo 最強底層即時報價引擎 (全球行情核心通道 v7/quote)
-  // 捨棄會被 Vercel IP 阻擋的台灣證交所 API，以及會卡頓凍結的 v8/chart API
-  const fetchRealtimeQuote = async (symbolsArray) => {
-      const twSymbols = symbolsArray.map(s => `${s}.TW`).join(',');
-      const twoSymbols = symbolsArray.map(s => `${s}.TWO`).join(',');
-      const results = {};
-
-      const fetchAndParse = async (syms) => {
-          if (!syms) return;
-          // v7/finance/quote 是最穩定的即時報價介面，不會發生 K 線陣列解析錯誤
-          const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&nocache=${Math.random()}`;
-          const data = await fetchWithCatch(url);
-
-          if (data?.quoteResponse?.result) {
-              data.quoteResponse.result.forEach(q => {
-                  if (q.regularMarketPrice) {
-                      const baseSym = q.symbol.split('.')[0];
-                      results[baseSym] = {
-                          price: q.regularMarketPrice,
-                          prevClose: q.regularMarketPreviousClose || q.regularMarketPrice,
-                          vol: q.regularMarketVolume || 0,
-                          time: q.regularMarketTime
-                      };
-                  }
+          if (lastKDateStr === marketDateStr) {
+              // 覆寫今日未完成的 K 線
+              lastK.close = livePrice;
+              lastK.volume = Math.max(lastK.volume, liveVol);
+              lastK.high = Math.max(lastK.high, livePrice);
+              lastK.low = Math.min(lastK.low, livePrice);
+              todayPrice = livePrice;
+              todayVol = lastK.volume;
+              if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
+          } else {
+              // 新增今日 K 線 (當日線陣列還停留在上週五時觸發)
+              trueYesterdayClose = lastK.close;
+              todayPrice = livePrice;
+              todayVol = liveVol;
+              validKlines.push({
+                  time: (quoteData.time || Date.now() / 1000) * 1000,
+                  open: meta.regularMarketOpen || livePrice, 
+                  high: meta.regularMarketDayHigh || livePrice,
+                  low: meta.regularMarketDayLow || livePrice,
+                  close: livePrice,
+                  volume: liveVol
               });
           }
-      };
-
-      // 併發請求上市與上櫃
-      await Promise.all([
-          fetchAndParse(twSymbols),
-          fetchAndParse(twoSymbols)
-      ]);
-
-      return results;
-  };
-
-  try {
-    const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
-
-    if (action === 'overview') {
-      const [tickerRes, fundingRes] = await Promise.all([
-        fetch(`${BINANCE_BASE_URL}/ticker/24hr`, fetchConfig),
-        fetch(`${BINANCE_BASE_URL}/premiumIndex`, fetchConfig)
-      ]);
-      const tickers = await tickerRes.json();
-      const fundingRates = await fundingRes.json();
-      return res.status(200).json({ tickers, fundingRates });
-    } 
-    else if (action === 'klines' && symbol) {
-      const klineRes = await fetch(`${BINANCE_BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, fetchConfig);
-      return res.status(200).json(await klineRes.json());
-    } 
-    else if (action === 'price' && symbol) {
-      const priceRes = await fetch(`${BINANCE_BASE_URL}/ticker/price?symbol=${symbol}`, fetchConfig);
-      return res.status(200).json(await priceRes.json());
-    }
-    else if (action === 'tw-stocks') {
-      const twseRes = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL', fetchConfig);
-      return res.status(200).json(await twseRes.json());
-    }
-    else if (action === 'tw-otc-stocks') {
-      const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/t1820', fetchConfig);
-      return res.status(200).json(await tpexRes.json());
-    }
-    else if (action === 'tw-quote' && symbol) {
-      // 呼叫最新 Quote 引擎
-      const data = await fetchRealtimeQuote([symbol]);
-      if (data[symbol]) {
-          return res.status(200).json(data[symbol]);
       }
-      return res.status(404).json({ error: 'Quote not found' });
-    }
-    else if (action === 'tw-quote-batch' && req.query.symbols) {
-        const symbolsArray = req.query.symbols.split(',');
-        if (symbolsArray.length === 0) return res.status(200).json({});
-
-        // 呼叫最新 Quote 引擎進行大批量查詢
-        const data = await fetchRealtimeQuote(symbolsArray);
-        return res.status(200).json(data);
-    }
-    else if (action === 'tw-history' && symbol) {
-      // 改用較不常封鎖 IP 的 query2 伺服器
-      let data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=6mo&interval=1d&nocache=${Date.now()}`);
-      if (!data?.chart?.result) {
-        data = await fetchWithCatch(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=6mo&interval=1d&nocache=${Date.now()}`);
-      }
-      return res.status(200).json(data || {});
-    }
-    else if (action === 'news') {
-      if (symbol) {
-        const data = await fetchWithCatch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}.TW&newsCount=10&_t=${Date.now()}`);
-        return res.status(200).json(data?.news || []);
-      } else {
-        const feeds = [
-          { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
-          { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
-        ];
-        let allArticles = [];
-        for (const feed of feeds) {
-          try {
-             const data = await fetchWithCatch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
-             if (data && data.status === 'ok') {
-               const items = data.items.map(item => ({
-                 id: item.guid || item.link, title: item.title, link: item.link, time: new Date(item.pubDate).toLocaleString(), rawDate: new Date(item.pubDate).getTime(), source: feed.category === '加密貨幣' ? 'Cointelegraph' : 'Yahoo 股市', category: feed.category
-               }));
-               allArticles = [...allArticles, ...items];
-             }
-          } catch(e) {}
-        }
-        allArticles.sort((a, b) => b.rawDate - a.rawDate);
-        return res.status(200).json(allArticles);
-      }
-    } 
-    else {
-      return res.status(400).json({ error: '無效的 action 參數' });
-    }
-  } catch (error) {
-    return res.status(500).json({ error: '伺服器發生錯誤', details: error.message });
+  } else {
+      const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
+      todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
+      todayVol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
+      if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
   }
+
+  const yesterdayClose = trueYesterdayClose > 0 
+      ? trueYesterdayClose 
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
+
+  let change = 0;
+  if (yesterdayClose > 0) {
+      change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+  }
+
+  return { price: todayPrice, change, vol: todayVol, yesterdayClose, klines: validKlines };
 }
+====
+// 🔥 處理歷史 K 線，並融合「即時報價」進行動態 K 線補丁
+function parseYahooData(data, officialPrevClose, quoteData = null) {
+  if (!data?.chart?.result?.[0]) return null;
+  const result = data.chart.result[0];
+  const meta = result.meta;
+  if (!meta) return null;
+
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0] || {};
+  
+  let validKlines = [];
+  for (let i = 0; i < timestamps.length; i++) {
+      if (quote.close && quote.close[i] != null) {
+          validKlines.push({ 
+              time: timestamps[i] * 1000, 
+              open: Number(quote.open[i]), 
+              high: Number(quote.high[i]), 
+              low: Number(quote.low[i]), 
+              close: Number(quote.close[i]), 
+              volume: Number(quote.volume[i] || 0) 
+          });
+      }
+  }
+
+  let todayPrice = 0;
+  let todayVol = 0;
+  let trueYesterdayClose = 0;
+
+  // 🔥 強制取得台灣當前真實日期 (徹底解決跨週末與 API 時間戳錯誤的問題)
+  const opt = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const todayStr = new Date().toLocaleDateString('zh-TW', opt);
+
+  // 動態 K 線補丁：若有取得即時報價，自動修補或強制新增今日 K 線
+  if (quoteData && quoteData.price > 0) {
+      const livePrice = quoteData.price;
+      const liveVol = quoteData.vol || 0;
+
+      if (validKlines.length > 0) {
+          const lastK = validKlines[validKlines.length - 1];
+          const lastKDateStr = new Date(lastK.time).toLocaleDateString('zh-TW', opt);
+
+          if (lastKDateStr === todayStr) {
+              // 今日 K 線已經存在，直接覆寫更新最新即時市價
+              lastK.close = livePrice;
+              lastK.volume = Math.max(lastK.volume, liveVol);
+              lastK.high = Math.max(lastK.high, livePrice);
+              lastK.low = Math.min(lastK.low, livePrice);
+              todayPrice = livePrice;
+              todayVol = lastK.volume;
+              if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
+          } else {
+              // 今日 K 線尚未生成 (跨週末、或盤中延遲)，強制手工畫出最新的一根 K 棒！
+              trueYesterdayClose = lastK.close;
+              todayPrice = livePrice;
+              todayVol = liveVol;
+              validKlines.push({
+                  time: Date.now(), // 直接標記為此時此刻
+                  open: meta.regularMarketOpen || livePrice, 
+                  high: Math.max(meta.regularMarketDayHigh || livePrice, livePrice),
+                  low: Math.min(meta.regularMarketDayLow || livePrice, livePrice),
+                  close: livePrice,
+                  volume: liveVol
+              });
+          }
+      }
+  } else {
+      // 無即時報價時的備用退回機制
+      const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
+      todayPrice = lastK ? lastK.close : Number(meta.regularMarketPrice || 0);
+      todayVol = lastK ? lastK.volume : Number(meta.regularMarketVolume || 0);
+      if (validKlines.length >= 2) trueYesterdayClose = validKlines[validKlines.length - 2].close;
+  }
+
+  const yesterdayClose = trueYesterdayClose > 0 
+      ? trueYesterdayClose 
+      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
+
+  let change = 0;
+  if (yesterdayClose > 0) {
+      change = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+  }
+
+  return { price: todayPrice, change, vol: todayVol, yesterdayClose, klines: validKlines };
+}
+>>>>
