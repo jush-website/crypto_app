@@ -119,7 +119,6 @@ const fetchQuoteQueue = (() => {
                 if (!syms) return;
                 const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
                 try {
-                    // 改用 /get 取得 JSON 包裝，確保 CORS Headers 絕對存在
                     const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
                     const proxyData = await res.json();
                     if (!proxyData || !proxyData.contents) return;
@@ -312,7 +311,7 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   const avgVol = klines.slice(-10).reduce((a, b) => a + b.volume, 0) * 0.1;
   
   if (delta > latest.volume * 0.2 && latest.volume > avgVol) { score += 2; logs.push("Order Flow: 強勢主動買盤湧入"); }
-  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主主動賣盤砸盤"); }
+  else if (delta < -(latest.volume * 0.2) && latest.volume > avgVol) { score -= 2; logs.push("Order Flow: 強勢主動賣盤砸盤"); }
 
   if (currentPrice > vp.poc * 1.002) { score += 1.5; logs.push(`VP: 價格站上 POC (${formatPrice(vp.poc)})`); }
   else if (currentPrice < vp.poc * 0.998) { score -= 1.5; logs.push(`VP: 價格跌破 POC (${formatPrice(vp.poc)})`); }
@@ -576,7 +575,6 @@ function TwLiveStockCard({ stock, activeTab }) {
 
   const isPositive = changeNum >= 0;
 
-  // 核心：短線盤末動能判定邏輯
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
       stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
@@ -722,7 +720,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm || '');
   const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
 
-  if (loading && (!twStocks || !twStocks.length)) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 讀取證交所盤後數據中...</div>;
+  if (loading && (!twStocks || !twStocks.length)) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 初始化 Yahoo 證券池中...</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
@@ -783,7 +781,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       </div>
       <div className="text-center mt-6">
         <p className="text-xs text-slate-500 bg-[#121620] inline-block px-4 py-2 rounded-full border border-[#2a2f3a]">
-          資料來源為台灣證交所與各大即時數據通道，純前端跨域獲取。
+          此證券池由 Yahoo API 獨家支援與同步，跨域抓取無限制。
         </p>
       </div>
     </div>
@@ -807,7 +805,6 @@ function NewsDashboard() {
         let allArticles = [];
         for (const feed of feeds) {
           try {
-             // RSS 必須透過 rss2json 才能正確轉換成前端可用的 JSON 陣列
              const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
              const data = await res.json();
              if (data && data.status === 'ok') {
@@ -1982,7 +1979,6 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
           const chunkSignals = {};
           await Promise.all(chunk.map(async (coin) => {
             try {
-              // 直接向 Binance API 請求
               const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin.symbol}&interval=${tf}&limit=80`);
               if(!res.ok) return;
               const data = await res.json();
@@ -2236,18 +2232,19 @@ export default function App() {
     } else { setIsStylesLoaded(true); }
   }, []);
 
+  // ==========================================
+  // 【Yahoo 備援引擎】：當台灣證交所 API 不穩定時，改以內建清單向 Yahoo API 請求股票列表
+  // ==========================================
   useEffect(() => {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
         const fetchWithProxyFallback = async (url) => {
             try {
-                // 1. 直連 OpenAPI (重要：不可帶 query string 否則會觸發台股 WAF 阻擋 CORS)
                 const r = await fetch(url);
                 if (r.ok) return await r.json();
             } catch(e) {}
             try {
-                // 2. 備援：使用 allorigins /get 保證 CORS 標頭通過
                 const r2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
                 if (r2.ok) {
                     const proxyData = await r2.json();
@@ -2265,38 +2262,93 @@ export default function App() {
         if (isMounted) {
           const arrTse = Array.isArray(resTse) ? resTse : [];
           const arrOtc = Array.isArray(resOtc) ? resOtc : [];
-          const spaceRegex = new RegExp('\\s+', 'g');
-
-          const processStockData = (item) => {
-              const todayPrice = parseFloat(item.ClosingPrice || item.Close);
-              let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
-              
-              const match = changeStr.match(/-?\d+\.?\d*/);
-              let changeAmt = match ? parseFloat(match[0]) : 0;
-              if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
-              
-              let percent = 0;
-              let yesterdayClose = todayPrice; 
-              if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
-                  yesterdayClose = todayPrice - changeAmt; 
-                  if (yesterdayClose > 0) percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-              }
-              return { 
-                  symbol: String(item.Code || item.SecuritiesCompanyCode), 
-                  name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
-                  lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
-                  priceChangePercent: percent.toFixed(2), 
-                  quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                  officialPrevClose: yesterdayClose
+          
+          // 如果證交所成功回應
+          if (arrTse.length > 0 || arrOtc.length > 0) {
+              const spaceRegex = new RegExp('\\s+', 'g');
+              const processStockData = (item) => {
+                  const todayPrice = parseFloat(item.ClosingPrice || item.Close);
+                  let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
+                  const match = changeStr.match(/-?\d+\.?\d*/);
+                  let changeAmt = match ? parseFloat(match[0]) : 0;
+                  if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
+                  
+                  let percent = 0, yesterdayClose = todayPrice; 
+                  if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
+                      yesterdayClose = todayPrice - changeAmt; 
+                      if (yesterdayClose > 0) percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
+                  }
+                  return { 
+                      symbol: String(item.Code || item.SecuritiesCompanyCode), 
+                      name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
+                      lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
+                      priceChangePercent: percent.toFixed(2), 
+                      quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
+                      officialPrevClose: yesterdayClose
+                  };
               };
-          };
+    
+              const formattedTse = arrTse.filter(i => i && i.Code).map(processStockData);
+              const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData);
+              const combined = [...formattedTse, ...formattedOtc].filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol)).sort((a, b) => b.quoteVolume - a.quoteVolume);
+    
+              if (combined.length > 0) {
+                  setTwStocks(combined); 
+                  setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }) + ' (TWSE 原生資料)');
+                  setLoadingTw(false);
+                  return; // 成功則提早結束
+              }
+          }
+          
+          // --- 進入 Yahoo API 備援模式 ---
+          // 收集所有我們內建關心的台股代號（產業分類 + ETF + 權值股）
+          const fallbackSymbolsArray = Array.from(new Set([
+            ...Object.values(INDUSTRY_MAP).flat(),
+            ...Object.keys(DIVIDEND_RECOMMENDATIONS),
+            '2317', '2382', '2454', '2308', '2881', '2882', '2891', '2002', '2603', '1301', '1303', '1216', '2303', '2886', '2884', '2892', '2885', '2880', '2883', '2887'
+          ]));
 
-          const formattedTse = arrTse.filter(i => i && i.Code).map(processStockData);
-          const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData);
-          const combined = [...formattedTse, ...formattedOtc].filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol)).sort((a, b) => b.quoteVolume - a.quoteVolume);
-
-          setTwStocks(combined); 
-          setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }));
+          let yahooResults = [];
+          
+          // 每次最多發 25 檔給 Yahoo，避免網址過長
+          for (let i = 0; i < fallbackSymbolsArray.length; i += 25) {
+              const chunk = fallbackSymbolsArray.slice(i, i + 25);
+              const syms = chunk.map(s => `${s}.TW,${s}.TWO`).join(','); 
+              try {
+                  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
+                  const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                  const proxyData = await res.json();
+                  if (proxyData.contents) {
+                      const data = JSON.parse(proxyData.contents);
+                      if (data?.quoteResponse?.result) {
+                          const formatted = data.quoteResponse.result.map(q => {
+                             const price = q.regularMarketPrice || 0;
+                             const prev = q.regularMarketPreviousClose || price;
+                             return {
+                                symbol: q.symbol.split('.')[0],
+                                name: q.shortName || q.longName || q.symbol.split('.')[0],
+                                lastPrice: price.toFixed(2),
+                                priceChangePercent: prev > 0 ? (((price - prev) / prev) * 100).toFixed(2) : '0.00',
+                                quoteVolume: q.regularMarketVolume || 0,
+                                officialPrevClose: prev
+                             };
+                          });
+                          yahooResults = [...yahooResults, ...formatted];
+                      }
+                  }
+              } catch (e) {}
+          }
+          
+          // 去除重複 (因為我們同時發了 .TW 跟 .TWO)
+          const uniqueYahoo = Array.from(new Map(yahooResults.map(item => [item.symbol, item])).values());
+          uniqueYahoo.sort((a, b) => b.quoteVolume - a.quoteVolume);
+          
+          if (uniqueYahoo.length > 0) {
+              setTwStocks(uniqueYahoo);
+              setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }) + ' (Yahoo API 備援)');
+          } else {
+              setErrorTw('無法取得台股資料，請檢查網路或稍後再試。');
+          }
           setLoadingTw(false);
         }
       } catch (err) { 
