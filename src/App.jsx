@@ -441,6 +441,16 @@ function generateBranchData(symbol, price, change, vol) {
     const changeNum = parseFloat(change || 0);
     const priceNum = parseFloat(price || 0);
     const volNum = parseFloat(vol || 0) * 0.001; 
+    
+    if (volNum <= 0) {
+        return {
+            isDayTradeTarget: false,
+            buyers: [], sellers: [],
+            bigHolderRatio: 0, dayTradeRatio: 0, dayTradeVol: 0,
+            concentrationLevel: "暫無成交量資料", concentrationColor: "text-slate-500",
+            advice: "無法取得今日成交量，暫無籌碼分析。"
+        };
+    }
 
     const dayTradeBranches = [
         '凱基-松山', '凱基-台北', '元大-土城永寧', '富邦-建國', '國票-敦北法人', 

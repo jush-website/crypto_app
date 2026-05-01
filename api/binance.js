@@ -171,26 +171,38 @@ export default async function handler(req, res) {
       try {
         const baseSym = symbol.replace('.TW', '').replace('.TWO', '');
         
-        // 同時抓取多個來源
-        const [instHtml, marginHtml, holdingHtml, ratioHtml] = await Promise.all([
+        // 同時抓取 TSE 與 OTC 多個來源
+        const [tseInst, otcInst, tseMargin, otcMargin, tseHolding, otcHolding, tseRatio, otcRatio] = await Promise.all([
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/fund/T86_ALL_7`), 
+           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/t86`),
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN`),
-           fetchAsBrowser(`https://openapi.twse.com.tw/v1/holding/BWTLU_ALL`), // 外資持股
-           fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/BWIBHT_ALL`) // 本益比、殖利率
+           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/m_bal`),
+           fetchAsBrowser(`https://openapi.twse.com.tw/v1/holding/BWTLU_ALL`),
+           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/q10_f_holding`),
+           fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/BWIBHT_ALL`),
+           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/t187ap14_l`)
         ]);
 
-        const instData = instHtml ? JSON.parse(instHtml) : [];
-        const marginData = marginHtml ? JSON.parse(marginHtml) : [];
-        const holdingData = holdingHtml ? JSON.parse(holdingHtml) : [];
-        const ratioData = ratioHtml ? JSON.parse(ratioHtml) : [];
+        const parseJSON = (txt) => { try { return txt ? JSON.parse(txt) : []; } catch(e) { return []; } };
+        
+        const instList = [...parseJSON(tseInst), ...parseJSON(otcInst)];
+        const marginList = [...parseJSON(tseMargin), ...parseJSON(otcMargin)];
+        const holdingList = [...parseJSON(tseHolding), ...parseJSON(otcHolding)];
+        const ratioList = [...parseJSON(tseRatio), ...parseJSON(otcRatio)];
 
-        const targetInst = instData.find(i => i.Code === baseSym);
-        const targetMargin = marginData.find(i => i.StockCode === baseSym);
-        const targetHolding = holdingData.find(i => i.Code === baseSym);
-        const targetRatio = ratioData.find(i => i.Code === baseSym);
+        const targetInst = instList.find(i => (String(i.Code || i.StkNo || '').trim()) === baseSym);
+        const targetMargin = marginList.find(i => (String(i.StockCode || i.StkNo || '').trim()) === baseSym);
+        const targetHolding = holdingList.find(i => (String(i.Code || i.StkNo || '').trim()) === baseSym);
+        const targetRatio = ratioList.find(i => (String(i.Code || i.StkNo || '').trim()) === baseSym);
 
         const seed = parseInt(baseSym) || 123;
         const history = [];
+        
+        // 預先計算買賣超數值，優先使用真實數據
+        const realF = targetInst ? parseInt(String(targetInst.ForeignInvestorsBuySellDiff || targetInst.ForeignBuySettle || '0').replace(/,/g, '')) : 0;
+        const realT = targetInst ? parseInt(String(targetInst.InvestmentTrustBuySellDiff || targetInst.TrustBuySettle || '0').replace(/,/g, '')) : 0;
+        const realD = targetInst ? parseInt(String(targetInst.DealerBuySellDiff || targetInst.DealerBuySettle || '0').replace(/,/g, '')) : 0;
+
         for (let i = 20; i >= 0; i--) {
             const date = new Date();
             date.setDate(date.getDate() - i);
@@ -198,25 +210,33 @@ export default async function handler(req, res) {
             const s1 = Math.sin(seed + i * 0.5);
             const s2 = Math.cos(seed * 0.7 + i * 0.3);
             const s3 = Math.sin(seed * 1.3 + i * 0.8);
+            
             history.push({
                 time: date.getTime(),
-                foreign: Math.floor(s1 * 2000 + (targetInst ? parseInt(targetInst.ForeignInvestorsBuySellDiff.replace(/,/g, '')) * (1 - i*0.05) : 0)),
-                trust: Math.floor(s2 * 800 + (targetInst ? parseInt(targetInst.InvestmentTrustBuySellDiff.replace(/,/g, '')) * (1 - i*0.05) : 0)),
-                dealer: Math.floor(s3 * 400 + (targetInst ? parseInt(targetInst.DealerBuySellDiff.replace(/,/g, '')) * (1 - i*0.05) : 0))
+                foreign: Math.floor(s1 * 2000 + (targetInst ? realF * (1 - i*0.05) : 0)),
+                trust: Math.floor(s2 * 800 + (targetInst ? realT * (1 - i*0.05) : 0)),
+                dealer: Math.floor(s3 * 400 + (targetInst ? realD * (1 - i*0.05) : 0))
             });
         }
 
+        const fBuy = targetInst ? realF : (history[history.length-1].foreign);
+        const tBuy = targetInst ? realT : (history[history.length-1].trust);
+        const dBuy = targetInst ? realD : (history[history.length-1].dealer);
+
+        const mToday = targetMargin ? parseInt((targetMargin.MarginBalance || targetMargin.RemainBal || '0').replace(/,/g, '')) : 15000;
+        const mYest = targetMargin ? parseInt((targetMargin.YesterdayMarginBalance || targetMargin.PrevRemainBal || '0').replace(/,/g, '')) : 14800;
+
         return res.status(200).json({
-           foreign: targetInst ? parseInt(targetInst.ForeignInvestorsBuySellDiff.replace(/,/g, '')) : (history[history.length-1].foreign),
-           trust: targetInst ? parseInt(targetInst.InvestmentTrustBuySellDiff.replace(/,/g, '')) : (history[history.length-1].trust),
-           dealer: targetInst ? parseInt(targetInst.DealerBuySellDiff.replace(/,/g, '')) : (history[history.length-1].dealer),
-           marginToday: targetMargin ? parseInt(targetMargin.MarginBalance.replace(/,/g, '')) : 15000,
-           marginYesterday: targetMargin ? parseInt(targetMargin.YesterdayMarginBalance.replace(/,/g, '')) : 14800,
-           marginChange: targetMargin ? (parseInt(targetMargin.MarginBalance.replace(/,/g, '')) - parseInt(targetMargin.YesterdayMarginBalance.replace(/,/g, ''))) : 200,
-           foreignHolding: targetHolding ? parseFloat(targetHolding.ForeignInvestmentHoldingRatio) : 0,
-           pe: targetRatio ? parseFloat(targetRatio.PEratio) : null,
-           yield: targetRatio ? parseFloat(targetRatio.DividendYield) : null,
-           pb: targetRatio ? parseFloat(targetRatio.PBratio) : null,
+           foreign: fBuy,
+           trust: tBuy,
+           dealer: dBuy,
+           marginToday: mToday,
+           marginYesterday: mYest,
+           marginChange: mToday - mYest,
+           foreignHolding: targetHolding ? parseFloat(targetHolding.ForeignInvestmentHoldingRatio || targetHolding.ForeignHoldingRatio || 0) : 0,
+           pe: targetRatio ? parseFloat(targetRatio.PEratio || targetRatio.PeRatio || 0) : null,
+           yield: targetRatio ? parseFloat(targetRatio.DividendYield || targetRatio.YieldRatio || 0) : null,
+           pb: targetRatio ? parseFloat(targetRatio.PBratio || targetRatio.PbRatio || 0) : null,
            history: history
         });
       } catch(e) {
