@@ -1131,10 +1131,28 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     let isMounted = true;
     const fetchChipData = async () => {
       try {
-        if (isMounted) setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, currentVolume));
-        if (isMounted) setChipData({ loading: false, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
+        setChipData(prev => ({ ...prev, loading: true }));
+        const res = await fetch(`/api/binance?action=chip&symbol=${stock.symbol}`);
+        if (!res.ok) throw new Error('Chip fetch failed');
+        const data = await res.json();
+        
+        if (isMounted) {
+            setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, currentVolume));
+            setChipData({
+                loading: false,
+                foreign: data.foreign,
+                trust: data.trust,
+                dealer: data.dealer,
+                marginToday: data.marginToday,
+                marginYest: data.marginYesterday,
+                marginChange: data.marginChange
+            });
+        }
       } catch (error) {
-        if (isMounted) setChipData(prev => ({ ...prev, loading: false }));
+        if (isMounted) {
+            setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, currentVolume));
+            setChipData(prev => ({ ...prev, loading: false }));
+        }
       }
     };
     fetchChipData();
