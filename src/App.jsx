@@ -117,13 +117,10 @@ const fetchQuoteQueue = (() => {
             
             const fetchAndNotify = async (syms) => {
                 if (!syms) return;
-                const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
                 try {
-                    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-                    const proxyData = await res.json();
-                    if (!proxyData || !proxyData.contents) return;
-                    
-                    const data = JSON.parse(proxyData.contents);
+                    const res = await fetch(`/api/binance?action=quote&symbol=${syms}`);
+                    if (!res.ok) return;
+                    const data = await res.json();
                     
                     if (data?.quoteResponse?.result) {
                         data.quoteResponse.result.forEach(q => {
@@ -798,24 +795,9 @@ function NewsDashboard() {
     const fetchRealNews = async () => {
       try {
         setLoading(true);
-        const feeds = [
-          { url: 'https://tw.stock.yahoo.com/rss?category=stock', category: '台股 / 宏觀' },
-          { url: 'https://cointelegraph.com/rss', category: '加密貨幣' }
-        ];
-        let allArticles = [];
-        for (const feed of feeds) {
-          try {
-             const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
-             const data = await res.json();
-             if (data && data.status === 'ok') {
-               const items = data.items.map(item => ({
-                 id: item.guid || item.link, title: item.title, link: item.link, time: new Date(item.pubDate).toLocaleString(), rawDate: new Date(item.pubDate).getTime(), source: feed.category === '加密貨幣' ? 'Cointelegraph' : 'Yahoo 股市', category: feed.category
-               }));
-               allArticles = [...allArticles, ...items];
-             }
-          } catch(e) {}
-        }
-        allArticles.sort((a, b) => b.rawDate - a.rawDate);
+        const res = await fetch('/api/binance?action=news');
+        if (!res.ok) throw new Error('News proxy failed');
+        const allArticles = await res.json();
         if (isMounted) { setNews(allArticles); setLoading(false); }
       } catch (error) { if (isMounted) setLoading(false); }
     };
@@ -1086,17 +1068,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const fetchChart = async () => {
         try {
             setChartLoading(true);
-            const urlTW = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TW?range=6mo&interval=1d`;
-            let resHistory = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(urlTW)}`);
-            let proxyData = await resHistory.json();
-            let historyData = proxyData.contents ? JSON.parse(proxyData.contents) : null;
-            
-            if (!historyData?.chart?.result) {
-                const urlTWO = `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.TWO?range=6mo&interval=1d`;
-                resHistory = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(urlTWO)}`);
-                proxyData = await resHistory.json();
-                historyData = proxyData.contents ? JSON.parse(proxyData.contents) : null;
-            }
+            const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}`);
+            if (!res.ok) throw new Error('History fetch failed');
+            const historyData = await res.json();
 
             if (!isMounted) return;
             
@@ -1140,11 +1114,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const fetchNews = async () => {
         try {
            setNewsLoading(true);
-           const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${stock.symbol}.TW&newsCount=10`;
-           const resNews = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`);
-           const proxyData = await resNews.json();
-           const nData = proxyData.contents ? JSON.parse(proxyData.contents) : {};
-           if (isMounted) setNews(Array.isArray(nData?.news) ? nData.news : []); 
+           const res = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
+           if (!res.ok) throw new Error('News fetch failed');
+           const newsData = await res.json();
+           if (isMounted) setNews(Array.isArray(newsData) ? newsData : []); 
         } catch(e) {}
         finally {
            if (isMounted) setNewsLoading(false);
@@ -2239,69 +2212,19 @@ export default function App() {
     let isMounted = true;
     const fetchTwStocksList = async () => {
       try {
-        const fetchWithProxyFallback = async (url) => {
-            try {
-                const r = await fetch(url);
-                if (r.ok) return await r.json();
-            } catch(e) {}
-            try {
-                const r2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-                if (r2.ok) {
-                    const proxyData = await r2.json();
-                    if (proxyData.contents) return JSON.parse(proxyData.contents);
-                }
-            } catch(e) {}
-            return [];
-        };
-
-        const [resTse, resOtc] = await Promise.all([
-          fetchWithProxyFallback(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`),
-          fetchWithProxyFallback(`https://www.tpex.org.tw/openapi/v1/t1820`)
-        ]);
+        const response = await fetch('/api/binance?action=tw_list');
+        if (!response.ok) throw new Error('Proxy fetch failed');
+        const combined = await response.json();
 
         if (isMounted) {
-          const arrTse = Array.isArray(resTse) ? resTse : [];
-          const arrOtc = Array.isArray(resOtc) ? resOtc : [];
-          
-          // 如果證交所成功回應
-          if (arrTse.length > 0 || arrOtc.length > 0) {
-              const spaceRegex = new RegExp('\\s+', 'g');
-              const processStockData = (item) => {
-                  const todayPrice = parseFloat(item.ClosingPrice || item.Close);
-                  let changeStr = String(item.Change || '0').replace(spaceRegex, '').replace('+', '').replace('X', '');
-                  const match = changeStr.match(/-?\d+\.?\d*/);
-                  let changeAmt = match ? parseFloat(match[0]) : 0;
-                  if (String(item.Change).includes('-')) changeAmt = -Math.abs(changeAmt);
-                  
-                  let percent = 0, yesterdayClose = todayPrice; 
-                  if (!isNaN(todayPrice) && !isNaN(changeAmt) && todayPrice !== 0) {
-                      yesterdayClose = todayPrice - changeAmt; 
-                      if (yesterdayClose > 0) percent = ((todayPrice - yesterdayClose) / yesterdayClose) * 100.0;
-                  }
-                  return { 
-                      symbol: String(item.Code || item.SecuritiesCompanyCode), 
-                      name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
-                      lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
-                      priceChangePercent: percent.toFixed(2), 
-                      quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                      officialPrevClose: yesterdayClose
-                  };
-              };
-    
-              const formattedTse = arrTse.filter(i => i && i.Code).map(processStockData);
-              const formattedOtc = arrOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData);
-              const combined = [...formattedTse, ...formattedOtc].filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol)).sort((a, b) => b.quoteVolume - a.quoteVolume);
-    
-              if (combined.length > 0) {
-                  setTwStocks(combined); 
-                  setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }) + ' (TWSE 原生資料)');
-                  setLoadingTw(false);
-                  return; // 成功則提早結束
-              }
+          if (Array.isArray(combined) && combined.length > 0) {
+              setTwStocks(combined); 
+              setTwUpdateTime(new Date().toLocaleString('zh-TW', { hour12: false }) + ' (Proxy 伺服器)');
+              setLoadingTw(false);
+              return;
           }
           
-          // --- 進入 Yahoo API 備援模式 ---
-          // 收集所有我們內建關心的台股代號（產業分類 + ETF + 權值股）
+          // --- 進入 Yahoo API 備援模式 (當 Proxy 失敗時) ---
           const fallbackSymbolsArray = Array.from(new Set([
             ...Object.values(INDUSTRY_MAP).flat(),
             ...Object.keys(DIVIDEND_RECOMMENDATIONS),

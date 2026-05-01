@@ -39,8 +39,11 @@ export default async function handler(req, res) {
           fetchAsBrowser('https://www.tpex.org.tw/openapi/v1/t1820')
         ]);
 
-        const resTse = tseHtml ? JSON.parse(tseHtml) : [];
-        const resOtc = otcHtml ? JSON.parse(otcHtml) : [];
+        let resTse = [];
+        let resOtc = [];
+        
+        try { if (tseHtml) resTse = JSON.parse(tseHtml); } catch(e) { console.error('TSE Parse Error'); }
+        try { if (otcHtml) resOtc = JSON.parse(otcHtml); } catch(e) { console.error('OTC Parse Error'); }
 
         const combined = [];
         const processStockData = (item) => {
