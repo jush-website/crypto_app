@@ -3,7 +3,7 @@ import {
   TrendingUp, RefreshCw, ArrowLeft, Search, Target, AlertCircle, Zap, Wallet, 
   ZoomIn, ZoomOut, MoveHorizontal, X, Layers, BarChart2, Waves, 
   Menu, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
-  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2
+  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator
 } from 'lucide-react';
 
 // ==========================================
@@ -1142,12 +1142,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [newsLoading, setNewsLoading] = useState(true);
   
   const [chipData, setChipData] = useState({ 
-    loading: true, foreign: null, trust: null, dealer: null, 
+    loading: true, foreign: null, trust: null, dealer: null, totalNet: null,
     marginToday: null, marginYest: null, marginChange: null, 
-    foreignHolding: 0, pe: null, yield: null, pb: null,
+    foreignHolding: 0, foreignShares: 0, pe: null, yield: null, pb: null,
     history: [] 
   });
   const [branchData, setBranchData] = useState(null);
+  const [entryPrice, setEntryPrice] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -1229,10 +1230,12 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 foreign: data.foreign,
                 trust: data.trust,
                 dealer: data.dealer,
+                totalNet: data.totalNet,
                 marginToday: data.marginToday,
                 marginYest: data.marginYesterday,
                 marginChange: data.marginChange,
                 foreignHolding: data.foreignHolding,
+                foreignShares: data.foreignShares,
                 pe: data.pe,
                 yield: data.yield,
                 pb: data.pb,
@@ -1386,6 +1389,49 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   
   const hasInstitutionBuy = branchData && branchData.buyers.some(b => b.type === '外資機構' || b.type === '波段主力');
 
+  const analysis = useMemo(() => {
+    if (!entryPrice || isNaN(parseFloat(entryPrice)) || !currentPrice) return null;
+    const entry = parseFloat(entryPrice);
+    const pnl = ((currentPrice - entry) / entry) * 100;
+    
+    let advice = "";
+    let color = "";
+    let icon = null;
+    let openingStrategy = "";
+
+    const latest = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+    const ma20 = latest?.ma20 || currentPrice * 0.95;
+
+    if (pnl <= -7) {
+      advice = "強制止損";
+      color = "text-[#0ecb81]";
+      icon = <AlertCircle className="w-5 h-5" />;
+      openingStrategy = `虧損已達 7%，建議次日開盤於 ${(currentPrice * 0.995).toFixed(2)} 附近不論強弱先減碼 50% 以上。`;
+    } else if (pnl <= -3) {
+      advice = "警戒 / 續抱觀察";
+      color = "text-amber-400";
+      icon = <Activity className="w-5 h-5" />;
+      openingStrategy = `目前微幅虧損，若次日開盤跌破 ${(currentPrice * 0.985).toFixed(2)} 則建議先撤離。`;
+    } else if (pnl >= 15) {
+      advice = "獲利豐沛 / 續抱";
+      color = "text-[#f6465d]";
+      icon = <Zap className="w-5 h-5" />;
+      openingStrategy = "獲利已拉開，可續抱。若開盤價大幅跳空則可考慮先獲利了結 1/3。";
+    } else if (pnl >= 5) {
+      advice = "穩定獲利 / 續抱";
+      color = "text-[#f6465d]";
+      icon = <TrendingUp className="w-5 h-5" />;
+      openingStrategy = "走勢穩健，維持續抱。若開盤跌破前日中價則再行評估。";
+    } else {
+      advice = "成本附近 / 續抱";
+      color = "text-white";
+      icon = <Target className="w-5 h-5" />;
+      openingStrategy = "股價於成本區間震盪，次日開盤若能守穩平盤可繼續持有。";
+    }
+
+    return { advice, pnl: pnl.toFixed(2), color, icon, openingStrategy };
+  }, [entryPrice, currentPrice, chartData]);
+
   return (
     <div className="animate-in fade-in duration-300">
       <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
@@ -1427,9 +1473,57 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
              <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
           </div>
 
+          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
+             <h3 className="text-sm font-bold text-white flex items-center gap-2">
+               <Calculator className="w-4 h-4 text-emerald-400" /> 個人進場點分析
+             </h3>
+             <div>
+               <label className="text-[10px] text-slate-500 mb-1.5 block">我的進場價格</label>
+               <div className="relative">
+                 <input 
+                   type="number" 
+                   value={entryPrice} 
+                   onChange={(e) => setEntryPrice(e.target.value)}
+                   placeholder="請輸入成交價"
+                   className="w-full bg-[#0b0e14] border border-[#2a2f3a] rounded-xl px-4 py-2.5 text-white text-sm focus:border-emerald-500 outline-none transition-all font-mono"
+                 />
+                 {entryPrice && (
+                   <button onClick={() => setEntryPrice('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                     <X className="w-4 h-4" />
+                   </button>
+                 )}
+               </div>
+             </div>
+
+             {analysis && (
+               <div className="pt-2 space-y-3">
+                 <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                   <div className="flex items-center gap-2">
+                     <span className="text-slate-400 text-xs">損益狀況</span>
+                     <span className={`text-sm font-black ${parseFloat(analysis.pnl) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                       {parseFloat(analysis.pnl) >= 0 ? '+' : ''}{analysis.pnl}%
+                     </span>
+                   </div>
+                   <div className={`flex items-center gap-1.5 text-sm font-bold ${analysis.color}`}>
+                     {analysis.icon} {analysis.advice}
+                   </div>
+                 </div>
+                 
+                 <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                    <div className="text-[10px] text-emerald-400 font-bold mb-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> 下次開盤操作建議
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {analysis.openingStrategy}
+                    </p>
+                 </div>
+               </div>
+             )}
+          </div>
+
           <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
+                <ShieldAlert className="w-4 h-4 text-amber-500" /> 籌碼總覽及卷商分點
                 <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
               </h3>
               {!chipData.loading && chipData.history.length > 0 && <TwChipChart history={chipData.history} />}
@@ -1445,16 +1539,36 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#2a2f3a]/50">
+                      <tr className="bg-blue-600/5">
+                        <td className="py-2.5 text-blue-400 font-bold">三大法人合計買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-black ${((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) > 0 ? '+' : ''}
+                            {chipData.foreign !== null ? String((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) : '--'}
+                        </td>
+                      </tr>
+                      <tr className="bg-blue-600/5 border-t-0">
+                        <td className="py-2.5 text-blue-400 font-bold pl-4">└ 當日投入金額 (估)</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.totalNet > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {chipData.totalNet ? (chipData.totalNet * currentPrice * 1000 / 100000000).toFixed(2) + ' 億' : '--'}
+                        </td>
+                      </tr>
                       <tr>
-                        <td className="py-2.5 text-slate-400">外資買賣超</td>
+                        <td className="py-2.5 text-slate-400">三大法人 5日累計</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${(chipData.history?.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) > 0) ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {chipData.history?.length >= 5 ? (chipData.history.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) > 0 ? '+' : '') : ''}
+                            {chipData.history?.length >= 5 ? chipData.history.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) : '--'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">外資合計買賣超</td>
                         <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
                       </tr>
                       <tr>
-                        <td className="py-2.5 text-slate-400">投信買賣超</td>
+                        <td className="py-2.5 text-slate-400">投信合計買賣超</td>
                         <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
                       </tr>
                       <tr>
-                        <td className="py-2.5 text-slate-400">自營商買賣超</td>
+                        <td className="py-2.5 text-slate-400">自營商合計買賣超</td>
                         <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
                       </tr>
                       <tr>
@@ -1462,8 +1576,11 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                         <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
                       </tr>
                       <tr className="border-t border-[#2a2f3a]/30">
-                        <td className="py-2.5 text-slate-400 font-bold">外資持股比</td>
-                        <td className="py-2.5 text-right font-mono font-bold text-amber-400">{chipData.foreignHolding ? chipData.foreignHolding.toFixed(2) : '--'} %</td>
+                        <td className="py-2.5 text-slate-400 font-bold">外資持股比 / 剩餘量</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-amber-400">
+                            {chipData.foreignHolding ? chipData.foreignHolding.toFixed(2) : '--'} % 
+                            <div className="text-[9px] text-slate-500">{chipData.foreignShares ? (chipData.foreignShares / 1000).toLocaleString() + ' 千張' : ''}</div>
+                        </td>
                       </tr>
                       <tr>
                         <td className="py-2.5 text-slate-400">本益比 (PE)</td>
