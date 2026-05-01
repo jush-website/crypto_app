@@ -434,7 +434,32 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   
   const finalLogs = logs.slice(0, 4);
 
-  return { signal, score, logs: finalLogs, entry, tp, sl, poc: vp.poc, avwap };
+  // --- Real-time Backtest Logic ---
+  let winRate = 0, totalSignals = 0;
+  const backtestWindow = 60; // Check last 60 candles
+  if (klinesRaw.length > backtestWindow + 20) {
+      let wins = 0;
+      for (let j = klinesRaw.length - backtestWindow; j < klinesRaw.length - 5; j++) {
+          const histSlice = klinesRaw.slice(0, j);
+          const histRes = analyzeCryptoSignal(histSlice, klinesRaw[j-1].close, fundingRate); // Recursion-safe due to limit
+          if (histRes && histRes.signal !== 'NEUTRAL') {
+              totalSignals++;
+              const hEntry = histRes.entry, hTp = histRes.tp, hSl = histRes.sl, hType = histRes.signal;
+              for (let k = j; k < klinesRaw.length; k++) {
+                  if (hType === 'LONG') {
+                      if (klinesRaw[k].high >= hTp) { wins++; break; }
+                      if (klinesRaw[k].low <= hSl) break;
+                  } else {
+                      if (klinesRaw[k].low <= hTp) { wins++; break; }
+                      if (klinesRaw[k].high >= hSl) break;
+                  }
+              }
+          }
+      }
+      if (totalSignals > 0) winRate = (wins / totalSignals) * 100;
+  }
+
+  return { signal, score, logs: finalLogs, entry, tp, sl, poc: vp.poc, avwap, winRate, totalSignals };
 }
 
 function generateBranchData(symbol, price, change, vol) {
@@ -800,7 +825,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
       {error && <div className="text-center py-10 text-red-400">{String(error)}</div>}
 
-      {activeTab === 'ALL' && !showManualEntry && !searchTerm && hotStocks.length > 0 && (
+      {activeTab === 'ALL' && activeIndustry === 'ALL' && !showManualEntry && !searchTerm && hotStocks.length > 0 && (
           <div className="mb-8">
               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
                   <Zap className="w-5 h-5 text-amber-400" /> 市場焦點強勢股
@@ -2431,8 +2456,14 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
                   <div key={tf} className={`p-3 rounded border border-[#1e2330] ${!isActive ? 'bg-[#0b0e14]' : isLong ? 'bg-[#0ecb81]/5' : 'bg-[#f6465d]/5'}`}>
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-xs text-slate-400 font-bold">{String(tf)} 週期</span>
-                      <span className={`text-xs font-black ${isLong ? 'text-[#0ecb81]' : isShort ? 'text-[#f6465d]' : 'text-slate-500'}`}>{isActive ? (isLong ? '做多' : '做空') : '盤整中'}</span>
+                      <div className="flex flex-col items-end">
+                        <span className={`text-xs font-black ${isLong ? 'text-[#0ecb81]' : isShort ? 'text-[#f6465d]' : 'text-slate-500'}`}>{isActive ? (isLong ? '做多' : '做空') : '盤整中'}</span>
+                        {sig?.totalSignals > 0 && (
+                          <span className="text-[9px] text-slate-500 font-mono">回測勝率: <span className={sig.winRate >= 50 ? "text-amber-400" : "text-slate-500"}>{sig.winRate.toFixed(1)}%</span> ({sig.totalSignals} 筆)</span>
+                        )}
+                      </div>
                     </div>
+
                     {isActive && sig && (
                         <div className="grid grid-cols-3 gap-2 mt-2 text-[10px] font-mono mb-2">
                            <div>進場: <span className="text-white block">{formatPrice(sig.entry)}</span></div>
