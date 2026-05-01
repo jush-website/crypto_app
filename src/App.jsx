@@ -287,7 +287,7 @@ function detectLiquiditySweep(klines) {
   return { sweepLong: lastK.low < localLow && lastK.close > localLow, sweepShort: lastK.high > localHigh && lastK.close < localHigh };
 }
 
-function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
+function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate, skipBacktest = false) {
   if (!klinesRaw || klinesRaw.length < 50) return null;
   
   const klines = klinesRaw;
@@ -437,11 +437,11 @@ function analyzeCryptoSignal(klinesRaw, currentPrice, fundingRate) {
   // --- Real-time Backtest Logic ---
   let winRate = 0, totalSignals = 0;
   const backtestWindow = 60; // Check last 60 candles
-  if (klinesRaw.length > backtestWindow + 20) {
+  if (!skipBacktest && klinesRaw.length > backtestWindow + 20) {
       let wins = 0;
       for (let j = klinesRaw.length - backtestWindow; j < klinesRaw.length - 5; j++) {
           const histSlice = klinesRaw.slice(0, j);
-          const histRes = analyzeCryptoSignal(histSlice, klinesRaw[j-1].close, fundingRate); // Recursion-safe due to limit
+          const histRes = analyzeCryptoSignal(histSlice, klinesRaw[j-1].close, fundingRate, true); // Prevent recursion
           if (histRes && histRes.signal !== 'NEUTRAL') {
               totalSignals++;
               const hEntry = histRes.entry, hTp = histRes.tp, hSl = histRes.sl, hType = histRes.signal;
