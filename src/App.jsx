@@ -1249,12 +1249,14 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     let techScore = 0;
     const isAboveMA20 = latest.close > (latest.ma20 || 0);
     const maGoldenCross = (prev.ma5 <= prev.ma20) && (latest.ma5 > latest.ma20);
+    const bbMiddleCross = (prev.close <= prev.ma20) && (latest.close > latest.ma20); // 突破布林中軌
     const macdGoldenCross = latest.macd && latest.macd.hist > 0 && prev.macd.hist <= 0;
     const kdGoldenCross = latest.kd && latest.kd.k > latest.kd.d && prev.kd.k <= prev.kd.d;
     const kdLow = latest.kd && latest.kd.k < 30; // 低檔區
     
     if (isAboveMA20) techScore += 2;
-    if (maGoldenCross) techScore += 3;
+    if (maGoldenCross) techScore += 2;
+    if (bbMiddleCross) techScore += 3; // 布林中軌突破權重較高
     if (macdGoldenCross) techScore += 2;
     if (kdGoldenCross) techScore += 1;
     if (kdLow && kdGoldenCross) techScore += 2;
@@ -1277,21 +1279,22 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const totalScore = techScore + chipScore + fundScore;
 
     // 判斷建議等級
-    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '目前訊號尚不明確，建議耐心等待轉強點。' };
-    if (totalScore >= 10) shortTerm = { action: '強力買進', color: 'text-[#f6465d]', desc: '技術、籌碼、基本面三強鼎立，出現極佳右側進場點。' };
-    else if (totalScore >= 6) shortTerm = { action: '建議買入', color: 'text-[#f6465d]', desc: '多頭訊號確認，建議採 3:3:4 分批進場策略。' };
-    else if (totalScore <= 2) shortTerm = { action: '建議賣出', color: 'text-[#0ecb81]', desc: '訊號轉弱且失守關鍵支撐，建議分批減碼或停損。' };
+    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '目前訊號尚不明確，建議耐心等待突破布林中軌後再行進場。' };
+    if (totalScore >= 11) shortTerm = { action: '強力買進', color: 'text-[#f6465d]', desc: '多頭帶量突破布林中軌，且籌碼、基本面極佳，右側買點確立。' };
+    else if (totalScore >= 7) shortTerm = { action: '建議買入', color: 'text-[#f6465d]', desc: '站穩布林中軌，多頭訊號確認，建議採 3:3:4 分批進場策略。' };
+    else if (totalScore <= 3) shortTerm = { action: '建議賣出', color: 'text-[#0ecb81]', desc: '失守布林中軌且籌碼流失，建議分批減碼以規避下行風險。' };
 
-    let midTerm = isAboveMA20 ? { action: '波段做多', color: 'text-[#f6465d]', desc: '股價站上月線，中期多頭趨勢不變。' } : { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線關鍵支撐，中期轉為震盪偏空。' };
+    let midTerm = isAboveMA20 ? { action: '波段做多', color: 'text-[#f6465d]', desc: '股價站上月線 (布林中軌)，中期多頭趨勢不變。' } : { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線 (布林中軌) 關鍵支撐，中期轉為震盪偏空。' };
     let longTerm = latest.close > (latest.ma60 || 0) ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '守住季線大支撐，長線格局穩定。' } : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '跌破季線生命線，長線需謹慎。' };
 
     // 點位計算
     const entry = latest.close;
-    // 止損設定：月線 (MA20) 或 近日低點 (取較高者)
+    // 止損設定：布林中軌 (MA20) 或 近日低點 (取較高者)
     let stopLoss = Math.max(latest.ma20 || entry * 0.94, entry * 0.94);
-    // 止盈設定：根據總分調整預期，分數越高預期越高
+    // 止盈設定：分數越高預期越高，並參考布林上軌
+    const bbTarget = latest.bb?.upper || entry * 1.1;
     const rewardRatio = 1 + (0.05 + (totalScore * 0.005));
-    const target = entry * rewardRatio;
+    const target = Math.max(entry * rewardRatio, bbTarget * 0.98);
 
     return { shortTerm, midTerm, longTerm, entry, target, stopLoss, totalScore };
   };
