@@ -2058,7 +2058,9 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
              <div key={tf} className={`text-[10px] p-2 rounded flex flex-col gap-1 ${isLong ? 'bg-[#0ecb81]/10 border border-[#0ecb81]/30 text-[#0ecb81]' : 'bg-[#f6465d]/10 border border-[#f6465d]/30 text-[#f6465d]'}`}>
                <div className="font-bold flex items-center justify-between">
                   <span className="flex items-center gap-1"><Target className="w-3 h-3"/> {String(tf)} {isLong ? '🔥 推薦做多' : '🩸 推薦做空'}</span>
+                  {sig.totalSignals > 0 && <span className="text-[9px] font-mono text-slate-300">勝率 {sig.winRate.toFixed(0)}%</span>}
                </div>
+
                <div className="grid grid-cols-3 gap-1 mt-1 opacity-90 text-[9px] font-mono">
                   <div className="text-white">進場 {formatPrice(sig.entry)}</div>
                   <div className="text-[#0ecb81]">TP {formatPrice(sig.tp)}</div>
