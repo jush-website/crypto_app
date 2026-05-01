@@ -1243,37 +1243,57 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const getRecommendations = () => {
     if (!chartData || chartData.length < 2) return null;
     const latest = chartData[chartData.length - 1];
+    const prev = chartData[chartData.length - 2];
     
-    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '短期動能不明確，建議觀望。' };
-    let shortScore = 0;
-    if (latest.close > (latest.ma5 || 0)) shortScore++;
-    if (latest.kd && latest.kd.k > latest.kd.d) shortScore++;
-    if (latest.rsi > 50) shortScore++;
+    // 1. 技術面得分 (Technical Score)
+    let techScore = 0;
+    const isAboveMA20 = latest.close > (latest.ma20 || 0);
+    const maGoldenCross = (prev.ma5 <= prev.ma20) && (latest.ma5 > latest.ma20);
+    const macdGoldenCross = latest.macd && latest.macd.hist > 0 && prev.macd.hist <= 0;
+    const kdGoldenCross = latest.kd && latest.kd.k > latest.kd.d && prev.kd.k <= prev.kd.d;
+    const kdLow = latest.kd && latest.kd.k < 30; // 低檔區
     
-    if (shortScore >= 2) shortTerm = { action: '推薦買入', color: 'text-[#f6465d]', desc: '短線動能強勁，站上5日線且指標向上。' };
-    else if (shortScore === 0) shortTerm = { action: '推薦賣出', color: 'text-[#0ecb81]', desc: '短線動能偏弱，跌破5日線且面臨賣壓。' };
+    if (isAboveMA20) techScore += 2;
+    if (maGoldenCross) techScore += 3;
+    if (macdGoldenCross) techScore += 2;
+    if (kdGoldenCross) techScore += 1;
+    if (kdLow && kdGoldenCross) techScore += 2;
 
-    let midTerm = { action: '區間震盪', color: 'text-slate-400', desc: '中期趨勢整理中，無明顯方向。' };
-    let midScore = 0;
-    if (latest.close > (latest.ma20 || 0)) midScore++;
-    if (latest.macd && latest.macd.hist > 0) midScore++;
+    // 2. 籌碼面得分 (Chip Score)
+    let chipScore = 0;
+    const instBuying = (chipData.foreign || 0) > 0 || (chipData.trust || 0) > 0;
+    const instContinuous = chipData.history?.slice(-3).every(h => (h.foreign + h.trust) > 0);
     
-    if (midScore === 2) midTerm = { action: '波段做多', color: 'text-[#f6465d]', desc: '成功站上月線且 MACD 翻紅，中期偏多。' };
-    else if (midScore === 0) midTerm = { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線且 MACD 翻綠，中期偏弱。' };
+    if (instBuying) chipScore += 2;
+    if (instContinuous) chipScore += 3;
+    if (chipData.foreignHolding > 20) chipScore += 1;
 
-    let longTerm = latest.close > (latest.ma60 || 0) 
-      ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
-      : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
+    // 3. 基本面得分 (Fundamental Score)
+    let fundScore = 0;
+    if (chipData.pe && chipData.pe < 15) fundScore += 2;
+    if (chipData.yield && chipData.yield > 4) fundScore += 2;
+    if (chipData.pb && chipData.pb < 1.5) fundScore += 1;
 
+    const totalScore = techScore + chipScore + fundScore;
+
+    // 判斷建議等級
+    let shortTerm = { action: '觀望整理', color: 'text-slate-400', desc: '目前訊號尚不明確，建議耐心等待轉強點。' };
+    if (totalScore >= 10) shortTerm = { action: '強力買進', color: 'text-[#f6465d]', desc: '技術、籌碼、基本面三強鼎立，出現極佳右側進場點。' };
+    else if (totalScore >= 6) shortTerm = { action: '建議買入', color: 'text-[#f6465d]', desc: '多頭訊號確認，建議採 3:3:4 分批進場策略。' };
+    else if (totalScore <= 2) shortTerm = { action: '建議賣出', color: 'text-[#0ecb81]', desc: '訊號轉弱且失守關鍵支撐，建議分批減碼或停損。' };
+
+    let midTerm = isAboveMA20 ? { action: '波段做多', color: 'text-[#f6465d]', desc: '股價站上月線，中期多頭趨勢不變。' } : { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線關鍵支撐，中期轉為震盪偏空。' };
+    let longTerm = latest.close > (latest.ma60 || 0) ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '守住季線大支撐，長線格局穩定。' } : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '跌破季線生命線，長線需謹慎。' };
+
+    // 點位計算
     const entry = latest.close;
-    let target = entry * 1.07;
-    let stopLoss = entry * 0.94;
+    // 止損設定：月線 (MA20) 或 近日低點 (取較高者)
+    let stopLoss = Math.max(latest.ma20 || entry * 0.94, entry * 0.94);
+    // 止盈設定：根據總分調整預期，分數越高預期越高
+    const rewardRatio = 1 + (0.05 + (totalScore * 0.005));
+    const target = entry * rewardRatio;
 
-    // 根據技術指標微調點位
-    if (latest.ma20 && latest.ma20 < entry && latest.ma20 > stopLoss) stopLoss = latest.ma20;
-    if (latest.ma5 && latest.ma5 > entry) target = latest.ma5 * 1.1;
-
-    return { shortTerm, midTerm, longTerm, entry, target, stopLoss };
+    return { shortTerm, midTerm, longTerm, entry, target, stopLoss, totalScore };
   };
 
   const recommendations = chartError ? null : getRecommendations();
