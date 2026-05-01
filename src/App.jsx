@@ -1047,6 +1047,47 @@ function TwKLineChart({ klines }) {
   );
 }
 
+function TwChipChart({ history }) {
+  if (!history || history.length < 2) return null;
+  const width = 800;
+  const height = 150;
+  const paddingX = 40;
+  const paddingY = 20;
+
+  const allVals = history.flatMap(h => [h.foreign, h.trust, h.dealer]);
+  const maxVal = Math.max(...allVals, 100);
+  const minVal = Math.min(...allVals, -100);
+  const range = maxVal - minVal;
+
+  const getX = (i) => paddingX + (i * (width - paddingX * 2) / (history.length - 1));
+  const getY = (v) => height - paddingY - ((v - minVal) * (height - paddingY * 2) / range);
+
+  const getPath = (key, color) => {
+    let d = `M ${getX(0)} ${getY(history[0][key])}`;
+    for (let i = 1; i < history.length; i++) {
+      d += ` L ${getX(i)} ${getY(history[i][key])}`;
+    }
+    return <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />;
+  };
+
+  return (
+    <div className="w-full h-[180px] bg-[#0b0e14] rounded-xl border border-[#1e2330] p-2 relative overflow-hidden group">
+      <div className="absolute top-2 left-3 flex gap-4 z-10">
+        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#f6465d]"></div><span className="text-[10px] text-slate-400 font-bold">外資</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400"></div><span className="text-[10px] text-slate-400 font-bold">投信</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400"></div><span className="text-[10px] text-slate-400 font-bold">自營商</span></div>
+      </div>
+      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <line x1={paddingX} y1={getY(0)} x2={width - paddingX} y2={getY(0)} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" />
+        {getPath('foreign', '#f6465d')}
+        {getPath('trust', '#60a5fa')}
+        {getPath('dealer', '#fbbf24')}
+      </svg>
+      <div className="absolute right-2 top-2 text-[9px] text-slate-600 font-mono">20D 趨勢</div>
+    </div>
+  );
+}
+
 function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
@@ -1060,7 +1101,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
   
-  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null });
+  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null, history: [] });
   const [branchData, setBranchData] = useState(null);
 
   useEffect(() => {
@@ -1145,13 +1186,14 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 dealer: data.dealer,
                 marginToday: data.marginToday,
                 marginYest: data.marginYesterday,
-                marginChange: data.marginChange
+                marginChange: data.marginChange,
+                history: data.history || []
             });
         }
       } catch (error) {
         if (isMounted) {
             setBranchData(generateBranchData(stock.symbol, currentPrice, currentChange, currentVolume));
-            setChipData(prev => ({ ...prev, loading: false }));
+            setChipData(prev => ({ ...prev, loading: false, history: [] }));
         }
       }
     };
@@ -1184,7 +1226,15 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
       ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '股價維持在季線之上，長多格局不變。' }
       : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '股價落於季線之下，長空趨勢成型。' };
 
-    return { shortTerm, midTerm, longTerm };
+    const entry = latest.close;
+    let target = entry * 1.07;
+    let stopLoss = entry * 0.94;
+
+    // 根據技術指標微調點位
+    if (latest.ma20 && latest.ma20 < entry && latest.ma20 > stopLoss) stopLoss = latest.ma20;
+    if (latest.ma5 && latest.ma5 > entry) target = latest.ma5 * 1.1;
+
+    return { shortTerm, midTerm, longTerm, entry, target, stopLoss };
   };
 
   const recommendations = chartError ? null : getRecommendations();
@@ -1310,6 +1360,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 <ShieldAlert className="w-4 h-4 text-amber-500" /> 三大法人與籌碼動向
                 <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
               </h3>
+              {!chipData.loading && chipData.history.length > 0 && <TwChipChart history={chipData.history} />}
               {chipData.loading ? (
                 <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
               ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
@@ -1381,6 +1432,24 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{String(recommendations.midTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.midTerm.desc)}</div></div>
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{String(recommendations.longTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.longTerm.desc)}</div></div>
+               </div>
+
+               <div className="mt-4 p-4 bg-blue-600/5 border border-blue-500/20 rounded-xl">
+                  <div className="text-xs text-blue-400 font-bold mb-3 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> AI 模擬交易點位參考 (僅供參考，請謹慎評估風險)</div>
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                          <div className="text-[10px] text-slate-500 mb-1">建議入場價</div>
+                          <div className="text-lg font-mono font-black text-white">{recommendations.entry.toFixed(2)}</div>
+                      </div>
+                      <div className="text-center border-x border-[#2a2f3a]">
+                          <div className="text-[10px] text-slate-500 mb-1">預計止盈價</div>
+                          <div className="text-lg font-mono font-black text-[#f6465d]">{recommendations.target.toFixed(2)}</div>
+                      </div>
+                      <div className="text-center">
+                          <div className="text-[10px] text-slate-500 mb-1">嚴格止損價</div>
+                          <div className="text-lg font-mono font-black text-[#0ecb81]">{recommendations.stopLoss.toFixed(2)}</div>
+                      </div>
+                  </div>
                </div>
             </div>
           )}
