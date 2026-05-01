@@ -757,14 +757,14 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {activeTab === 'ALL' && !searchTerm && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
             {industryStats.slice(0, 4).map(([ind, data]) => (
-                <div key={ind} onClick={() => setActiveIndustry(ind)} className="bg-[#121620] border border-[#2a2f3a] p-3.5 sm:p-4 rounded-xl cursor-pointer hover:border-blue-500/50 transition-all">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-bold text-white">{ind}</span>
-                        <span className={`text-xs font-mono font-bold ${data.avgChange > 0 ? 'text-[#f6465d]' : data.avgChange < 0 ? 'text-[#0ecb81]' : 'text-slate-400'}`}>{data.avgChange > 0 ? '+' : ''}{data.avgChange.toFixed(2)}%</span>
+                <div key={ind} onClick={() => setActiveIndustry(ind)} className="bg-[#121620] border border-[#2a2f3a] p-3 sm:p-4 rounded-xl cursor-pointer hover:border-blue-500/50 transition-all">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-bold text-white truncate">{ind}</span>
+                        <span className={`text-[10px] sm:text-xs font-mono font-bold ${data.avgChange > 0 ? 'text-[#f6465d]' : data.avgChange < 0 ? 'text-[#0ecb81]' : 'text-slate-400'}`}>{data.avgChange > 0 ? '+' : ''}{data.avgChange.toFixed(2)}%</span>
                     </div>
-                    <div className="flex gap-1.5 overflow-hidden">
+                    <div className="hidden sm:flex gap-1.5 overflow-hidden">
                         {data.topStocks.map(s => (
                             <span key={s.symbol} className="text-[10px] px-1.5 py-0.5 bg-blue-600/10 text-blue-400 rounded border border-blue-500/20 whitespace-nowrap">{s.name}</span>
                         ))}
