@@ -717,10 +717,40 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   const isCodeFormat = /^[0-9A-Z]{4,6}$/.test(searchTerm || '');
   const showManualEntry = searchTerm && filtered.length === 0 && isCodeFormat;
 
+  const industryStats = useMemo(() => {
+      let list = Array.isArray(twStocks) ? [...twStocks] : [];
+      const stats = {};
+      Object.entries(INDUSTRY_MAP).forEach(([ind, syms]) => {
+          const matched = list.filter(t => syms.includes(t.symbol));
+          if (matched.length > 0) {
+              const avgChange = matched.reduce((sum, t) => sum + parseFloat(t.priceChangePercent), 0) / matched.length;
+              stats[ind] = { avgChange, count: matched.length, topStocks: matched.sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 3) };
+          }
+      });
+      return Object.entries(stats).sort((a, b) => b[1].avgChange - a[1].avgChange);
+  }, [twStocks]);
+
   if (loading && (!twStocks || !twStocks.length)) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 初始化 Yahoo 證券池中...</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      {activeTab === 'ALL' && !searchTerm && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {industryStats.slice(0, 4).map(([ind, data]) => (
+                <div key={ind} onClick={() => setActiveIndustry(ind)} className="bg-[#121620] border border-[#2a2f3a] p-4 rounded-xl cursor-pointer hover:border-blue-500/50 transition-all">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-white">{ind}</span>
+                        <span className={`text-xs font-mono font-bold ${data.avgChange > 0 ? 'text-[#f6465d]' : data.avgChange < 0 ? 'text-[#0ecb81]' : 'text-slate-400'}`}>{data.avgChange > 0 ? '+' : ''}{data.avgChange.toFixed(2)}%</span>
+                    </div>
+                    <div className="flex gap-1.5 overflow-hidden">
+                        {data.topStocks.map(s => (
+                            <span key={s.symbol} className="text-[10px] px-1.5 py-0.5 bg-blue-600/10 text-blue-400 rounded border border-blue-500/20 whitespace-nowrap">{s.name}</span>
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+      )}
       <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
         <div className="w-full xl:w-auto relative">
           <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
@@ -1101,7 +1131,12 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
   
-  const [chipData, setChipData] = useState({ loading: true, foreign: null, trust: null, dealer: null, marginToday: null, marginYest: null, marginChange: null, history: [] });
+  const [chipData, setChipData] = useState({ 
+    loading: true, foreign: null, trust: null, dealer: null, 
+    marginToday: null, marginYest: null, marginChange: null, 
+    foreignHolding: 0, pe: null, yield: null, pb: null,
+    history: [] 
+  });
   const [branchData, setBranchData] = useState(null);
 
   useEffect(() => {
@@ -1187,6 +1222,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                 marginToday: data.marginToday,
                 marginYest: data.marginYesterday,
                 marginChange: data.marginChange,
+                foreignHolding: data.foreignHolding,
+                pe: data.pe,
+                yield: data.yield,
+                pb: data.pb,
                 history: data.history || []
             });
         }
@@ -1388,6 +1427,22 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
                       <tr>
                         <td className="py-2.5 text-slate-400">融資餘額</td>
                         <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
+                      </tr>
+                      <tr className="border-t border-[#2a2f3a]/30">
+                        <td className="py-2.5 text-slate-400 font-bold">外資持股比</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-amber-400">{chipData.foreignHolding ? chipData.foreignHolding.toFixed(2) : '--'} %</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">本益比 (PE)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.pe || '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">殖利率 (Yield)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-[#f6465d]">{chipData.yield ? chipData.yield + '%' : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">股價淨值比 (PB)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.pb || '--'}</td>
                       </tr>
                     </tbody>
                   </table>

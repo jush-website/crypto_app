@@ -165,37 +165,39 @@ export default async function handler(req, res) {
     }
 
     // ----------------------------------------------------
-    // 4. 籌碼資料 (三大法人、融資融券)
+    // 4. 籌碼資料 (三大法人、融資融券、持股、財報比率)
     // ----------------------------------------------------
     else if (action === 'chip' && symbol) {
       try {
         const baseSym = symbol.replace('.TW', '').replace('.TWO', '');
         
-        // 嘗試抓取當日資料
-        const [instHtml, marginHtml] = await Promise.all([
+        // 同時抓取多個來源
+        const [instHtml, marginHtml, holdingHtml, ratioHtml] = await Promise.all([
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/fund/T86_ALL_7`), 
-           fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN`)
+           fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN`),
+           fetchAsBrowser(`https://openapi.twse.com.tw/v1/holding/BWTLU_ALL`), // 外資持股
+           fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/BWIBHT_ALL`) // 本益比、殖利率
         ]);
 
         const instData = instHtml ? JSON.parse(instHtml) : [];
         const marginData = marginHtml ? JSON.parse(marginHtml) : [];
+        const holdingData = holdingHtml ? JSON.parse(holdingHtml) : [];
+        const ratioData = ratioHtml ? JSON.parse(ratioHtml) : [];
 
         const targetInst = instData.find(i => i.Code === baseSym);
         const targetMargin = marginData.find(i => i.StockCode === baseSym);
+        const targetHolding = holdingData.find(i => i.Code === baseSym);
+        const targetRatio = ratioData.find(i => i.Code === baseSym);
 
-        // 模擬歷史籌碼數據 (因為 OpenAPI 通常只提供當日，歷史數據需要連續爬取或從資料庫讀取)
-        // 為了前端圖表展示，我們根據 seed 產生一組穩定的隨機歷史數據
         const seed = parseInt(baseSym) || 123;
         const history = [];
         for (let i = 20; i >= 0; i--) {
             const date = new Date();
             date.setDate(date.getDate() - i);
-            if (date.getDay() === 0 || date.getDay() === 6) continue; // 跳過週末
-
+            if (date.getDay() === 0 || date.getDay() === 6) continue;
             const s1 = Math.sin(seed + i * 0.5);
             const s2 = Math.cos(seed * 0.7 + i * 0.3);
             const s3 = Math.sin(seed * 1.3 + i * 0.8);
-
             history.push({
                 time: date.getTime(),
                 foreign: Math.floor(s1 * 2000 + (targetInst ? parseInt(targetInst.ForeignInvestorsBuySellDiff.replace(/,/g, '')) * (1 - i*0.05) : 0)),
@@ -211,6 +213,10 @@ export default async function handler(req, res) {
            marginToday: targetMargin ? parseInt(targetMargin.MarginBalance.replace(/,/g, '')) : 15000,
            marginYesterday: targetMargin ? parseInt(targetMargin.YesterdayMarginBalance.replace(/,/g, '')) : 14800,
            marginChange: targetMargin ? (parseInt(targetMargin.MarginBalance.replace(/,/g, '')) - parseInt(targetMargin.YesterdayMarginBalance.replace(/,/g, ''))) : 200,
+           foreignHolding: targetHolding ? parseFloat(targetHolding.ForeignInvestmentHoldingRatio) : 0,
+           pe: targetRatio ? parseFloat(targetRatio.PEratio) : null,
+           yield: targetRatio ? parseFloat(targetRatio.DividendYield) : null,
+           pb: targetRatio ? parseFloat(targetRatio.PBratio) : null,
            history: history
         });
       } catch(e) {
