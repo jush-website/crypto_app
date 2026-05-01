@@ -3,7 +3,7 @@ import {
   TrendingUp, RefreshCw, ArrowLeft, Search, Target, AlertCircle, Zap, Wallet, 
   ZoomIn, ZoomOut, MoveHorizontal, X, Layers, BarChart2, Waves, 
   Menu, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
-  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator
+  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator, Star
 } from 'lucide-react';
 
 // ==========================================
@@ -548,13 +548,15 @@ function PortalPage() {
   );
 }
 
-function TwLiveStockCard({ stock, activeTab }) {
+function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [changeNum, setChangeNum] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [volNum, setVolNum] = useState(parseFloat(stock.quoteVolume) || 0);
   const [prevClose, setPrevClose] = useState(stock.officialPrevClose || 0);
   const [isSynced, setIsSynced] = useState(false);
   const cardRef = useRef(null);
+
+  const isInWatchlist = watchlist.includes(stock.symbol);
 
   useEffect(() => {
     let handleQuote;
@@ -573,7 +575,7 @@ function TwLiveStockCard({ stock, activeTab }) {
       }
     });
     if (cardRef.current) observer.observe(cardRef.current);
-    
+
     return () => {
         observer.disconnect();
         if (handleQuote) fetchQuoteQueue.unsubscribe(stock.symbol, handleQuote);
@@ -585,7 +587,7 @@ function TwLiveStockCard({ stock, activeTab }) {
   let stStatus = { text: '⏳ 震盪觀望', color: 'text-slate-400', icon: <Activity className="w-5 h-5" /> };
   if (changeNum >= 5) {
       stStatus = { text: '🔥 強勢爆發', color: 'text-[#f6465d]', icon: <Zap className="w-5 h-5 text-[#f6465d]" /> };
-  } else if (changeNum >= 2 && volNum > 1500000) { 
+  } else if (changeNum >= 2 && volNum > 1500000) {
       stStatus = { text: '✅ 短線達標', color: 'text-[#f6465d]', icon: <CheckCircle2 className="w-5 h-5 text-[#f6465d]" /> };
   } else if (changeNum <= -3) {
       stStatus = { text: '⚠️ 弱勢退場', color: 'text-[#0ecb81]', icon: <AlertCircle className="w-5 h-5 text-[#0ecb81]" /> };
@@ -599,16 +601,25 @@ function TwLiveStockCard({ stock, activeTab }) {
 
   let indTag = null;
   for (const [key, symbols] of Object.entries(INDUSTRY_MAP)) {
-      if (symbols.includes(stock.symbol)) { 
-          indTag = key.replace(/🔥 |🚢 |💰 |📡 |🏢 |📊 /g, ''); 
-          break; 
+      if (symbols.includes(stock.symbol)) {
+          indTag = key.replace(/🔥 |🚢 |💰 |📡 |🏢 |📊 /g, '');
+          break;
       }
   }
 
   return (
     <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group relative overflow-hidden">
       {!isSynced && <div className="absolute top-0 left-0 w-full h-1 bg-blue-500/10"><div className="h-full bg-blue-500/50 w-1/3 animate-pulse"></div></div>}
+
+      <button 
+        onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}
+        className="absolute top-3 right-3 z-10 p-1.5 rounded-full hover:bg-white/5 transition-all"
+      >
+        <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600 hover:text-slate-400'}`} />
+      </button>
+
       <div>
+
         <div className="flex justify-between items-start mb-2">
           <div>
              <h3 className="font-bold text-slate-100 text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2 line-clamp-1">
@@ -670,7 +681,7 @@ function TwLiveStockCard({ stock, activeTab }) {
   );
 }
 
-function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState, setTwDashState }) {
+function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState, setTwDashState, watchlist, toggleWatchlist }) {
   const { activeTab, searchTerm } = twDashState;
   const [activeIndustry, setActiveIndustry] = useState('ALL');
 
@@ -691,7 +702,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   const filtered = useMemo(() => {
     let list = Array.isArray(twStocks) ? [...twStocks] : [];
 
-    if (activeTab === 'STRATEGY') {
+    if (activeTab === 'WATCHLIST') {
+       list = list.filter(t => watchlist.includes(t.symbol));
+    } else if (activeTab === 'STRATEGY') {
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 2 && parseFloat(t.quoteVolume) > 1500000);
     } else if (activeTab === 'DAYTRADE') {
        list = list.filter(t => parseFloat(t.priceChangePercent) >= 5 && parseFloat(t.quoteVolume) > 2000000);
@@ -705,12 +718,11 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
     } else if (activeTab === 'DIVIDEND') {
        list = list.filter(t => DIVIDEND_RECOMMENDATIONS[t.symbol]);
     }
-    
+
     const s = String(searchTerm || '').toUpperCase();
     if (s) {
         return list.filter(t => String(t.symbol || '').includes(s) || String(t.name || '').includes(s)).slice(0, 200);
     }
-
     if (activeTab === 'ALL' && activeIndustry !== 'ALL') {
        list = list.filter(t => {
           let ind = '其他';
@@ -765,6 +777,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
         <div className="w-full xl:w-auto relative">
           <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
              <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門總覽</button>
+             <button onClick={() => setActiveTabSafe('WATCHLIST')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'WATCHLIST' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Star className="w-4 h-4"/> 自選</button>
              <button onClick={() => setActiveTabSafe('STRATEGY')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Target className="w-4 h-4"/> 盤末達標</button>
              <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Zap className="w-4 h-4"/> 隔日沖獵物</button>
              <button onClick={() => setActiveTabSafe('ODDLOT')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><PieChart className="w-4 h-4"/> 零股推薦</button>
@@ -795,7 +808,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {hotStocks.map(stock => (
-                      <TwLiveStockCard key={`hot-${stock.symbol}`} stock={stock} activeTab={activeTab} />
+                      <TwLiveStockCard key={`hot-${stock.symbol}`} stock={stock} activeTab={activeTab} watchlist={watchlist} toggleWatchlist={toggleWatchlist} />
                   ))}
               </div>
           </div>
@@ -812,9 +825,18 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {filtered.map(stock => (
-          <TwLiveStockCard key={stock.symbol} stock={stock} activeTab={activeTab} />
+          <TwLiveStockCard key={stock.symbol} stock={stock} activeTab={activeTab} watchlist={watchlist} toggleWatchlist={toggleWatchlist} />
         ))}
-        {filtered.length === 0 && !showManualEntry && <div className="col-span-full text-center py-20 text-slate-500">此分類目前無符合之標的。</div>}
+        {filtered.length === 0 && !showManualEntry && (
+          <div className="col-span-full text-center py-20 text-slate-500">
+            {activeTab === 'WATCHLIST' ? (
+              <div className="flex flex-col items-center gap-3">
+                <Star className="w-12 h-12 text-slate-700" />
+                <p>自選清單空空如也，快去熱門總覽點擊 ⭐ 加入吧！</p>
+              </div>
+            ) : "此分類目前無符合之標的。"}
+          </div>
+        )}
       </div>
       <div className="text-center mt-6">
         <p className="text-xs text-slate-500 bg-[#121620] inline-block px-4 py-2 rounded-full border border-[#2a2f3a]">
@@ -2482,6 +2504,7 @@ export default function App() {
 
   const [paperAccount, setPaperAccount] = useState(() => { try { const s = localStorage.getItem('paperAccount'); return s ? JSON.parse(s) : { balance: 10000, positions: [], history: [] }; } catch(e) { return { balance: 10000, positions: [], history: [] }; } });
   const [twAccount, setTwAccount] = useState(() => { try { const s = localStorage.getItem('twAccount'); return s ? JSON.parse(s) : { balance: 10000000, positions: [], history: [] }; } catch(e) { return { balance: 10000000, positions: [], history: [] }; } });
+  const [watchlist, setWatchlist] = useState(() => { try { const s = localStorage.getItem('twWatchlist'); return s ? JSON.parse(s) : []; } catch(e) { return []; } });
   
   const [twLivePrices, setTwLivePrices] = useState({});
 
@@ -2489,6 +2512,11 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem('protrade_twDashState', JSON.stringify(twDashState)); }, [twDashState]);
   useEffect(() => { localStorage.setItem('paperAccount', JSON.stringify(paperAccount)); }, [paperAccount]);
   useEffect(() => { localStorage.setItem('twAccount', JSON.stringify(twAccount)); }, [twAccount]);
+  useEffect(() => { localStorage.setItem('twWatchlist', JSON.stringify(watchlist)); }, [watchlist]);
+
+  const toggleWatchlist = (symbol) => {
+    setWatchlist(prev => prev.includes(symbol) ? prev.filter(s => s !== symbol) : [...prev, symbol]);
+  };
 
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
@@ -2785,7 +2813,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
-        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} />}
+        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={watchlist} toggleWatchlist={toggleWatchlist} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
