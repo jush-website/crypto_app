@@ -35,17 +35,17 @@ function parseYahooData(data, officialPrevClose) {
 
   const timestamps = result.timestamp || [];
   const quote = result.indicators?.quote?.[0] || {};
-  
+
   let validKlines = [];
   for (let i = 0; i < timestamps.length; i++) {
       if (quote.close && quote.close[i] != null) {
-          validKlines.push({ 
-              time: timestamps[i] * 1000, 
-              open: Number(quote.open[i]), 
-              high: Number(quote.high[i]), 
-              low: Number(quote.low[i]), 
-              close: Number(quote.close[i]), 
-              volume: Number(quote.volume[i] || 0) 
+          validKlines.push({
+              time: timestamps[i] * 1000,
+              open: Number(quote.open[i]),
+              high: Number(quote.high[i]),
+              low: Number(quote.low[i]),
+              close: Number(quote.close[i]),
+              volume: Number(quote.volume[i] || 0)
           });
       }
   }
@@ -54,14 +54,12 @@ function parseYahooData(data, officialPrevClose) {
   const todayPrice = (meta.regularMarketPrice > 0) ? meta.regularMarketPrice : (lastK ? lastK.close : 0);
   const vol = (meta.regularMarketVolume > 0) ? meta.regularMarketVolume : (lastK ? lastK.volume : 0);
 
-  let trueYesterdayClose = 0;
-  if (validKlines.length >= 2) {
-      trueYesterdayClose = validKlines[validKlines.length - 2].close;
-  }
+  // 優先順序：1. 官方傳入昨收 2. Yahoo Metadata 昨收 3. K線倒數第二支收盤
+  let yesterdayClose = (officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : (meta.previousClose || meta.chartPreviousClose || 0);
 
-  const yesterdayClose = trueYesterdayClose > 0 
-      ? trueYesterdayClose 
-      : ((officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : Number(meta.previousClose || 0));
+  if (yesterdayClose <= 0 && validKlines.length >= 2) {
+      yesterdayClose = validKlines[validKlines.length - 2].close;
+  }
 
   let change = 0;
   if (yesterdayClose > 0) {
@@ -70,7 +68,6 @@ function parseYahooData(data, officialPrevClose) {
 
   return { price: todayPrice, change, vol, yesterdayClose, klines: validKlines };
 }
-
 // ==========================================
 // 1.5 存股推薦清單與各大產業分類資料庫
 // ==========================================
@@ -127,14 +124,17 @@ const fetchQuoteQueue = (() => {
                             const baseSym = q.symbol.split('.')[0];
                             if (subscribers[baseSym]) {
                                 const price = q.regularMarketPrice;
-                                const prevClose = q.regularMarketPreviousClose;
-                                const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
-                                subscribers[baseSym].forEach(cb => cb({
-                                    price: price,
-                                    change: change,
-                                    vol: q.regularMarketVolume || 0,
-                                    prevClose: prevClose
-                                }));
+                                const prevClose = q.regularMarketPreviousClose || q.chartPreviousClose || 0;
+                                
+                                // 只有當我們有有效的昨收價時才更新漲跌幅，否則僅更新價格
+                                const hasPrevClose = prevClose > 0;
+                                const change = hasPrevClose ? ((price - prevClose) / prevClose) * 100 : null;
+                                
+                                subscribers[baseSym].forEach(cb => {
+                                    const update = { price, vol: q.regularMarketVolume || 0, prevClose };
+                                    if (change !== null) update.change = change;
+                                    cb(update);
+                                });
                             }
                         });
                     }
@@ -563,9 +563,9 @@ function TwLiveStockCard({ stock, activeTab }) {
         handleQuote = (data) => {
             if (data.price > 0) {
                 setPrice(data.price);
-                setChangeNum(data.change);
+                if (data.change !== undefined) setChangeNum(data.change);
                 setVolNum(data.vol);
-                setPrevClose(data.prevClose);
+                if (data.prevClose > 0) setPrevClose(data.prevClose);
                 setIsSynced(true);
             }
         };
@@ -1182,9 +1182,9 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
     const handleQuote = (data) => {
         if (data.price > 0 && isMounted) {
             setCurrentPrice(data.price);
-            setCurrentChange(data.change.toFixed(2));
+            if (data.change !== undefined) setCurrentChange(data.change.toFixed(2));
             setCurrentVolume(data.vol);
-            setCurrentPrevClose(data.prevClose);
+            if (data.prevClose > 0) setCurrentPrevClose(data.prevClose);
         }
     };
     fetchQuoteQueue.subscribe(stock.symbol, handleQuote);

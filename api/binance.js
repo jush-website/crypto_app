@@ -99,19 +99,19 @@ export default async function handler(req, res) {
         const html = await fetchAsBrowser(`https://tw.stock.yahoo.com/quote/${baseSym}`);
         
         if (html) {
-           // 利用 Regex 暴力萃取隱藏在網頁底層的 JSON 狀態
-           const priceMatch = html.match(/"regularMarketPrice":\s*([\d\.]+)/);
-           const prevMatch = html.match(/"regularMarketPreviousClose":\s*([\d\.]+)/);
-           const volMatch = html.match(/"regularMarketVolume":\s*([\d\.]+)/);
+           // 利用 Regex 暴力萃取隱藏在網頁底層的 JSON 狀態 (支援多種可能的 Key)
+           const priceMatch = html.match(/"(regularMarketPrice|currentPrice)":\s*([\d\.]+)/);
+           const prevMatch = html.match(/"(regularMarketPreviousClose|previousClose|chartPreviousClose)":\s*([\d\.]+)/);
+           const volMatch = html.match(/"(regularMarketVolume|volume)":\s*([\d\.]+)/);
 
            if (priceMatch) {
                return res.status(200).json({
                    quoteResponse: {
                        result: [{
                            symbol: symbol.split(',')[0],
-                           regularMarketPrice: parseFloat(priceMatch[1]),
-                           regularMarketPreviousClose: prevMatch ? parseFloat(prevMatch[1]) : 0,
-                           regularMarketVolume: volMatch ? parseInt(volMatch[1]) : 0
+                           regularMarketPrice: parseFloat(priceMatch[2]),
+                           regularMarketPreviousClose: prevMatch ? parseFloat(prevMatch[2]) : 0,
+                           regularMarketVolume: volMatch ? parseInt(volMatch[2]) : 0
                        }]
                    }
                });
