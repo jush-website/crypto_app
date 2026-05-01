@@ -608,7 +608,7 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
   }
 
   return (
-    <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group relative overflow-hidden">
+    <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-4 sm:p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group relative overflow-hidden">
       {!isSynced && <div className="absolute top-0 left-0 w-full h-1 bg-blue-500/10"><div className="h-full bg-blue-500/50 w-1/3 animate-pulse"></div></div>}
 
       <button 
@@ -622,7 +622,7 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
 
         <div className="flex justify-between items-start mb-2">
           <div>
-             <h3 className="font-bold text-slate-100 text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2 line-clamp-1">
+             <h3 className="font-bold text-slate-100 text-base sm:text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2 line-clamp-1">
                {String(stock.name || '')} 
                {activeTab === 'STRATEGY' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 py-0.5 rounded border border-purple-500/30 whitespace-nowrap">盤末達標</span>}
                {activeTab === 'DAYTRADE' && <span className="bg-amber-500/20 text-amber-400 text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">隔日沖獵物</span>}
@@ -642,12 +642,12 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
              <span className="text-[10px] text-slate-400 font-bold">收盤短線動能評級</span>
              <span className="text-[9px] bg-[#1a1e27] border border-[#2a2f3a] px-1.5 py-0.5 rounded text-slate-400">13:00 基準</span>
           </div>
-          <div className={`text-xl font-bold mt-1 flex items-center gap-2 ${stStatus.color}`}>
+          <div className={`text-lg sm:text-xl font-bold mt-1 flex items-center gap-2 ${stStatus.color}`}>
              {stStatus.icon} {stStatus.text}
              {!isSynced && <RefreshCw className="w-3 h-3 animate-spin text-slate-500 ml-1 opacity-50" title="同步精確數據中" />}
           </div>
           
-          <div className="flex justify-between items-center mt-3 text-[10px] text-slate-500 font-mono bg-[#0b0e14] p-2 rounded border border-[#1e2330]">
+          <div className="flex justify-between items-center mt-3 text-[10px] text-slate-500 font-mono bg-[#0b0e14] p-1.5 sm:p-2 rounded border border-[#1e2330]">
              <div className="flex flex-col">
                  <span>報價: <span className="text-white">{formatPrice(price)}</span></span>
                  <span className="opacity-70 mt-0.5">昨收: <span className="text-white">{formatPrice(prevClose)}</span></span>
@@ -759,7 +759,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
       {activeTab === 'ALL' && !searchTerm && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {industryStats.slice(0, 4).map(([ind, data]) => (
-                <div key={ind} onClick={() => setActiveIndustry(ind)} className="bg-[#121620] border border-[#2a2f3a] p-4 rounded-xl cursor-pointer hover:border-blue-500/50 transition-all">
+                <div key={ind} onClick={() => setActiveIndustry(ind)} className="bg-[#121620] border border-[#2a2f3a] p-3.5 sm:p-4 rounded-xl cursor-pointer hover:border-blue-500/50 transition-all">
                     <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-bold text-white">{ind}</span>
                         <span className={`text-xs font-mono font-bold ${data.avgChange > 0 ? 'text-[#f6465d]' : data.avgChange < 0 ? 'text-[#0ecb81]' : 'text-slate-400'}`}>{data.avgChange > 0 ? '+' : ''}{data.avgChange.toFixed(2)}%</span>
@@ -973,10 +973,10 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
   const isProfit = pnl >= 0;
 
   return (
-    <div className={`bg-[#121620] border ${isProfit ? 'border-[#f6465d]/30' : 'border-[#0ecb81]/30'} rounded-xl p-5 shadow-lg flex flex-col`}>
+    <div className={`bg-[#121620] border ${isProfit ? 'border-[#f6465d]/30' : 'border-[#0ecb81]/30'} rounded-xl p-4 sm:p-5 shadow-lg flex flex-col`}>
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{String(pos.name)} <span className="text-sm font-normal text-slate-500">{String(pos.symbol)}</span></h3>
+          <h3 className="text-lg sm:text-xl font-bold text-white cursor-pointer hover:text-blue-400" onClick={() => window.location.hash = `#/tw-stocks/detail/${pos.symbol}`}>{String(pos.name)} <span className="text-sm font-normal text-slate-500">{String(pos.symbol)}</span></h3>
           <span className={`text-[10px] px-2 py-0.5 rounded font-bold mt-1 inline-block ${isLong ? 'bg-[#f6465d] text-white' : 'bg-[#0ecb81] text-white'}`}>{isLong ? '做多' : '做空'} {pos.size} 張</span>
         </div>
         <div className="text-right">
@@ -1054,7 +1054,7 @@ function TwKLineChart({ klines }) {
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
 
   return (
-    <div className="w-full relative group" style={{ height: '580px' }}>
+    <div className="w-full relative group h-[400px] sm:h-[580px]">
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
         {hoveredK && (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
@@ -1460,16 +1460,16 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
+          <div className="bg-[#121620] p-4 sm:p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
             
-            <h2 className="text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
+            <h2 className="text-2xl sm:text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
             
-            <div className="mt-6 p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
+            <div className="mt-6 p-4 sm:p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
                 <div className="text-sm text-slate-400 mb-2 font-bold flex items-center gap-2">
                   <Target className="w-4 h-4 text-purple-500"/> 盤中/盤末短線動能評級
                 </div>
-                <div className={`text-4xl font-black flex items-center gap-3 ${stStatus.color} my-3`}>
+                <div className={`text-3xl sm:text-4xl font-black flex items-center gap-3 ${stStatus.color} my-3`}>
                    {stStatus.icon} {stStatus.text}
                 </div>
                 
@@ -1495,7 +1495,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
              <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
           </div>
 
-          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
+          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-4 sm:p-5 shadow-lg space-y-4">
              <h3 className="text-sm font-bold text-white flex items-center gap-2">
                <Calculator className="w-4 h-4 text-emerald-400" /> 個人進場點分析
              </h3>
@@ -1543,7 +1543,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
              )}
           </div>
 
-          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg space-y-4">
+          <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-amber-500" /> 籌碼總覽及卷商分點
                 <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
@@ -1622,7 +1622,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
           </div>
 
-          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+          <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg">
              <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
              {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
                 <div className="space-y-3">
@@ -1649,11 +1649,11 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
               <span className="text-fuchsia-400 font-bold">MA20 (月線)</span>
               <span className="text-emerald-500 font-bold">MA60 (季線)</span>
             </div>
-            {chartLoading ? <div className="w-full h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
+            {chartLoading ? <div className="w-full h-[400px] sm:h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
           </div>
 
           {recommendations && (
-            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+            <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg">
                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
