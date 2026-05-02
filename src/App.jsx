@@ -838,7 +838,10 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
                 {isSearchExpanded ? (
                     <div className="flex items-center w-full gap-2 animate-in slide-in-from-right-4 duration-300">
                         <div className="relative flex-1">
-                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-blue-400" />
+                            <Search 
+                                className="absolute left-3 top-2.5 h-4 w-4 text-blue-400 cursor-pointer hover:text-white transition-colors z-10" 
+                                onClick={() => setSearchTerm('')}
+                            />
                             <input 
                                 ref={searchInputRef}
                                 type="text" 
@@ -862,7 +865,7 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
                     </div>
                 ) : (
                     <button 
-                        onClick={() => setIsSearchExpanded(true)}
+                        onClick={() => { setIsSearchExpanded(true); setSearchTerm(''); }}
                         className="p-2.5 bg-[#0b0e14] hover:bg-[#1a1e27] border border-[#2a2f3a] rounded-xl text-slate-300 hover:text-blue-400 transition-all flex items-center justify-center w-10 h-10 group"
                     >
                         <Search className="w-5 h-5 group-hover:scale-110 transition-transform" />
