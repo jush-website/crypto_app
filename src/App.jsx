@@ -249,6 +249,54 @@ function calculateIndicators(klines) {
   return result;
 }
 
+// ==========================================
+// 2.5 成交量口訣分析引擎
+// ==========================================
+function analyzeVolumePrice(currentPrice, prevPrice, currentVol, avgVol, isBottom = false) {
+  const priceChange = ((currentPrice - prevPrice) / prevPrice) * 100;
+  const volChange = ((currentVol - avgVol) / avgVol) * 100;
+
+  // 定義 升/平/跌 的門檻 (可依需求調整)
+  const P_UP = 0.5;
+  const P_DOWN = -0.5;
+  const V_INC = 10;
+  const V_DEC = -10;
+
+  let pState = '平';
+  if (priceChange > P_UP) pState = '升';
+  else if (priceChange < P_DOWN) pState = '跌';
+
+  let vState = '平';
+  if (volChange > V_INC) vState = '增';
+  else if (volChange < V_DEC) vState = '減';
+
+  const combined = vState + pState;
+
+  const rules = {
+    '增升': { signal: '一定進場', desc: '買盤積極，上漲動能強勁，多頭行情確立。', color: 'text-[#f6465d]' },
+    '增平': { signal: '高位走人', desc: '高檔爆量不漲，代表主力可能在出貨，賣壓沉重。', color: 'text-amber-400' },
+    '增跌': { signal: '走為上策', desc: '賣壓大舉出籠，有人不計成本拋售，後市極可能續跌。', color: 'text-[#0ecb81]' },
+    '平升': { signal: '低位不跟', desc: '無量上漲被視為「虛漲」，追高風險較大。', color: 'text-slate-400' },
+    '平平': { signal: '破位走人', desc: '關鍵支撐位量縮且持平，一旦跌破支撐應立刻停損。', color: 'text-slate-500' },
+    '平跌': { signal: '還要下跌', desc: '下跌趨勢中缺乏買盤承接，價格將順勢繼續滑落。', color: 'text-[#0ecb81]' },
+    '減升': { signal: '提高警惕', desc: '價格上漲但追價意願不足（量價背離），隨時可能反轉。', color: 'text-amber-400' },
+    '減平': { signal: '不破不立', desc: '成交量萎縮且價格停滯，等待跌破重要支撐後的生機。', color: 'text-slate-400' },
+    '減跌': { signal: '天天要跌', desc: '無量陰跌，市場如死水，沒人接刀，容易長期緩跌。', color: 'text-[#0ecb81]' }
+  };
+
+  if (isBottom && vState === '減') {
+    return { 
+      rule: '底部縮量', 
+      signal: '可能上漲', 
+      desc: '歷經長波段下跌後極度量縮，代表籌碼沉澱、浮額清乾淨，隨時醞釀反彈。', 
+      color: 'text-emerald-400' 
+    };
+  }
+
+  const result = rules[combined] || { signal: '盤整觀望', desc: '量價關係不明確，建議觀望。', color: 'text-slate-400' };
+  return { rule: `量${vState}價${pState}`, ...result };
+}
+
 function calculateVolumeProfile(klines, bins = 24) {
   if (!klines || klines.length === 0) return { poc: 0, vah: 0, val: 0 };
   const lows = klines.map(k => k.low).filter(n => !isNaN(n));
@@ -1671,6 +1719,19 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
     return { advice, pnl: pnl.toFixed(2), color, icon, openingStrategy };
   }, [entryPrice, currentPrice, chartData]);
 
+  const volAnalysis = useMemo(() => {
+    if (!chartData || chartData.length < 5) return null;
+    const latest = chartData[chartData.length - 1];
+    const prev = chartData[chartData.length - 2];
+    const avgVol = chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5;
+    
+    // 判斷是否處於底部 (60日最低價的 10% 範圍內)
+    const sixtyDayLow = Math.min(...chartData.slice(-60).map(k => k.low));
+    const isBottom = latest.close <= sixtyDayLow * 1.1;
+
+    return analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
+  }, [chartData]);
+
   return (
     <div className="animate-in fade-in duration-300">
       <div className="flex justify-between items-center mb-4 gap-2">
@@ -1978,6 +2039,57 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
                       </div>
                   </div>
                </div>
+            </div>
+          )}
+
+          {volAnalysis && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                <BarChart2 className="w-5 h-5 text-emerald-400" /> 成交量口訣分析
+                <span className="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded ml-auto border border-emerald-500/30">量價關係實戰</span>
+              </h3>
+              <div className="bg-[#0b0e14] p-5 rounded-xl border border-[#1e2330] relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-5"><BarChart2 className="w-20 h-20 text-emerald-500" /></div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm text-slate-500 mb-1">當前量價狀態</div>
+                    <div className="text-2xl font-black text-white flex items-center gap-2">
+                      {volAnalysis.rule} <span className="text-sm font-normal text-slate-400">({volAnalysis.signal})</span>
+                    </div>
+                  </div>
+                  <div className={`text-xl font-bold px-4 py-2 rounded-lg bg-white/5 border border-white/10 ${volAnalysis.color}`}>
+                    {volAnalysis.signal}
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    <span className="font-bold text-emerald-400 mr-2">【深度解讀】</span>
+                    {volAnalysis.desc}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">今日成交量</div>
+                  <div className="text-sm font-bold text-white font-mono">{formatVolume(currentVolume)}</div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">5日平均量</div>
+                  <div className="text-sm font-bold text-white font-mono">{formatVolume(chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5)}</div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">量比 (Vol Ratio)</div>
+                  <div className={`text-sm font-bold font-mono ${(currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5)) > 1.2 ? 'text-[#f6465d]' : 'text-white'}`}>
+                    {(currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5 || 1)).toFixed(2)}x
+                  </div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">趨勢位階</div>
+                  <div className={`text-sm font-bold ${latestData && latestData.close <= Math.min(...chartData.slice(-60).map(k => k.low)) * 1.1 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {latestData && latestData.close <= Math.min(...chartData.slice(-60).map(k => k.low)) * 1.1 ? '底部區域' : '中高位階'}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
