@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       try {
         const [tseHtml, otcHtml] = await Promise.all([
           fetchAsBrowser('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
-          fetchAsBrowser('https://www.tpex.org.tw/openapi/v1/t1820')
+          fetchAsBrowser('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes')
         ]);
 
         let resTse = [];
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
         try { if (otcHtml) resOtc = JSON.parse(otcHtml); } catch(e) { console.error('OTC Parse Error'); }
 
         const combined = [];
-        const processStockData = (item) => {
+        const processStockData = (item, type) => {
             const todayPrice = parseFloat(item.ClosingPrice || item.Close);
             let changeStr = String(item.Change || '0').replace(/\s+/g, '').replace('+', '').replace('X', '');
             const match = changeStr.match(/-?\d+\.?\d*/);
@@ -63,13 +63,14 @@ export default async function handler(req, res) {
                 name: String(item.Name || item.CompanyName || item.SecuritiesCompanyName), 
                 lastPrice: isNaN(todayPrice) ? '0.00' : todayPrice.toFixed(2), 
                 priceChangePercent: percent.toFixed(2), 
-                quoteVolume: parseInt(item.TradeVolume || item.Volume) || 0,
-                officialPrevClose: yesterdayClose
+                quoteVolume: parseInt(item.TradeVolume || item.Volume || item.TradingShares) || 0,
+                officialPrevClose: yesterdayClose,
+                type: type
             };
         };
 
-        if (resTse.length > 0) combined.push(...resTse.filter(i => i && i.Code).map(processStockData));
-        if (resOtc.length > 0) combined.push(...resOtc.filter(i => i && i.SecuritiesCompanyCode).map(processStockData));
+        if (Array.isArray(resTse) && resTse.length > 0) combined.push(...resTse.filter(i => i && i.Code).map(i => processStockData(i, 'TSE')));
+        if (Array.isArray(resOtc) && resOtc.length > 0) combined.push(...resOtc.filter(i => i && i.SecuritiesCompanyCode).map(i => processStockData(i, 'OTC')));
 
         const filtered = combined.filter(i => /^[0-9A-Z]{4,6}$/.test(i.symbol)).sort((a, b) => b.quoteVolume - a.quoteVolume);
         return res.status(200).json(filtered);

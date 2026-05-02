@@ -3,7 +3,8 @@ import {
   TrendingUp, RefreshCw, ArrowLeft, Search, Target, AlertCircle, Zap, Wallet, 
   ZoomIn, ZoomOut, MoveHorizontal, X, Layers, BarChart2, Waves, 
   Menu, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
-  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator, Star
+  Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator, Star,
+  AlertTriangle
 } from 'lucide-react';
 
 // ==========================================
@@ -83,11 +84,11 @@ const DIVIDEND_RECOMMENDATIONS = {
 };
 
 const INDUSTRY_MAP = {
-  '🔥 AI與半導體': ['2330', '2454', '2382', '3231', '2356', '2376', '2303', '2379', '3711', '2344', '2408', '3443', '3227', '6488', '2301', '2324', '2353', '2357', '2383', '3034', '3037', '2368', '3661'],
+  '🔥 AI與半導體': ['2330', '2454', '2382', '3231', '2356', '2376', '2303', '2379', '3711', '2344', '2408', '3443', '3227', '6488', '2301', '2324', '2353', '2357', '2383', '3034', '3037', '2368', '3661', '8069', '5347', '6138'],
   '🚢 航運與重電': ['2603', '2609', '2615', '2606', '2618', '2610', '1503', '1519', '1513', '1514', '1609'],
   '💰 金融保險': ['2881', '2882', '2883', '2884', '2885', '2886', '2891', '2892', '5880', '2890'],
-  '📡 網通光通訊': ['3363', '4979', '3450', '2345', '3596', '3163', '2412', '3045'],
-  '🏢 傳產與生技': ['1101', '1216', '1301', '1303', '2002', '1722', '4743'],
+  '📡 網通光通訊': ['3363', '4979', '3450', '2345', '3596', '3163', '2412', '3045', '3105', '6442'],
+  '🏢 傳產與生技': ['1101', '1216', '1301', '1303', '2002', '1722', '4743', '1795', '6505', '9921'],
   '📊 國民 ETF': ['0050', '0056', '00878', '00919', '00713', '00929', '006208', '00679B']
 };
 
@@ -554,7 +555,7 @@ function PortalPage() {
   const cards = [
     { id: 'crypto', title: '虛擬貨幣 SMC', desc: '全自動 SMC 高階策略掃描，支援 15m, 1h, 4h 週期並提供進場、止盈、止損點。', icon: <Bitcoin className="w-12 h-12 text-[#f7931a]" />, color: 'from-[#f7931a]/20 to-[#f7931a]/5', route: '#/crypto/home' },
     { id: 'tw-stocks', title: '台股與 ETF', desc: '上市、上櫃及全台 ETF 總覽，提供指標分析與真實三大法人及主力分點動向。', icon: <LineChart className="w-12 h-12 text-[#3b82f6]" />, color: 'from-[#3b82f6]/20 to-[#3b82f6]/5', route: '#/tw-stocks' },
-    { id: 'news', title: '24H 財經新聞', desc: '串接 Yahoo 與全球財經熱點，掌握市場第一手風向。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
+    { id: 'news', title: '24H 市場脈動', desc: 'AI 監測全球財經與政策變動，精確篩選具市場影響力之關鍵新聞。', icon: <Newspaper className="w-12 h-12 text-[#10b981]" />, color: 'from-[#10b981]/20 to-[#10b981]/5', route: '#/news' }
   ];
 
   return (
@@ -656,6 +657,11 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
              </h3>
              <div className="flex flex-wrap items-center gap-1 mt-0.5">
                <div className="text-xs text-slate-500 font-mono">{String(stock.symbol || '')}</div>
+               {stock.type && (
+                 <span className={`text-[9px] px-1.5 py-0.5 rounded border whitespace-nowrap ${stock.type === 'TSE' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
+                   {stock.type === 'TSE' ? '上市' : '上櫃'}
+                 </span>
+               )}
                {indTag && <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 whitespace-nowrap">{indTag}</span>}
              </div>
           </div>
@@ -872,10 +878,49 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
   );
 }
 
+const IMPACT_LEVELS = {
+  CRITICAL: {
+    keywords: ['FED', 'CPI', '升息', '降息', '鮑爾', '利率', '通膨', '殖利率', '非農', '失業率', '崩盤', '暴跌', '熔斷', '禁令', '制裁', '戰爭', '衝突', '核心PCE'],
+    score: 10
+  },
+  HIGH: {
+    keywords: ['財報', '營收', '季報', 'EPS', '毛利', '展望', '法說', '輝達', 'NVDA', '台積電', '2330', 'AI', '半導體', '晶片', '併購', '收購', '債務', '違約', '黑天鵝', '大漲', '重挫'],
+    score: 5
+  },
+  NORMAL: {
+    keywords: ['股利', '配息', '除權息', '庫藏股', '增資', '減資', '私募', '獲利', '虧損', '轉盈', '供應鏈', '缺貨', '創高', '目標價', '評等', '升評', '降評', '利多', '利空'],
+    score: 2
+  }
+};
+
+function scoreNewsArticle(article) {
+  const title = String(article.title || '').toUpperCase();
+  let score = 0;
+  let matchedKeywords = [];
+
+  Object.keys(IMPACT_LEVELS).forEach(level => {
+    const config = IMPACT_LEVELS[level];
+    const matches = config.keywords.filter(k => title.includes(k.toUpperCase()));
+    if (matches.length > 0) {
+      score += config.score * matches.length;
+      matchedKeywords = [...matchedKeywords, ...matches];
+    }
+  });
+
+  return {
+    ...article,
+    score,
+    impact: score >= 5,
+    isCritical: score >= 10,
+    impactKeywords: [...new Set(matchedKeywords)].slice(0, 4)
+  };
+}
+
 function NewsDashboard() {
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('全部');
+  const [focusMode, setFocusMode] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -885,39 +930,111 @@ function NewsDashboard() {
         const res = await fetch('/api/binance?action=news');
         if (!res.ok) throw new Error('News proxy failed');
         const allArticles = await res.json();
-        if (isMounted) { setNews(allArticles); setLoading(false); }
+        
+        const scoredArticles = allArticles.map(scoreNewsArticle);
+
+        if (isMounted) { 
+          setNews(scoredArticles); 
+          setLoading(false); 
+        }
       } catch (error) { if (isMounted) setLoading(false); }
     };
     fetchRealNews();
     return () => { isMounted = false; };
   }, []);
 
-  const filteredNews = activeCategory === '全部' ? news : news.filter(n => String(n.category) === activeCategory);
+  const filteredNews = news.filter(n => {
+    const matchCat = activeCategory === '全部' || String(n.category) === activeCategory;
+    const matchFocus = !focusMode || n.impact;
+    return matchCat && matchFocus;
+  });
+
+  // 優先顯示高分新聞，再按時間排序
+  const sortedNews = [...filteredNews].sort((a, b) => {
+    if (a.isCritical && !b.isCritical) return -1;
+    if (!a.isCritical && b.isCritical) return 1;
+    if (a.score !== b.score) return b.score - a.score;
+    return b.rawDate - a.rawDate;
+  });
 
   if (loading) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 抓取熱點新聞中...</div>;
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-500/20 rounded-lg"><Newspaper className="w-6 h-6 text-emerald-400" /></div>
-          <div><h2 className="text-xl font-bold text-white">24H 財經熱點新聞</h2></div>
+          <div>
+            <h2 className="text-xl font-bold text-white">市場熱點新聞</h2>
+            <p className="text-xs text-slate-500 mt-0.5">即時監測全球財經動態與關鍵因子</p>
+          </div>
         </div>
-        <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-          {['全部', '台股 / 宏觀', '加密貨幣'].map(cat => (
-            <button key={cat} onClick={() => setActiveCategory(cat)} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'}`}>{cat}</button>
-          ))}
+        
+        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+          <button 
+            onClick={() => setFocusMode(!focusMode)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg border transition-all ${focusMode ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-[#0b0e14] border-[#2a2f3a] text-slate-400 hover:border-slate-600'}`}
+          >
+            <Zap className={`w-4 h-4 ${focusMode ? 'fill-current' : ''}`} /> 
+            {focusMode ? '焦點模式：開啟' : '焦點模式：關閉'}
+          </button>
+          
+          <div className="h-6 w-px bg-slate-800 mx-2 hidden sm:block"></div>
+
+          <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] overflow-x-auto no-scrollbar">
+            {['全部', '台股 / 宏觀', '加密貨幣'].map(cat => (
+              <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{cat}</button>
+            ))}
+          </div>
         </div>
       </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filteredNews.map((item, idx) => (
-          <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="bg-[#121620] border border-[#2a2f3a] hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group">
-            <div className="flex justify-between items-center mb-3"><span className={`text-xs font-bold px-2 py-1 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{String(item.category)}</span><span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(item.time)}</span></div>
-            <h3 className="font-bold text-slate-100 text-lg group-hover:text-emerald-400 mb-3 line-clamp-2">{String(item.title)}</h3>
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50"><span className="text-xs text-slate-400">{String(item.source)}</span><span className="text-xs text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">閱讀全文 <ExternalLink className="w-3 h-3" /></span></div>
+        {sortedNews.map((item, idx) => (
+          <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`bg-[#121620] border ${item.isCritical ? 'border-red-500/40 bg-red-500/[0.03]' : item.impact ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-[#2a2f3a]'} hover:border-emerald-500/40 rounded-xl p-5 flex flex-col shadow-md group transition-all relative overflow-hidden`}>
+            {item.isCritical && <div className="absolute top-0 right-0 w-16 h-16 overflow-hidden"><div className="bg-red-500 text-white text-[9px] font-black py-1 px-10 absolute top-3 -right-8 rotate-45 shadow-lg">URGENT</div></div>}
+            
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${item.category === '加密貨幣' ? 'bg-[#f7931a]/10 text-[#f7931a]' : 'bg-[#3b82f6]/10 text-[#3b82f6]'}`}>{String(item.category)}</span>
+                {item.isCritical ? (
+                  <span className="text-[10px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded flex items-center gap-1 shadow-lg shadow-red-500/20">
+                    <AlertTriangle className="w-3 h-3" /> 極度重要
+                  </span>
+                ) : item.impact && (
+                  <span className="text-[10px] font-black bg-amber-500 text-black px-1.5 py-0.5 rounded flex items-center gap-1">
+                    <Zap className="w-3 h-3" /> 高影響力
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(item.time)}</span>
+            </div>
+            
+            <h3 className={`font-bold text-lg group-hover:text-emerald-400 mb-3 line-clamp-2 transition-colors ${item.isCritical ? 'text-red-100' : item.impact ? 'text-white' : 'text-slate-200'}`}>{String(item.title)}</h3>
+            
+            {item.impactKeywords && item.impactKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {item.impactKeywords.map(k => (
+                  <span key={k} className={`text-[9px] px-1.5 py-0.5 rounded ${item.isCritical ? 'bg-red-500/20 text-red-400' : 'bg-slate-800 text-slate-400'}`}>#{k}</span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center mt-auto pt-4 border-t border-[#2a2f3a]/50">
+              <span className="text-xs text-slate-500">{String(item.source)}</span>
+              <span className="text-xs text-emerald-500 flex items-center gap-1 font-bold">
+                閱讀詳情 <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </span>
+            </div>
           </a>
         ))}
-        {filteredNews.length === 0 && <div className="col-span-full text-center py-20 text-slate-500">暫無相關新聞</div>}
+        {sortedNews.length === 0 && (
+          <div className="col-span-full flex flex-col items-center justify-center py-32 bg-[#121620] rounded-xl border border-dashed border-[#2a2f3a]">
+            <Search className="w-12 h-12 text-slate-700 mb-4" />
+            <p className="text-slate-500 font-medium">暫無符合篩選條件的新聞</p>
+            {focusMode && <button onClick={() => setFocusMode(false)} className="mt-4 text-emerald-500 text-sm hover:underline">關閉焦點模式以顯示更多</button>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1251,7 +1368,10 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
            const res = await fetch(`/api/binance?action=news&symbol=${stock.symbol}`);
            if (!res.ok) throw new Error('News fetch failed');
            const newsData = await res.json();
-           if (isMounted) setNews(Array.isArray(newsData) ? newsData : []); 
+           if (isMounted) {
+             const scored = (Array.isArray(newsData) ? newsData : []).map(scoreNewsArticle);
+             setNews(scored.sort((a, b) => b.score - a.score || b.rawDate - a.rawDate)); 
+           }
         } catch(e) {}
         finally {
            if (isMounted) setNewsLoading(false);
@@ -1648,22 +1768,42 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
           </div>
 
           <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg">
-             <h3 className="text-lg font-bold text-white mb-4">個股相關新聞</h3>
+             <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-bold text-white">個股相關新聞</h3>
+               <span className="text-[10px] text-slate-500 bg-[#0b0e14] px-2 py-1 rounded border border-[#2a2f3a]">AI 影響力排序</span>
+             </div>
              {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
                 <div className="space-y-3">
-                  {news.slice(0, 5).map((item, idx) => (
-                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-xl hover:bg-[#1a1e27] border border-transparent hover:border-[#2a2f3a] transition-all group">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 mb-1 line-clamp-1">{String(item.title || '')}</h4>
+                  {news.slice(0, 6).map((item, idx) => (
+                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`block p-3 rounded-xl hover:bg-[#1a1e27] border transition-all group relative overflow-hidden ${item.isCritical ? 'border-red-500/30 bg-red-500/[0.02]' : item.impact ? 'border-amber-500/20 bg-amber-500/[0.01]' : 'border-transparent hover:border-[#2a2f3a]'}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {item.isCritical ? (
+                          <span className="text-[8px] font-black bg-red-500 text-white px-1 py-0.5 rounded flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5" /> 極重要
+                          </span>
+                        ) : item.impact && (
+                          <span className="text-[8px] font-black bg-amber-500 text-black px-1 py-0.5 rounded flex items-center gap-0.5">
+                            <Zap className="w-2.5 h-2.5" /> 影響力
+                          </span>
+                        )}
+                        <span className="text-[9px] text-slate-500">{String(item.publisher || 'Yahoo Finance')}</span>
+                      </div>
+
+                      <h4 className={`text-sm font-bold group-hover:text-emerald-400 mb-2 line-clamp-2 ${item.isCritical ? 'text-red-100' : 'text-slate-200'}`}>{String(item.title || '')}</h4>
+
                       <div className="flex justify-between items-center text-[10px] text-slate-500">
-                        <span>{String(item.publisher || 'Yahoo Finance')}</span>
-                        <span className="flex items-center gap-1">閱讀全文 <ExternalLink className="w-3 h-3" /></span>
+                        <div className="flex gap-1">
+                          {(item.impactKeywords || []).slice(0, 2).map(k => (
+                            <span key={k} className="text-[8px] text-slate-600">#{k}</span>
+                          ))}
+                        </div>
+                        <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500">閱讀全文 <ExternalLink className="w-2.5 h-2.5" /></span>
                       </div>
                     </a>
                   ))}
                 </div>
              ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
           </div>
-
         </div>
 
         <div className="lg:col-span-8 space-y-6">
