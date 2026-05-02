@@ -715,12 +715,21 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
 function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState, setTwDashState, watchlist, toggleWatchlist }) {
   const { activeTab, searchTerm } = twDashState;
   const [activeIndustry, setActiveIndustry] = useState('ALL');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const searchInputRef = useRef(null);
 
   const setActiveTabSafe = (tab) => {
       setTwDashState(p => ({ ...p, activeTab: tab }));
       setActiveIndustry('ALL');
   };
   const setSearchTerm = (term) => setTwDashState(p => ({ ...p, searchTerm: term }));
+
+  // 當搜尋列展開時自動對焦
+  useEffect(() => {
+    if (isSearchExpanded && searchInputRef.current) {
+        searchInputRef.current.focus();
+    }
+  }, [isSearchExpanded]);
 
   const hotStocks = useMemo(() => {
       if (activeTab !== 'ALL' || searchTerm) return [];
@@ -804,20 +813,62 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
             ))}
         </div>
       )}
-      <div className="flex flex-col lg:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
-        <div className="w-full lg:w-auto relative">
-          <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
-             <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門總覽</button>
-             <button onClick={() => setActiveTabSafe('WATCHLIST')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'WATCHLIST' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Star className="w-4 h-4"/> 自選</button>
-             <button onClick={() => setActiveTabSafe('STRATEGY')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Target className="w-4 h-4"/> 盤末達標</button>
-             <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Zap className="w-4 h-4"/> 隔日沖獵物</button>
-             <button onClick={() => setActiveTabSafe('ODDLOT')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><PieChart className="w-4 h-4"/> 零股推薦</button>
-             <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold flex items-center gap-1.5 ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>💰 定存股</button>
+      <div className="flex flex-row justify-between items-center gap-2 bg-[#121620] p-3 sm:p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full relative">
+        {!isSearchExpanded && (
+          <div className="flex-1 min-w-0">
+            <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
+               <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門</button>
+               <button onClick={() => setActiveTabSafe('WATCHLIST')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'WATCHLIST' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Star className="w-3.5 h-3.5"/> 自選</button>
+               <button onClick={() => setActiveTabSafe('STRATEGY')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'STRATEGY' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Target className="w-3.5 h-3.5"/> 盤末</button>
+               <button onClick={() => setActiveTabSafe('DAYTRADE')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'DAYTRADE' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Zap className="w-3.5 h-3.5"/> 隔日沖</button>
+               <button onClick={() => setActiveTabSafe('ODDLOT')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'ODDLOT' ? 'bg-pink-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><PieChart className="w-3.5 h-3.5"/> 零股</button>
+               <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`shrink-0 snap-start px-3 py-2 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold flex items-center gap-1.5 ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>💰 定存</button>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 md:gap-4 w-full lg:w-auto shrink-0">
-            {twUpdateTime && <div className="text-[10px] sm:text-xs text-slate-400 flex items-center gap-1 justify-end md:justify-start"><Clock className="w-3 h-3"/> 基準時間: {twUpdateTime}</div>}
-            <div className="relative w-full md:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+        )}
+
+        <div className={`flex items-center gap-2 ${isSearchExpanded ? 'w-full' : 'w-auto'}`}>
+            {!isSearchExpanded && twUpdateTime && (
+                <div className="hidden md:flex text-[10px] text-slate-500 items-center gap-1 whitespace-nowrap mr-2">
+                    <Clock className="w-3 h-3"/> {twUpdateTime.split(' ')[1]}
+                </div>
+            )}
+            
+            <div className={`relative transition-all duration-300 ease-in-out flex items-center ${isSearchExpanded ? 'w-full' : 'w-10'}`}>
+                {isSearchExpanded ? (
+                    <div className="flex items-center w-full gap-2 animate-in slide-in-from-right-4 duration-300">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-blue-400" />
+                            <input 
+                                ref={searchInputRef}
+                                type="text" 
+                                placeholder="搜尋代號或名稱..." 
+                                value={searchTerm} 
+                                onChange={e => setSearchTerm(e.target.value)} 
+                                className="w-full pl-9 pr-10 py-2 text-sm border border-blue-500/50 rounded-xl bg-[#0b0e14] text-white focus:border-blue-500 outline-none shadow-[0_0_15px_rgba(59,130,246,0.2)]" 
+                            />
+                            {searchTerm && (
+                                <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-slate-500 hover:text-white">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+                        <button 
+                            onClick={() => { setIsSearchExpanded(false); setSearchTerm(''); }} 
+                            className="p-2 text-slate-400 hover:text-white transition-colors"
+                        >
+                            取消
+                        </button>
+                    </div>
+                ) : (
+                    <button 
+                        onClick={() => setIsSearchExpanded(true)}
+                        className="p-2.5 bg-[#0b0e14] hover:bg-[#1a1e27] border border-[#2a2f3a] rounded-xl text-slate-300 hover:text-blue-400 transition-all flex items-center justify-center w-10 h-10 group"
+                    >
+                        <Search className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    </button>
+                )}
+            </div>
         </div>
       </div>
 
