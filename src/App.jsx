@@ -637,17 +637,9 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
     <div ref={cardRef} onClick={() => window.location.hash = `#/tw-stocks/detail/${stock.symbol}`} className="bg-[#121620] border border-[#2a2f3a] hover:border-purple-500/40 rounded-xl p-4 sm:p-5 cursor-pointer transition-all flex flex-col justify-between shadow-md group relative overflow-hidden">
       {!isSynced && <div className="absolute top-0 left-0 w-full h-1 bg-blue-500/10"><div className="h-full bg-blue-500/50 w-1/3 animate-pulse"></div></div>}
 
-      <button 
-        onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}
-        className="absolute top-3 right-3 z-10 p-1.5 rounded-full hover:bg-white/5 transition-all"
-      >
-        <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600 hover:text-slate-400'}`} />
-      </button>
-
       <div>
-
         <div className="flex justify-between items-start mb-2">
-          <div>
+          <div className="flex-1 min-w-0">
              <h3 className="font-bold text-slate-100 text-base sm:text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2 line-clamp-1">
                {String(stock.name || '')} 
                {activeTab === 'STRATEGY' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 py-0.5 rounded border border-purple-500/30 whitespace-nowrap">盤末達標</span>}
@@ -665,7 +657,15 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
                {indTag && <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 whitespace-nowrap">{indTag}</span>}
              </div>
           </div>
-          <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</div>
+          <div className="flex items-center gap-2">
+            <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</div>
+            <button 
+              onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}
+              className="p-1.5 rounded-full hover:bg-white/5 transition-all"
+            >
+              <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600 hover:text-slate-400'}`} />
+            </button>
+          </div>
         </div>
         
         <div className="mt-4 pt-4 border-t border-[#2a2f3a]/50">
