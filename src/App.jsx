@@ -804,8 +804,8 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
             ))}
         </div>
       )}
-      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
-        <div className="w-full xl:w-auto relative">
+      <div className="flex flex-col lg:flex-row justify-between items-center gap-4 bg-[#121620] p-4 rounded-xl border border-[#2a2f3a] shadow-lg w-full overflow-hidden">
+        <div className="w-full lg:w-auto relative">
           <div className="flex bg-[#0b0e14] p-1.5 rounded-xl border border-[#2a2f3a] overflow-x-auto scrollbar-hide snap-x touch-pan-x w-full">
              <button onClick={() => setActiveTabSafe('ALL')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold ${activeTab === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>🔥 熱門總覽</button>
              <button onClick={() => setActiveTabSafe('WATCHLIST')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 font-bold ${activeTab === 'WATCHLIST' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Star className="w-4 h-4"/> 自選</button>
@@ -815,9 +815,9 @@ function TwStocksDashboard({ twStocks, twUpdateTime, loading, error, twDashState
              <button onClick={() => setActiveTabSafe('DIVIDEND')} className={`shrink-0 snap-start px-4 py-2.5 text-xs sm:text-sm rounded-lg transition-all whitespace-nowrap font-bold flex items-center gap-1.5 ${activeTab === 'DIVIDEND' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>💰 定存股</button>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full xl:w-auto shrink-0">
-            {twUpdateTime && <div className="text-xs text-slate-400 flex items-center gap-1 justify-end sm:justify-start shrink-0"><Clock className="w-3 h-3"/> 基準時間: {twUpdateTime}</div>}
-            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 md:gap-4 w-full lg:w-auto shrink-0">
+            {twUpdateTime && <div className="text-[10px] sm:text-xs text-slate-400 flex items-center gap-1 justify-end md:justify-start"><Clock className="w-3 h-3"/> 基準時間: {twUpdateTime}</div>}
+            <div className="relative w-full md:w-64"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input type="text" placeholder="搜尋代號或名稱..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-[#2a2f3a] rounded-lg bg-[#1a1e27] text-white focus:border-blue-500 outline-none" /></div>
         </div>
       </div>
 
