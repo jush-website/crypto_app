@@ -1346,31 +1346,49 @@ function TwChipChart({ history }) {
   );
 }
 
-function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
+function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) {
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
-  
+
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [currentVolume, setCurrentVolume] = useState(parseFloat(stock.quoteVolume) || 0);
   const [currentPrevClose, setCurrentPrevClose] = useState(stock.officialPrevClose || 0);
-  
+
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
-  
-  const [chipData, setChipData] = useState({ 
+
+  const [chipData, setChipData] = useState({
     loading: true, foreign: null, trust: null, dealer: null, totalNet: null,
-    marginToday: null, marginYest: null, marginChange: null, 
+    marginToday: null, marginYest: null, marginChange: null,
     foreignHolding: 0, foreignShares: 0, pe: null, yield: null, pb: null,
-    history: [] 
+    history: []
   });
   const [branchData, setBranchData] = useState(null);
   const [entryPrice, setEntryPrice] = useState('');
 
+  // 搜尋列相關狀態
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
+
+  const filteredSearch = useMemo(() => {
+    const s = searchTerm.trim().toUpperCase();
+    if (!s) return [];
+    return allStocks.filter(t => 
+        String(t.symbol || '').includes(s) || String(t.name || '').includes(s)
+    ).slice(0, 10);
+  }, [allStocks, searchTerm]);
+
   useEffect(() => {
-    let isMounted = true;
-    const fetchChart = async () => {
+    if (isSearchExpanded && searchInputRef.current) {
+        searchInputRef.current.focus();
+    }
+  }, [isSearchExpanded]);
+
+  useEffect(() => {
+    let isMounted = true;    const fetchChart = async () => {
         try {
             setChartLoading(true);
             const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}`);
@@ -1655,7 +1673,70 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition }) {
 
   return (
     <div className="animate-in fade-in duration-300">
-      <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white mb-4 text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回台股清單</button>
+      <div className="flex justify-between items-center mb-4 gap-2">
+        <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all whitespace-nowrap"><ArrowLeft className="w-4 h-4" /> 返回清單</button>
+        
+        <div className={`relative flex items-center transition-all duration-300 ${isSearchExpanded ? 'flex-1' : 'w-10'}`}>
+          {isSearchExpanded ? (
+            <div className="relative w-full flex items-center gap-2 animate-in slide-in-from-right-2 duration-300">
+              <div className="relative flex-1">
+                <Search 
+                    className="absolute left-3 top-2.5 h-4 w-4 text-blue-400 cursor-pointer z-10" 
+                    onClick={() => setSearchTerm('')}
+                />
+                <input 
+                  ref={searchInputRef}
+                  type="text" 
+                  placeholder="切換股票代號或名稱..." 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  className="w-full pl-9 pr-10 py-1.5 text-sm border border-blue-500/50 rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none shadow-[0_0_10px_rgba(59,130,246,0.15)]" 
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2 text-slate-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                
+                {/* 搜尋結果下拉選單 */}
+                {filteredSearch.length > 0 && (
+                  <div className="absolute top-full left-0 w-full mt-2 bg-[#121620] border border-[#2a2f3a] rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    {filteredSearch.map(s => (
+                      <div 
+                        key={s.symbol} 
+                        onClick={() => { window.location.hash = `#/tw-stocks/detail/${s.symbol}`; setIsSearchExpanded(false); setSearchTerm(''); }}
+                        className="px-4 py-3 hover:bg-[#1a1e27] cursor-pointer border-b border-[#2a2f3a]/50 last:border-0 flex justify-between items-center group"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{s.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">{s.symbol}</span>
+                        </div>
+                        <div className={`text-xs font-mono font-bold ${parseFloat(s.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                          {parseFloat(s.priceChangePercent) >= 0 ? '+' : ''}{s.priceChangePercent}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={() => { setIsSearchExpanded(false); setSearchTerm(''); }} 
+                className="text-xs text-slate-400 hover:text-white whitespace-nowrap px-1"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => { setIsSearchExpanded(true); setSearchTerm(''); }}
+              className="p-2 bg-[#121620] hover:bg-[#1a1e27] border border-[#2a2f3a] rounded-lg text-slate-400 hover:text-blue-400 transition-all flex items-center justify-center w-10 h-8 group"
+              title="快速切換股票"
+            >
+              <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            </button>
+          )}
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
@@ -3041,7 +3122,7 @@ export default function App() {
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
         {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={watchlist} toggleWatchlist={toggleWatchlist} />}
-        {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} />}
+        {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} allStocks={twStocks} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
         
