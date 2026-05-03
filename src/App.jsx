@@ -1642,7 +1642,8 @@ function TwKLineChart({ klines, isLineChart = false }) {
       );
   }
   
-  const visibleCount = isLineChart ? 240 : 80; // 1分盤顯示更多數據點
+  const isOneMinute = isLineChart;
+  const visibleCount = isOneMinute ? klines.length : 80; 
   const visibleKlines = klines.slice(-visibleCount);
   
   const width = 800; const totalHeight = 580;
@@ -1651,8 +1652,8 @@ function TwKLineChart({ klines, isLineChart = false }) {
   const volTop = 440;      
   const volHeight = 120;   
   
-  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length, 1); 
-  const candleWidth = Math.max(xStep * 0.6, 1);
+  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length - 1, 1); 
+  const candleWidth = isOneMinute ? 0 : Math.max(xStep * 0.6, 1);
   
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
@@ -1885,7 +1886,18 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
             
             const parsed = parseYahooData(historyData, stock.officialPrevClose);
             if (parsed && parsed.klines.length > 0) {
-                setChartData(calculateIndicators(parsed.klines)); 
+                let displayKlines = parsed.klines;
+                
+                // 如果是 1 分盤，強制只顯示最後一個交易日 (當日) 的資料，避免跨日顯示導致視覺混亂
+                if (timeframe === '1m') {
+                    const lastK = displayKlines[displayKlines.length - 1];
+                    const lastDate = new Date(lastK.time).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
+                    displayKlines = displayKlines.filter(k => 
+                        new Date(k.time).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }) === lastDate
+                    );
+                }
+                
+                setChartData(calculateIndicators(displayKlines)); 
                 
                 setCurrentPrice(parsed.price);
                 setCurrentChange(parsed.change.toFixed(2));
