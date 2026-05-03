@@ -1648,15 +1648,20 @@ function TwKLineChart({ klines }) {
 
   const visibleKlines = klines;
   const dataCount = visibleKlines.length;
-  const width = Math.max(800, dataCount * 12); 
+  
+  // 優化寬度計算：固定 xStep 並加上右側緩衝區 (150px)，防止被價格欄擋住
+  const xStep = 12;
+  const paddingX = 20;
+  const paddingRight = 150;
+  const width = paddingX + (dataCount > 0 ? (dataCount - 1) * xStep : 0) + paddingRight;
+
   const totalHeight = 580;
-  const paddingX = 20; const paddingY = 20;
+  const paddingY = 20;
   const priceHeight = 400;
   const volTop = 440;
   const volHeight = 120;
 
-  const xStep = (width - paddingX * 2.0) / Math.max(dataCount - 1, 1);
-  const candleWidth = Math.max(xStep * 0.7, 5);
+  const candleWidth = 8; // 固定 K 棒寬度
 
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n));
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
@@ -1665,12 +1670,15 @@ function TwKLineChart({ klines }) {
   const priceRange = (maxPrice - minPrice) || 1;
   const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
 
-  // MACD 相關計算
-  const macdValues = visibleKlines.map(k => k.macd?.hist || 0).filter(n => !isNaN(n));
-  const maxMacd = macdValues.length ? Math.max(...macdValues.map(Math.abs)) : 1;
-  const macdScale = (volHeight / 2) / (maxMacd || 1);
+  // MACD 相關計算 - 加強比例感
+  const macdAllValues = visibleKlines.flatMap(k => [
+    k.macd?.hist || 0,
+    k.macd?.macd || 0,
+    k.macd?.signal || 0
+  ]).filter(n => !isNaN(n));
+  const maxMacd = macdAllValues.length ? Math.max(...macdAllValues.map(Math.abs)) : 0.01;
+  const macdScale = (volHeight / 2) / maxMacd;
   const macdCenterY = volTop + volHeight / 2;
-
   const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2.0);
   const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
 
@@ -1694,7 +1702,7 @@ function TwKLineChart({ klines }) {
     if (isDragging) {
       e.preventDefault();
       const x = e.pageX - scrollRef.current.offsetLeft;
-      const walk = (x - startX) * 2; 
+      const walk = (x - startX) * 1.5; 
       scrollRef.current.scrollLeft = scrollLeftState - walk;
     }
   };
@@ -1704,7 +1712,7 @@ function TwKLineChart({ klines }) {
     const rect = containerRef.current.getBoundingClientRect();
     const currentScrollLeft = scrollRef.current ? scrollRef.current.scrollLeft : 0;
     const x = (e.clientX - rect.left) + currentScrollLeft;
-    const dataIndex = Math.floor((x - paddingX) / xStep);
+    const dataIndex = Math.round((x - paddingX) / xStep);
     setHoveredIndex((dataIndex >= 0 && dataIndex < dataCount) ? dataIndex : null);
   };
 
@@ -1712,8 +1720,32 @@ function TwKLineChart({ klines }) {
     let path = "";
     visibleKlines.forEach((k, i) => {
       if (k[maKey] != null && !isNaN(k[maKey])) {
-        const x = paddingX + i * xStep + candleWidth * 0.5;
+        const x = paddingX + i * xStep + 4; // 修正置中偏移
         const y = getPriceY(k[maKey]);
+        path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
+      }
+    });
+    return path;
+  };
+
+  const getMACDLinePath = () => {
+    let path = "";
+    visibleKlines.forEach((k, i) => {
+      if (k.macd?.macd != null && !isNaN(k.macd.macd)) {
+        const x = paddingX + i * xStep + 4;
+        const y = macdCenterY - k.macd.macd * macdScale;
+        path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
+      }
+    });
+    return path;
+  };
+
+  const getSignalLinePath = () => {
+    let path = "";
+    visibleKlines.forEach((k, i) => {
+      if (k.macd?.signal != null && !isNaN(k.macd.signal)) {
+        const x = paddingX + i * xStep + 4;
+        const y = macdCenterY - k.macd.signal * macdScale;
         path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
       }
     });
@@ -1725,24 +1757,39 @@ function TwKLineChart({ klines }) {
 
   return (
     <div className="w-full relative group h-[400px] sm:h-[580px] bg-[#0b0e14] rounded-2xl border border-[#2a2f3a] overflow-hidden select-none">
-      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-20 pointer-events-none">
-        {hoveredK ? (
-          <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleDateString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
-            <div className="flex gap-2">
-              <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
-              <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
-              <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
-              <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) * 0.001).toLocaleString()} 張</span></span>
-              <span className="text-slate-500 ml-2">MACD:<span className={hoveredK.macd?.hist >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]"}>{hoveredK.macd?.hist?.toFixed(2)}</span></span>
+      {/* 頂部數據資訊列 */}
+      <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-[#0b0e14] to-transparent z-20 flex justify-between items-start pointer-events-none">
+        <div className="flex flex-col gap-1">
+          {hoveredK ? (
+            <div className="flex items-center gap-3 text-[11px] font-mono text-slate-300">
+              <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30">
+                {new Date(hoveredK.time).toLocaleDateString('zh-TW', {timeZone: 'Asia/Taipei'})}
+              </span>
+              <div className="flex gap-2.5">
+                <span>O <span className="text-white">{formatPrice(hoveredK.open)}</span></span>
+                <span>H <span className="text-[#f6465d]">{formatPrice(hoveredK.high)}</span></span>
+                <span>L <span className="text-[#0ecb81]">{formatPrice(hoveredK.low)}</span></span>
+                <span>C <span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81]"}>{formatPrice(hoveredK.close)}</span></span>
+                <span className="text-amber-400 ml-1">V {(hoveredK.volume / 1000).toFixed(0)}K</span>
+                <span className={hoveredK.macd?.hist >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]"}>
+                  M {hoveredK.macd?.hist?.toFixed(2)}
+                </span>
+                <span className="text-[#3b82f6]">D {hoveredK.macd?.macd?.toFixed(2)}</span>
+                <span className="text-[#fbbf24]">S {hoveredK.macd?.signal?.toFixed(2)}</span>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="bg-[#0b0e14]/60 backdrop-blur p-2 rounded border border-white/5 text-slate-500 italic">
-            左右滑動查看歷史數據，滑鼠移入查看細節 (數據始於 2024)
-          </div>
-        )}
+          ) : (
+            <div className="text-[10px] text-slate-500 font-bold flex gap-4">
+               <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-[#f59e0b]"></div> MA5</span>
+               <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-[#8b5cf6]"></div> MA10</span>
+               <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-[#d946ef]"></div> MA20</span>
+               <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-[#10b981]"></div> MA60</span>
+            </div>
+          )}
+        </div>
+        <div className="text-[10px] text-blue-400/60 font-black tracking-widest uppercase">
+          Daily Chart Since 2024
+        </div>
       </div>
 
       <div 
@@ -1755,14 +1802,22 @@ function TwKLineChart({ klines }) {
       >
         <div ref={containerRef} style={{ width: `${width}px` }} className="h-full relative">
           <svg width={width} height={totalHeight} className="text-xs font-mono">
-            <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
+            {/* 網格與背景線 */}
+            {[0, 0.25, 0.5, 0.75, 1].map(tick => (
+               <line key={tick} x1="0" y1={getPriceY(minPrice + priceRange * tick)} x2={width} y2={getPriceY(minPrice + priceRange * tick)} stroke="#2a2f3a" strokeWidth="0.5" strokeDasharray="4 4" opacity="0.4"/>
+            ))}
             <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
-            <line x1="0" y1={macdCenterY} x2={width} y2={macdCenterY} stroke="#334155" strokeWidth="1" strokeDasharray="2 2" />
+            <line x1="0" y1={macdCenterY} x2={width} y2={macdCenterY} stroke="#334155" strokeWidth="1" strokeDasharray="4 4" />
 
+            {/* 均線系統 */}
             <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.2" opacity="0.8" />
             <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.2" opacity="0.8" />
             <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.2" opacity="0.8" />
             <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.2" opacity="0.8" />
+
+            {/* MACD 線條系統 */}
+            <path d={getMACDLinePath()} fill="none" stroke="#3b82f6" strokeWidth="1.2" opacity="0.9" />
+            <path d={getSignalLinePath()} fill="none" stroke="#fbbf24" strokeWidth="1.2" opacity="0.9" />
 
             {visibleKlines.map((k, i) => {
               const x = paddingX + i * xStep; 
@@ -1771,7 +1826,7 @@ function TwKLineChart({ klines }) {
               const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
               const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
               const volY = getVolY(k.volume || 0);
-              const midX = x + candleWidth * 0.5;
+              const midX = x + 4; // 置中
 
               const macdVal = k.macd?.hist || 0;
               const macdH = Math.abs(macdVal) * macdScale;
@@ -1780,26 +1835,42 @@ function TwKLineChart({ klines }) {
 
               return (
                 <g key={k.time || i}>
+                  {/* K線與影線 */}
                   <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
                   <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.2" />
-                  <rect x={x} y={macdY} width={candleWidth} height={Math.max(1, macdH)} fill={macdColor} opacity="0.9" />
+                  
+                  {/* 成交量 (極淡底) */}
+                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.1" />
+                  
+                  {/* MACD 買賣動能柱 */}
+                  <rect x={x} y={macdY} width={candleWidth} height={Math.max(1, macdH)} fill={macdColor} opacity="0.85" />
                 </g>
               );
             })}
 
+            {/* 十字游標輔助線 */}
             {hoveredIndex !== null && (
-              <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+              <line x1={paddingX + hoveredIndex * xStep + 4} y1={0} x2={paddingX + hoveredIndex * xStep + 4} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
             )}
           </svg>
         </div>
       </div>
       
-      <div className="absolute right-0 top-0 bottom-0 w-16 bg-[#0b0e14]/80 backdrop-blur-sm border-l border-[#2a2f3a] flex flex-col justify-between py-5 px-1 pointer-events-none z-20">
-          <div className="text-[10px] font-bold text-slate-400">{formatPrice(maxPrice)}</div>
-          <div className="text-[10px] font-bold text-slate-400">{formatPrice((maxPrice+minPrice)/2)}</div>
-          <div className="text-[10px] font-bold text-slate-400 mb-32">{formatPrice(minPrice)}</div>
-          <div className="text-[10px] font-bold text-blue-400">{Math.floor(maxVol * 0.001)}K</div>
+      {/* 右側價格標籤欄 (固定) */}
+      <div className="absolute right-0 top-0 bottom-0 w-16 bg-[#0b0e14]/90 backdrop-blur-md border-l border-[#2a2f3a] flex flex-col justify-between py-10 px-1 pointer-events-none z-30 shadow-[-10px_0_20px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-col items-center">
+            <div className="text-[10px] font-black text-[#f6465d] bg-[#f6465d]/10 px-1 rounded mb-1">HIGH</div>
+            <div className="text-[10px] font-mono font-bold text-slate-300">{formatPrice(maxPrice)}</div>
+          </div>
+          <div className="text-[10px] font-mono font-bold text-slate-500 border-y border-[#2a2f3a] py-1 text-center">MID {formatPrice((maxPrice+minPrice)/2)}</div>
+          <div className="flex flex-col items-center">
+            <div className="text-[10px] font-mono font-bold text-slate-300">{formatPrice(minPrice)}</div>
+            <div className="text-[10px] font-black text-[#0ecb81] bg-[#0ecb81]/10 px-1 rounded mt-1">LOW</div>
+          </div>
+          <div className="pt-4 border-t border-[#2a2f3a] mt-4 flex flex-col items-center gap-1">
+            <div className="text-[9px] font-black text-blue-400">VOL MAX</div>
+            <div className="text-[10px] font-mono font-bold text-slate-400">{Math.floor(maxVol * 0.001)}K</div>
+          </div>
       </div>
     </div>
   );
