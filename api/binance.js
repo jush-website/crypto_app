@@ -131,9 +131,7 @@ export default async function handler(req, res) {
       let queryRange = range;
       if (!queryRange) {
           if (queryInterval === '1m') queryRange = '1d';
-          else if (queryInterval === '1wk') queryRange = '5y';
-          else if (queryInterval === '1mo') queryRange = '10y';
-          else queryRange = '6mo';
+          else queryRange = '5y'; // 預設抓取 5 年日線數據，確保完整涵蓋 2024 年至今的數據
       }
       
       let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${queryRange}&interval=${queryInterval}`);

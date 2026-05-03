@@ -1630,6 +1630,7 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
 
 function TwKLineChart({ klines }) {
   const containerRef = useRef(null);
+  const scrollRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
   if (!klines || !Array.isArray(klines) || klines.length === 0) {
@@ -1642,17 +1643,19 @@ function TwKLineChart({ klines }) {
       );
   }
 
-  const visibleCount = 80;
-  const visibleKlines = klines.slice(-visibleCount);
+  // 顯示所有數據以支援滑動
+  const visibleKlines = klines;
+  const dataCount = visibleKlines.length;
 
-  const width = 800; const totalHeight = 580;
-  const paddingX = 10; const paddingY = 20;
+  const width = Math.max(800, dataCount * 12); // 每根 K 棒給予固定寬度，確保可滑動
+  const totalHeight = 580;
+  const paddingX = 20; const paddingY = 20;
   const priceHeight = 400;
   const volTop = 440;
   const volHeight = 120;
 
-  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length - 1, 1);
-  const candleWidth = Math.max(xStep * 0.6, 1);
+  const xStep = (width - paddingX * 2.0) / Math.max(dataCount - 1, 1);
+  const candleWidth = Math.max(xStep * 0.7, 5);
 
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n));
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
@@ -1665,12 +1668,21 @@ function TwKLineChart({ klines }) {
   const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2.0);
   const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
 
+  // 自動捲動到最右側（最新數據）
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    }
+  }, [klines]);
+
   const handleMouseMove = (e) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (width * (1.0 / rect.width));
+    const scrollLeft = scrollRef.current ? scrollRef.current.scrollLeft : 0;
+    // 需要考慮捲動後的 X 座標
+    const x = (e.clientX - rect.left) + scrollLeft;
     const dataIndex = Math.floor((x - paddingX) / xStep);
-    setHoveredIndex((dataIndex >= 0 && dataIndex < visibleKlines.length) ? dataIndex : null);
+    setHoveredIndex((dataIndex >= 0 && dataIndex < dataCount) ? dataIndex : null);
   };
 
   const getMAPath = (maKey) => {
@@ -1688,60 +1700,79 @@ function TwKLineChart({ klines }) {
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
 
   return (
-    <div className="w-full relative group h-[400px] sm:h-[580px]">
-      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
-        {hoveredK && (
+    <div className="w-full relative group h-[400px] sm:h-[580px] bg-[#0b0e14] rounded-2xl border border-[#2a2f3a] overflow-hidden">
+      {/* 浮動資訊欄 - 固定在左上角 */}
+      <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-20 pointer-events-none">
+        {hoveredK ? (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
+            <div>DATE: {new Date(hoveredK.time).toLocaleDateString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
             <div className="flex gap-2">
               <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK.close >= (visibleKlines[hoveredIndex-1]?.close || hoveredK.open) ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
               <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) * 0.001).toLocaleString()} 張</span></span>
             </div>
+          </div>
+        ) : (
+          <div className="bg-[#0b0e14]/60 backdrop-blur p-2 rounded border border-white/5 text-slate-500 italic">
+            左右滑動查看歷史數據，滑鼠移入查看細節 (數據始於 2024)
           </div>
         )}
       </div>
 
-      <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          {/* 背景輔助線 */}
-          <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
-          <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
+      <div 
+        ref={scrollRef} 
+        className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar" 
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        <div 
+          ref={containerRef} 
+          style={{ width: `${width}px` }} 
+          className="h-full relative cursor-crosshair"
+          onMouseMove={handleMouseMove}
+        >
+          <svg width={width} height={totalHeight} className="text-xs font-mono">
+            {/* 背景輔助線 */}
+            <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
+            <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
 
-          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
+            <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
+            <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
 
-          {visibleKlines.map((k, i) => {
-            const x = paddingX + i * xStep; 
-            const isUp = k.close >= k.open; 
-            const color = isUp ? '#f6465d' : '#0ecb81'; 
+            {visibleKlines.map((k, i) => {
+              const x = paddingX + i * xStep; 
+              const isUp = k.close >= k.open; 
+              const color = isUp ? '#f6465d' : '#0ecb81'; 
 
-            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
-            const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
-            const volY = getVolY(k.volume || 0);
+              const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
+              const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+              const volY = getVolY(k.volume || 0);
 
-            const midX = x + candleWidth * 0.5;
+              const midX = x + candleWidth * 0.5;
 
-            return (
-              <g key={k.time || i}>
-                <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
-                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
-              </g>
-            );
-          })}
+              return (
+                <g key={k.time || i}>
+                  <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
+                  <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
+                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
+                </g>
+              );
+            })}
 
-          {hoveredIndex !== null && (
-            <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
-          )}
-
-          <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
-          <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
-          <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol * 0.001)}K 張</text>
-        </svg>
+            {hoveredIndex !== null && (
+              <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+            )}
+          </svg>
+        </div>
+      </div>
+      
+      {/* 固定價格標籤 */}
+      <div className="absolute right-0 top-0 bottom-0 w-16 bg-[#0b0e14]/80 backdrop-blur-sm border-l border-[#2a2f3a] flex flex-col justify-between py-5 px-1 pointer-events-none z-20">
+          <div className="text-[10px] font-bold text-slate-400">{formatPrice(maxPrice)}</div>
+          <div className="text-[10px] font-bold text-slate-400">{formatPrice((maxPrice+minPrice)/2)}</div>
+          <div className="text-[10px] font-bold text-slate-400 mb-32">{formatPrice(minPrice)}</div>
+          <div className="text-[10px] font-bold text-blue-400">{Math.floor(maxVol * 0.001)}K</div>
       </div>
     </div>
   );
@@ -1792,7 +1823,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
-  const [timeframe, setTimeframe] = useState('1d'); // 新增：時區狀態
 
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
@@ -1835,7 +1865,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
     const fetchChart = async () => {
         try {
             setChartLoading(true);
-            const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}&interval=${timeframe}`);
+            const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}&interval=1d`);
             if (!res.ok) throw new Error('History fetch failed');
             const historyData = await res.json();
 
@@ -1874,7 +1904,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
         isMounted = false; 
         fetchQuoteQueue.unsubscribe(stock.symbol, handleQuote);
     };
-  }, [stock.symbol, stock.officialPrevClose, timeframe]);
+  }, [stock.symbol, stock.officialPrevClose]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1980,7 +2010,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
     else if (totalScore >= 7) shortTerm = { action: '建議買入', color: 'text-[#f6465d]', desc: '站穩布林中軌，多頭訊號確認，建議採 3:3:4 分批進場策略。' };
     else if (totalScore <= 3) shortTerm = { action: '建議賣出', color: 'text-[#0ecb81]', desc: '失守布林中軌且籌碼流失，建議分批減碼以規避下行風險。' };
 
-    let midTerm = isAboveMA20 ? { action: '波段做多', color: 'text-[#f6465d]', desc: '股價站上月線 (布林中軌)，中期多頭趨勢不變。' } : { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守月線 (布林中軌) 關鍵支撐，中期轉為震盪偏空。' };
+    let midTerm = isAboveMA20 ? { action: '波段做多', color: 'text-[#f6465d]', desc: '股價站上布林中軌 (MA20)，中期多頭趨勢不變。' } : { action: '逢高減碼', color: 'text-[#0ecb81]', desc: '失守布林中軌 (MA20) 關鍵支撐，中期轉為震盪偏空。' };
     let longTerm = latest.close > (latest.ma60 || 0) ? { action: '偏多持有', color: 'text-[#f6465d]', desc: '守住季線大支撐，長線格局穩定。' } : { action: '偏空觀望', color: 'text-[#0ecb81]', desc: '跌破季線生命線，長線需謹慎。' };
 
     // 點位計算
@@ -2027,17 +2057,14 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
   let isVolShrinking = false;
 
   if (latestData) {
-      if (latestData.close > (latestData.ma5 || 0)) momentumScore++;
       if (latestData.close > (latestData.ma10 || 0)) momentumScore++;
       if (latestData.macd && latestData.macd.hist > 0) momentumScore++;
       
-      isBullishMA = (latestData.ma5 > latestData.ma10) && (latestData.ma10 > latestData.ma20) && (latestData.close > latestData.ma5);
+      isBullishMA = (latestData.ma10 > latestData.ma60) && (latestData.close > latestData.ma10);
 
-      if (latestData.close > latestData.ma5 && latestData.close > latestData.ma10) {
-          maStatusMsg = "站穩 5日 與 10日線 (回踩不破可進場)";
-      } else if (latestData.close > latestData.ma10 && latestData.close < latestData.ma5) {
-          maStatusMsg = "跌破 5日線，測試 10日線支撐";
-      } else if (latestData.close < latestData.ma10) {
+      if (latestData.close > latestData.ma10) {
+          maStatusMsg = "站穩 10日線 (波段支撐參考)";
+      } else {
           maStatusMsg = "跌破 10日均線 (需提高警覺或停損)";
       }
       
@@ -2402,33 +2429,13 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
           <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
             <div className="p-3 flex items-center justify-between border-b border-[#2a2f3a]/50 mb-1">
               <div className="flex gap-4 text-[10px] font-mono">
-                <span className="text-amber-500 font-bold">MA5</span>
                 <span className="text-purple-400 font-bold">MA10</span>
-                <span className="text-fuchsia-400 font-bold">MA20</span>
                 <span className="text-emerald-500 font-bold">MA60</span>
               </div>
-              <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a]">
-                <button 
-                  onClick={() => setTimeframe('1d')} 
-                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1d' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  日線
-                </button>
-                <button 
-                  onClick={() => setTimeframe('1wk')} 
-                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1wk' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  周線
-                </button>
-                <button 
-                  onClick={() => setTimeframe('1mo')} 
-                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1mo' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
-                >
-                  月線
-                </button>
+              <div className="flex bg-[#0b0e14] px-3 py-1 rounded-lg border border-[#2a2f3a] text-[10px] font-bold text-blue-400">
+                日線模式 (數據始於 2024)
               </div>
-            </div>
-            {chartLoading ? (
+              </div>            {chartLoading ? (
               <div className="w-full h-[400px] sm:h-[580px] flex items-center justify-center">
                 <RefreshCw className="w-8 h-8 animate-spin text-slate-600" />
               </div>
