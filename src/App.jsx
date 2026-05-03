@@ -1923,10 +1923,13 @@ function TwChipChart({ history }) {
   );
 }
 
-function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) {
+function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], watchlist = [], toggleWatchlist }) {
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const isInWatchlist = watchlist.includes(stock.symbol);
 
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
@@ -2331,7 +2334,30 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
           <div className="bg-[#121620] p-4 sm:p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
             
-            <h2 className="text-2xl sm:text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex bg-[#0b0e14] rounded-lg border border-[#2a2f3a] p-0.5">
+                    <button 
+                      onClick={() => toggleWatchlist(stock.symbol)}
+                      className="p-1.5 rounded-md hover:bg-white/5 transition-all"
+                      title="快速自選"
+                    >
+                      <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+                    </button>
+                    <button 
+                      onClick={() => setShowAddModal(true)}
+                      className="p-1.5 rounded-md hover:bg-white/5 transition-all text-slate-600 hover:text-blue-400 border-l border-[#2a2f3a]"
+                      title="加入分組"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">加入自選分組</span>
+                </div>
+              </div>
+            </div>
             
             <div className="mt-6 p-4 sm:p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
                 <div className="text-sm text-slate-400 mb-2 font-bold flex items-center gap-2">
@@ -2789,6 +2815,8 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
 
         </div>
       </div>
+      
+      {showAddModal && <AddToWatchlistModal symbol={stock.symbol} type="tw" onClose={() => setShowAddModal(false)} />}
       
       <div className="mt-8 text-center text-xs text-slate-500 bg-[#121620] py-3 rounded-xl border border-[#2a2f3a]">
         即時報價與 K 線數據來源：純前端 API 直連與跨域代理技術
@@ -3337,10 +3365,13 @@ function CryptoAssetsPage({ paperAccount, resetCryptoAccount }) {
   );
 }
 
-function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition }) {
+function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition, closePosition, adjustPosition, watchlist = [], toggleWatchlist }) {
   const [klines, setKlines] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(parseFloat(coin.lastPrice));
   const [multiSignals, setMultiSignals] = useState({ '15m': null, '1h': null, '4h': null });
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const isInWatchlist = watchlist.includes(coin.symbol);
 
   useEffect(() => {
     let isMounted = true;
@@ -3378,7 +3409,26 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-[#121620] p-5 rounded-xl border border-[#2a2f3a] shadow-lg">
             <h2 className="text-3xl font-black text-white">{String(coin.symbol).replace('USDT','')} <span className="text-sm font-normal text-slate-500">USDT</span></h2>
-            <div className="text-3xl font-mono font-bold text-white mt-2">${formatPrice(currentPrice)}</div>
+            <div className="flex items-center gap-2 mt-3">
+              <div className="flex bg-[#0b0e14] rounded-lg border border-[#2a2f3a] p-0.5">
+                <button 
+                  onClick={() => toggleWatchlist(coin.symbol)}
+                  className="p-1.5 rounded-md hover:bg-white/5 transition-all"
+                  title="快速自選"
+                >
+                  <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+                </button>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="p-1.5 rounded-md hover:bg-white/5 transition-all text-slate-600 hover:text-blue-400 border-l border-[#2a2f3a]"
+                  title="加入分組"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">加入自選分組</span>
+            </div>
+            <div className="text-3xl font-mono font-bold text-white mt-4">${formatPrice(currentPrice)}</div>
           </div>
           <div className="bg-[#121620] rounded-xl border border-[#2a2f3a] p-5 shadow-lg"><CryptoTradeForm symbol={coin.symbol} currentPrice={currentPrice} balance={paperAccount.balance} onOpenPosition={openPosition} /></div>
           
@@ -3848,17 +3898,16 @@ export default function App() {
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
         {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
-        {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} allStocks={twStocks} />}
+        {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} allStocks={twStocks} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
         {currentRoute === 'tw_watchlists' && <WatchlistDashboard type="tw" />}
         {currentRoute === 'tw_watchlist_detail' && <WatchlistDetailPage listId={currentWatchlistId} type="tw" allStocks={twStocks} toggleWatchlist={toggleWatchlist} watchlist={cloudTwWatchlist} />}
-        
+
         {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} watchlist={cloudCryptoWatchlist} />}
         {currentRoute === 'crypto_positions' && <CryptoPositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
         {currentRoute === 'crypto_assets' && <CryptoAssetsPage paperAccount={paperAccount} resetCryptoAccount={resetCryptoAccount} />}
-        {currentRoute === 'crypto_trade' && selectedCoin && <CryptoTradingWorkspace coin={selectedCoin} fundingRate={fundingRates[selectedCoin.symbol]} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
-        {currentRoute === 'crypto_watchlists' && <WatchlistDashboard type="crypto" />}
+        {currentRoute === 'crypto_trade' && selectedCoin && <CryptoTradingWorkspace coin={selectedCoin} fundingRate={fundingRates[selectedCoin.symbol]} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} watchlist={cloudCryptoWatchlist} toggleWatchlist={toggleWatchlist} />}        {currentRoute === 'crypto_watchlists' && <WatchlistDashboard type="crypto" />}
         {currentRoute === 'crypto_watchlist_detail' && <WatchlistDetailPage listId={currentWatchlistId} type="crypto" allTickers={allTickers} />}
       </main>
     </div>
