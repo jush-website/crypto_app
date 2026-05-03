@@ -45,7 +45,7 @@ function LoginPage() {
           onClick={loginWithGoogle}
           className="w-full bg-white text-black hover:bg-slate-200 py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
         >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/layout/google.svg" alt="Google" className="w-5 h-5" />
+          <img src="https://fonts.gstatic.com/s/i/productlogos/googleg/v6/24px.svg" alt="Google" className="w-5 h-5" />
           使用 Google 帳號登入
         </button>
         
@@ -3338,7 +3338,28 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'users', user.uid, 'watchlists'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      if (snapshot.empty) {
+        // 初始化預設清單
+        try {
+          await addDoc(collection(db, 'users', user.uid, 'watchlists'), {
+            name: '台股觀察',
+            type: 'tw',
+            symbols: ['2330', '2317', '2454'],
+            createdAt: serverTimestamp()
+          });
+          await addDoc(collection(db, 'users', user.uid, 'watchlists'), {
+            name: '主流幣監控',
+            type: 'crypto',
+            symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
+            createdAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.error("Error initializing default watchlists: ", e);
+        }
+        return;
+      }
+
       let twSymbols = new Set();
       let cryptoSymbols = new Set();
       snapshot.docs.forEach(doc => {
