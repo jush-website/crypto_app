@@ -1710,10 +1710,16 @@ function TwKLineChart({ klines }) {
   const handleMouseMove = (e) => {
     if (!containerRef.current || isDragging) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const currentScrollLeft = scrollRef.current ? scrollRef.current.scrollLeft : 0;
-    const x = (e.clientX - rect.left) + currentScrollLeft;
-    const dataIndex = Math.round((x - paddingX) / xStep);
-    setHoveredIndex((dataIndex >= 0 && dataIndex < dataCount) ? dataIndex : null);
+    const x = e.clientX - rect.left;
+    // 使用 Math.floor 並給予偏移，當滑鼠進入右側緩衝區時，自動鎖定在最後一根 K 線
+    let dataIndex = Math.floor((x - paddingX + 4) / xStep);
+    
+    if (dataIndex < 0) {
+      setHoveredIndex(null);
+    } else {
+      // 如果超過現有數據量，則顯示最後一根（方便查看最新價格資訊）
+      setHoveredIndex(Math.min(dataIndex, dataCount - 1));
+    }
   };
 
   const getMAPath = (maKey) => {
