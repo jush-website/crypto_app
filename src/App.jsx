@@ -4,8 +4,67 @@ import {
   ZoomIn, ZoomOut, MoveHorizontal, X, Layers, BarChart2, Waves, 
   Menu, Bitcoin, LineChart, Newspaper, ChevronRight, Globe, ExternalLink, 
   Clock, ShieldAlert, Crosshair, Activity, PieChart, CheckCircle2, Calculator, Star,
-  AlertTriangle
+  AlertTriangle, LogOut, User, List, Plus, Trash2, Edit3
 } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
+import { db } from './firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  arrayUnion, 
+  arrayRemove,
+  serverTimestamp 
+} from 'firebase/firestore';
+
+// ==========================================
+// 0. 登入頁面
+// ==========================================
+function LoginPage() {
+  const { loginWithGoogle } = useAuth();
+  
+  return (
+    <div className="min-h-screen bg-[#0b0e14] flex flex-col items-center justify-center p-4">
+      <div className="max-w-md w-full bg-[#121620] border border-[#2a2f3a] rounded-3xl p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-500">
+        <div className="flex justify-center mb-6">
+          <div className="bg-blue-600/20 p-4 rounded-3xl border border-blue-500/30">
+            <Globe className="w-16 h-16 text-blue-500" />
+          </div>
+        </div>
+        <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">SMC MAX</h1>
+        <p className="text-slate-400 mb-8 leading-relaxed text-sm">
+          全自動 SMC 策略掃描、台股主力分點追蹤、全球即時新聞，一站式金融決策中樞。
+        </p>
+        
+        <button 
+          onClick={loginWithGoogle}
+          className="w-full bg-white text-black hover:bg-slate-200 py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/layout/google.svg" alt="Google" className="w-5 h-5" />
+          使用 Google 帳號登入
+        </button>
+        
+        <div className="mt-8 pt-8 border-t border-[#2a2f3a] flex flex-wrap justify-center gap-4">
+           <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
+             <ShieldAlert className="w-3 h-3" /> 安全認證
+           </div>
+           <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
+             <Zap className="w-3 h-3" /> 即時同步
+           </div>
+           <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
+             <Layers className="w-3 h-3" /> 雲端備份
+           </div>
+        </div>
+      </div>
+      <p className="mt-8 text-slate-600 text-[10px]">© 2026 SMC MAX Financial Intelligence Terminal</p>
+    </div>
+  );
+}
 
 // ==========================================
 // 1. 全域輔助函數
@@ -596,8 +655,242 @@ function generateBranchData(symbol, price, change, vol) {
 }
 
 // ==========================================
-// 3. UI 系統元件宣告
+// 3.5 自選清單管理元件 (Firestore)
 // ==========================================
+function WatchlistDashboard({ type }) {
+  const { user } = useAuth();
+  const [watchlists, setWatchlists] = useState([]);
+  const [newListName, setNewListName] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'watchlists'),
+      where('type', '==', type)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const lists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setWatchlists(lists.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    });
+    return () => unsubscribe();
+  }, [user, type]);
+
+  const handleCreateList = async () => {
+    if (!newListName.trim()) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'watchlists'), {
+        name: newListName,
+        type: type,
+        symbols: [],
+        createdAt: serverTimestamp()
+      });
+      setNewListName('');
+      setIsAdding(false);
+    } catch (e) {
+      console.error("Error adding document: ", e);
+    }
+  };
+
+  const handleDeleteList = async (id) => {
+    if (window.confirm('確定要刪除此自選清單嗎？')) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'watchlists', id));
+      } catch (e) {
+        console.error("Error deleting document: ", e);
+      }
+    }
+  };
+
+  const handleUpdateName = async (id) => {
+    if (!editName.trim()) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'watchlists', id), {
+        name: editName
+      });
+      setEditingId(null);
+    } catch (e) {
+      console.error("Error updating document: ", e);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-black text-white flex items-center gap-3">
+          <List className={`w-8 h-8 ${type === 'tw' ? 'text-blue-500' : 'text-[#f7931a]'}`} />
+          {type === 'tw' ? '台股自選分組' : '加密貨幣自選分組'}
+        </h2>
+        <button 
+          onClick={() => setIsAdding(true)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all ${type === 'tw' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-[#f7931a] hover:bg-[#e8840e]'} text-white`}
+        >
+          <Plus className="w-4 h-4" /> 新增清單
+        </button>
+      </div>
+
+      {isAdding && (
+        <div className="bg-[#121620] border border-blue-500/30 p-6 rounded-2xl animate-in slide-in-from-top-4 duration-300">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+             <Plus className="w-4 h-4 text-blue-500" /> 建立新的分組清單
+          </h3>
+          <div className="flex gap-3">
+            <input 
+              type="text" 
+              value={newListName} 
+              onChange={e => setNewListName(e.target.value)}
+              placeholder="例如：半導體龍頭、我的持倉..."
+              className="flex-1 bg-[#0b0e14] border border-[#2a2f3a] rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-all"
+              onKeyPress={e => e.key === 'Enter' && handleCreateList()}
+            />
+            <button onClick={handleCreateList} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold transition-all">建立</button>
+            <button onClick={() => setIsAdding(false)} className="bg-[#2a2f3a] hover:bg-[#3a4150] text-slate-300 px-6 py-3 rounded-xl font-bold transition-all">取消</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {watchlists.map(list => (
+          <div key={list.id} className="bg-[#121620] border border-[#2a2f3a] rounded-2xl p-6 hover:border-blue-500/40 transition-all group relative overflow-hidden">
+            <div className="flex justify-between items-start mb-4">
+              {editingId === list.id ? (
+                <div className="flex gap-2 w-full pr-12">
+                  <input 
+                    type="text" 
+                    value={editName} 
+                    onChange={e => setEditName(e.target.value)}
+                    className="flex-1 bg-[#0b0e14] border border-blue-500/50 rounded-lg px-2 py-1 text-sm text-white outline-none"
+                    autoFocus
+                  />
+                  <button onClick={() => handleUpdateName(list.id)} className="text-blue-500"><CheckCircle2 className="w-5 h-5"/></button>
+                  <button onClick={() => setEditingId(null)} className="text-slate-500"><X className="w-5 h-5"/></button>
+                </div>
+              ) : (
+                <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors flex items-center gap-2">
+                  {list.name}
+                  <button onClick={() => { setEditingId(list.id); setEditName(list.name); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-white transition-all"><Edit3 className="w-3 h-3"/></button>
+                </h3>
+              )}
+              
+              <div className="flex gap-1">
+                <button onClick={() => handleDeleteList(list.id)} className="p-2 text-slate-600 hover:text-red-400 transition-all"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 mb-6 min-h-[40px]">
+              {list.symbols && list.symbols.length > 0 ? list.symbols.map(sym => (
+                <div key={sym} className="bg-[#0b0e14] border border-[#2a2f3a] px-2 py-1 rounded-lg text-xs font-mono text-slate-300 flex items-center gap-1.5 group/tag">
+                  {sym}
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await updateDoc(doc(db, 'users', user.uid, 'watchlists', list.id), {
+                        symbols: arrayRemove(sym)
+                      });
+                    }}
+                    className="text-slate-600 hover:text-red-400"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )) : (
+                <span className="text-xs text-slate-600 italic">尚未加入任何標的</span>
+              )}
+            </div>
+
+            <button 
+              onClick={() => {
+                const routePrefix = type === 'tw' ? 'tw-stocks' : 'crypto';
+                window.location.hash = `#/${routePrefix}/watchlist/${list.id}`;
+              }}
+              className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${type === 'tw' ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20' : 'bg-[#f7931a]/10 text-[#f7931a] border border-[#f7931a]/20 hover:bg-[#f7931a]/20'}`}
+            >
+              進入此清單行情 <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+
+        {watchlists.length === 0 && !isAdding && (
+          <div className="col-span-full py-20 bg-[#121620] border border-dashed border-[#2a2f3a] rounded-3xl flex flex-col items-center justify-center text-slate-500">
+             <List className="w-12 h-12 mb-4 opacity-20" />
+             <p className="font-bold">目前沒有任何自選分組</p>
+             <button onClick={() => setIsAdding(true)} className="mt-4 text-blue-400 hover:underline">立即建立第一個分組</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WatchlistDetailPage({ listId, type, allStocks, allTickers, toggleWatchlist, watchlist }) {
+  const { user } = useAuth();
+  const [list, setList] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !listId) return;
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid, 'watchlists', listId), (doc) => {
+      if (doc.exists()) {
+        setList({ id: doc.id, ...doc.data() });
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user, listId]);
+
+  const filtered = useMemo(() => {
+    if (!list || !list.symbols) return [];
+    if (type === 'tw') {
+      return Array.isArray(allStocks) ? allStocks.filter(t => list.symbols.includes(t.symbol)) : [];
+    } else {
+      return Array.isArray(allTickers) ? allTickers.filter(t => list.symbols.includes(t.symbol)) : [];
+    }
+  }, [list, allStocks, allTickers, type]);
+
+  if (loading) return <div className="text-center py-32 text-slate-500"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" /> 讀取自選內容中...</div>;
+  if (!list) return <div className="text-center py-32 text-slate-500">找不到此清單</div>;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      <div className="flex items-center gap-4 mb-2">
+        <button onClick={() => window.location.hash = `#/${type === 'tw' ? 'tw-stocks' : 'crypto'}/watchlists`} className="p-2 bg-[#121620] border border-[#2a2f3a] rounded-xl text-slate-400 hover:text-white transition-all">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h2 className="text-2xl font-black text-white flex items-center gap-2">
+            {list.name} <span className="text-sm font-normal text-slate-500">({list.symbols?.length || 0} 檔)</span>
+          </h2>
+          <div className="text-xs text-slate-500 mt-1">分組自選清單 • 即時同步行情</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {type === 'tw' ? (
+          filtered.map(stock => (
+            <TwLiveStockCard key={stock.symbol} stock={stock} activeTab="WATCHLIST" watchlist={watchlist} toggleWatchlist={toggleWatchlist} />
+          ))
+        ) : (
+          filtered.map(t => (
+            <CryptoMarketCard key={t.symbol} ticker={t} multiSignals={{}} onSelectCoin={(s) => window.location.hash = `#/crypto/trade/${s}`} />
+          ))
+        )}
+        {filtered.length === 0 && (
+          <div className="col-span-full text-center py-20 bg-[#121620] border border-[#2a2f3a] rounded-2xl text-slate-500">
+             <p className="mb-4">此清單目前沒有任何標的</p>
+             <button 
+                onClick={() => window.location.hash = `#/${type === 'tw' ? 'tw-stocks' : 'crypto'}`}
+                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold"
+             >
+               前往行情中心加入標的
+             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function PortalPage() {
   const cards = [
@@ -622,12 +915,95 @@ function PortalPage() {
   );
 }
 
+// ==========================================
+// 3.6 加入自選清單 Modal
+// ==========================================
+function AddToWatchlistModal({ symbol, type, onClose }) {
+  const { user } = useAuth();
+  const [watchlists, setWatchlists] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'watchlists'),
+      where('type', '==', type)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setWatchlists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user, type]);
+
+  const handleToggle = async (listId, currentSymbols) => {
+    const isIncluded = currentSymbols.includes(symbol);
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'watchlists', listId), {
+        symbols: isIncluded ? arrayRemove(symbol) : arrayUnion(symbol)
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-[#121620] border border-[#2a2f3a] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-[#2a2f3a] flex justify-between items-center bg-[#1a1e27]">
+          <h3 className="text-white font-bold flex items-center gap-2">
+            <Plus className="w-4 h-4 text-blue-500" /> 加入自選分組
+          </h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+        </div>
+        
+        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+          <div className="text-[10px] text-slate-500 font-bold mb-3 uppercase tracking-wider">選擇分組標的: {symbol}</div>
+          
+          {loading ? (
+            <div className="flex justify-center py-8"><RefreshCw className="w-6 h-6 animate-spin text-slate-700" /></div>
+          ) : watchlists.length > 0 ? (
+            watchlists.map(list => {
+              const isIncluded = list.symbols?.includes(symbol);
+              return (
+                <button 
+                  key={list.id} 
+                  onClick={() => handleToggle(list.id, list.symbols || [])}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isIncluded ? 'bg-blue-600/10 border-blue-500/50 text-white' : 'bg-[#0b0e14] border-[#2a2f3a] text-slate-400 hover:border-slate-600'}`}
+                >
+                  <span className="font-medium">{list.name}</span>
+                  {isIncluded ? <CheckCircle2 className="w-5 h-5 text-blue-500" /> : <div className="w-5 h-5 rounded-full border border-slate-700" />}
+                </button>
+              );
+            })
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-xs text-slate-500 mb-4">目前沒有任何自選分組</p>
+              <button 
+                onClick={() => window.location.hash = `#/${type === 'tw' ? 'tw-stocks' : 'crypto'}/watchlists`}
+                className="text-xs text-blue-500 hover:underline"
+              >
+                前往建立第一個分組
+              </button>
+            </div>
+          )}
+        </div>
+        
+        <div className="p-4 bg-[#0b0e14] border-t border-[#2a2f3a]">
+          <button onClick={onClose} className="w-full bg-[#2a2f3a] text-white py-2.5 rounded-xl font-bold text-sm">完成</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) {
   const [price, setPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [changeNum, setChangeNum] = useState(parseFloat(stock.priceChangePercent) || 0);
   const [volNum, setVolNum] = useState(parseFloat(stock.quoteVolume) || 0);
   const [prevClose, setPrevClose] = useState(stock.officialPrevClose || 0);
   const [isSynced, setIsSynced] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const cardRef = useRef(null);
 
   const isInWatchlist = watchlist.includes(stock.symbol);
@@ -705,16 +1081,29 @@ function TwLiveStockCard({ stock, activeTab, watchlist = [], toggleWatchlist }) 
                {indTag && <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 whitespace-nowrap">{indTag}</span>}
              </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#f6465d]/10 text-[#f6465d]' : 'bg-[#0ecb81]/10 text-[#0ecb81]'}`}>{isPositive ? '+' : ''}{changeNum.toFixed(2)}%</div>
-            <button 
-              onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}
-              className="p-1.5 rounded-full hover:bg-white/5 transition-all"
-            >
-              <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600 hover:text-slate-400'}`} />
-            </button>
+            
+            <div className="flex bg-[#0b0e14] rounded-lg border border-[#2a2f3a] p-0.5">
+              <button 
+                onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}
+                className="p-1.5 rounded-md hover:bg-white/5 transition-all"
+                title="快速自選"
+              >
+                <Star className={`w-3.5 h-3.5 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+              </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowAddModal(true); }}
+                className="p-1.5 rounded-md hover:bg-white/5 transition-all text-slate-600 hover:text-blue-400 border-l border-[#2a2f3a]"
+                title="加入分組"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
+        
+        {showAddModal && <AddToWatchlistModal symbol={stock.symbol} type="tw" onClose={() => setShowAddModal(false)} />}
         
         <div className="mt-4 pt-4 border-t border-[#2a2f3a]/50">
           <div className="flex justify-between items-center mb-1">
@@ -2416,6 +2805,7 @@ function CryptoPositionCard({ pos, currentPrice, balance, onSelectCoin, onClose,
 }
 
 function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
+  const [showAddModal, setShowAddModal] = useState(false);
   const change = parseFloat(ticker.priceChangePercent);
   const isPositive = change >= 0;
   const activeSignals = ['15m', '1h', '4h'].filter(tf => multiSignals?.[tf] && multiSignals[tf].signal !== 'NEUTRAL');
@@ -2423,20 +2813,31 @@ function CryptoMarketCard({ ticker, multiSignals, onSelectCoin }) {
   return (
     <div onClick={() => {
         sessionStorage.setItem('dashboardScroll', window.scrollY.toString());
-        onSelectCoin(String(ticker.symbol)); 
-      }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col shadow-md group">
-      
+        onSelectCoin(String(ticker.symbol));
+      }} className="bg-[#121620] border border-[#2a2f3a] hover:border-blue-500/40 rounded-xl p-5 cursor-pointer transition-all flex flex-col shadow-md group relative">
+
       <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="font-bold text-slate-100 text-lg group-hover:text-blue-400">{String(ticker.symbol).replace('USDT', '')} <span className="text-xs text-slate-500">USDT</span></h3>
           <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Vol: {formatVolume(ticker.quoteVolume)}</div>
         </div>
-        <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>
-          {isPositive ? '+' : ''}{change.toFixed(2)}%
+        <div className="flex items-center gap-2">
+          <div className={`px-2 py-1 rounded text-xs font-bold ${isPositive ? 'bg-[#0ecb81]/10 text-[#0ecb81]' : 'bg-[#f6465d]/10 text-[#f6465d]'}`}>
+            {isPositive ? '+' : ''}{change.toFixed(2)}%
+          </div>
+          <button 
+            onClick={(e) => { e.stopPropagation(); setShowAddModal(true); }}
+            className="p-1.5 rounded-lg bg-[#0b0e14] border border-[#2a2f3a] text-slate-600 hover:text-blue-400 hover:border-blue-500/50 transition-all"
+            title="加入自選分組"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
       </div>
+
+      {showAddModal && <AddToWatchlistModal symbol={ticker.symbol} type="crypto" onClose={() => setShowAddModal(false)} />}
+
       <div className="text-2xl font-mono font-semibold text-white mb-3">${formatPrice(ticker.lastPrice)}</div>
-      
       <div className="mt-auto flex flex-col gap-2 pt-3 border-t border-[#2a2f3a]/50">
         {activeSignals.length > 0 ? activeSignals.map(tf => {
           const sig = multiSignals[tf];
@@ -2653,7 +3054,7 @@ function CryptoAdvancedKLineChart({ klines, signalData }) {
   );
 }
 
-function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDashState }) {
+function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDashState, watchlist = [] }) {
   const { activeTab, scanLimit, searchTerm, aiSignals, isScanning, scanProgress, initialScanned } = dashState;
 
   useEffect(() => {
@@ -2712,6 +3113,8 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
   
   if (searchTerm) {
       filtered = filtered.filter(t => String(t.symbol).includes(String(searchTerm).toUpperCase()));
+  } else if (activeTab === 'WATCHLIST') {
+      filtered = allTickers.filter(t => watchlist.includes(t.symbol));
   } else if (activeTab === 'LONG') {
       filtered = filtered.filter(t => aiSignals['15m']?.[t.symbol]?.signal === 'LONG' || aiSignals['1h']?.[t.symbol]?.signal === 'LONG' || aiSignals['4h']?.[t.symbol]?.signal === 'LONG');
   } else if (activeTab === 'SHORT') {
@@ -2722,10 +3125,10 @@ function CryptoDashboard({ allTickers, fundingRates, loading, dashState, setDash
     <div className="space-y-6 pb-20">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:sticky sm:top-[64px] z-10 py-3 bg-[#0b0e14]/95 backdrop-blur border-b border-[#2a2f3a]/50">
           <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto">
-                  {['ALL', 'LONG', 'SHORT'].map(t => (
+              <div className="flex bg-[#121620] p-1 rounded-lg border border-[#2a2f3a] w-full sm:w-auto overflow-x-auto scrollbar-hide">
+                  {['ALL', 'WATCHLIST', 'LONG', 'SHORT'].map(t => (
                     <button key={t} onClick={() => setDashState(p => ({ ...p, activeTab: t }))} className={`flex-1 sm:flex-none px-4 py-2 text-sm rounded transition-all whitespace-nowrap ${activeTab === t ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>
-                      {t === 'ALL' ? '全部' : t === 'LONG' ? '🔥 做多機會' : '🩸 做空機會'}
+                      {t === 'ALL' ? '全部' : t === 'WATCHLIST' ? '⭐ 自選' : t === 'LONG' ? '🔥 做多' : '🩸 做空'}
                     </button>
                   ))}
               </div>
@@ -2883,9 +3286,11 @@ function CryptoTradingWorkspace({ coin, fundingRate, paperAccount, openPosition,
 // 4. 主應用程式入口 App
 // ==========================================
 export default function App() {
+  const { user, loading: authLoading, logout } = useAuth();
   const [isStylesLoaded, setIsStylesLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
   const [currentRoute, setCurrentRoute] = useState('portal');
+  const [currentWatchlistId, setCurrentWatchlistId] = useState(null);
   
   const [twStocks, setTwStocks] = useState([]);
   const [twUpdateTime, setTwUpdateTime] = useState('');
@@ -2925,8 +3330,30 @@ export default function App() {
   const [paperAccount, setPaperAccount] = useState(() => { try { const s = localStorage.getItem('paperAccount'); return s ? JSON.parse(s) : { balance: 10000, positions: [], history: [] }; } catch(e) { return { balance: 10000, positions: [], history: [] }; } });
   const [twAccount, setTwAccount] = useState(() => { try { const s = localStorage.getItem('twAccount'); return s ? JSON.parse(s) : { balance: 10000000, positions: [], history: [] }; } catch(e) { return { balance: 10000000, positions: [], history: [] }; } });
   const [watchlist, setWatchlist] = useState(() => { try { const s = localStorage.getItem('twWatchlist'); return s ? JSON.parse(s) : []; } catch(e) { return []; } });
-  
+  const [cloudTwWatchlist, setCloudTwWatchlist] = useState([]);
+  const [cloudCryptoWatchlist, setCloudCryptoWatchlist] = useState([]);
+
   const [twLivePrices, setTwLivePrices] = useState({});
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'users', user.uid, 'watchlists'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let twSymbols = new Set();
+      let cryptoSymbols = new Set();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.type === 'tw' && data.symbols) {
+          data.symbols.forEach(s => twSymbols.add(s));
+        } else if (data.type === 'crypto' && data.symbols) {
+          data.symbols.forEach(s => cryptoSymbols.add(s));
+        }
+      });
+      setCloudTwWatchlist(Array.from(twSymbols));
+      setCloudCryptoWatchlist(Array.from(cryptoSymbols));
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   useEffect(() => { sessionStorage.setItem('protrade_dashState', JSON.stringify(dashState)); }, [dashState]);
   useEffect(() => { sessionStorage.setItem('protrade_twDashState', JSON.stringify(twDashState)); }, [twDashState]);
@@ -3097,6 +3524,18 @@ export default function App() {
       else if (h === 'tw-stocks') { setCurrentRoute('tw_stocks'); setSelectedTwStock(null); }
       else if (h === 'tw-stocks/positions') { setCurrentRoute('tw_positions'); }
       else if (h === 'tw-stocks/assets') { setCurrentRoute('tw_assets'); }
+      else if (h === 'tw-stocks/watchlists') { setCurrentRoute('tw_watchlists'); }
+      else if (h.startsWith('tw-stocks/watchlist/')) {
+          const id = h.replace('tw-stocks/watchlist/', '');
+          setCurrentWatchlistId(id);
+          setCurrentRoute('tw_watchlist_detail');
+      }
+      else if (h === 'crypto/watchlists') { setCurrentRoute('crypto_watchlists'); }
+      else if (h.startsWith('crypto/watchlist/')) {
+          const id = h.replace('crypto/watchlist/', '');
+          setCurrentWatchlistId(id);
+          setCurrentRoute('crypto_watchlist_detail');
+      }
       else if (h === 'news') { setCurrentRoute('news'); }
       else if (h === 'crypto/home') { setCurrentRoute('crypto_home'); setSelectedCoin(null); }
       else if (h === 'crypto/positions') { setCurrentRoute('crypto_positions'); setSelectedCoin(null); }
@@ -3146,11 +3585,13 @@ export default function App() {
 
   let backHash = '#/portal';
   let backLabel = '返回首頁';
-  if (currentRoute === 'tw_stock_detail' || currentRoute === 'tw_positions' || currentRoute === 'tw_assets') { backHash = '#/tw-stocks'; backLabel = '返回台股首頁'; }
-  else if (currentRoute === 'crypto_trade' || currentRoute === 'crypto_positions' || currentRoute === 'crypto_assets') { backHash = '#/crypto/home'; backLabel = '返回加密首頁'; }
+  if (currentRoute === 'tw_stock_detail' || currentRoute === 'tw_positions' || currentRoute === 'tw_assets' || currentRoute === 'tw_watchlists' || currentRoute === 'tw_watchlist_detail') { backHash = '#/tw-stocks'; backLabel = '返回台股首頁'; }
+  else if (currentRoute === 'crypto_trade' || currentRoute === 'crypto_positions' || currentRoute === 'crypto_assets' || currentRoute === 'crypto_watchlists' || currentRoute === 'crypto_watchlist_detail') { backHash = '#/crypto/home'; backLabel = '返回加密首頁'; }
   else if (currentRoute !== 'portal') { backHash = '#/portal'; backLabel = '返回入口'; }
 
-  if (!isStylesLoaded) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING ASSETS...</div>;
+  if (!isStylesLoaded || authLoading) return <div className="h-screen bg-[#0b0e14] flex items-center justify-center text-white font-mono">LOADING TERMINAL...</div>;
+
+  if (!user) return <LoginPage />;
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 font-sans selection:bg-blue-500/30 pb-10">
@@ -3162,16 +3603,18 @@ export default function App() {
             {currentRoute.startsWith('crypto') && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
                   <button onClick={() => window.location.hash = '#/crypto/home'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>加密市場</button>
+                  <button onClick={() => window.location.hash = '#/crypto/watchlists'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_watchlists' || currentRoute === 'crypto_watchlist_detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>自選分組</button>
                   <button onClick={() => window.location.hash = '#/crypto/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>持倉 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{paperAccount.positions.length}</span>}</button>
-                  <button onClick={() => window.location.hash = '#/crypto/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>資產帳戶</button>
+                  <button onClick={() => window.location.hash = '#/crypto/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'crypto_assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>帳戶</button>
                 </nav>
             )}
 
             {currentRoute.startsWith('tw_') && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
                   <button onClick={() => window.location.hash = '#/tw-stocks'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_stocks' || currentRoute === 'tw_stock_detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>台股市場</button>
-                  <button onClick={() => window.location.hash = '#/tw-stocks/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>波段持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{twAccount.positions.length}</span>}</button>
-                  <button onClick={() => window.location.hash = '#/tw-stocks/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>台股資產</button>
+                  <button onClick={() => window.location.hash = '#/tw-stocks/watchlists'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_watchlists' || currentRoute === 'tw_watchlist_detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>自選分組</button>
+                  <button onClick={() => window.location.hash = '#/tw-stocks/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{twAccount.positions.length}</span>}</button>
+                  <button onClick={() => window.location.hash = '#/tw-stocks/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>資產</button>
                 </nav>
             )}
 
@@ -3182,13 +3625,15 @@ export default function App() {
             )}
         </div>
         
-        {currentRoute.startsWith('crypto') ? (
-           <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">${(paperAccount.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-        ) : currentRoute.startsWith('tw_') ? (
-           <div className="bg-[#1a1e27] px-3 sm:px-4 py-1.5 sm:py-2 rounded border border-[#2a2f3a] flex items-center gap-2 sm:gap-3"><Wallet className="w-4 h-4 text-blue-400" /><span className="text-sm font-mono text-white font-bold">NT$ {Math.floor(twAccount.balance || 0).toLocaleString()}</span></div>
-        ) : currentRoute !== 'portal' ? (
-           <div className="text-xs font-bold px-3 py-1.5 bg-[#2a2f3a] rounded text-slate-300">熱點新聞中心</div>
-        ) : <div />}
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex flex-col items-end">
+            <span className="text-xs font-bold text-white">{user.displayName}</span>
+            <span className="text-[10px] text-slate-500">{user.email}</span>
+          </div>
+          <button onClick={logout} className="p-2 bg-[#1a1e27] hover:bg-red-500/10 border border-[#2a2f3a] hover:border-red-500/30 rounded-lg text-slate-400 hover:text-red-500 transition-all group" title="登出系統">
+            <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
       </header>
 
       {isMobileMenuOpen && (
@@ -3215,6 +3660,7 @@ export default function App() {
 
              <div className="text-xs text-slate-500 mt-4 mb-1 font-bold">台股與 ETF</div>
              <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_stocks' || currentRoute === 'tw_stock_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台股市場</button>
+             <button onClick={() => { window.location.hash = '#/tw-stocks/watchlists'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_watchlists' || currentRoute === 'tw_watchlist_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>自選分組</button>
              <button onClick={() => { window.location.hash = '#/tw-stocks/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold flex items-center justify-between transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
                 波段持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{twAccount.positions.length}</span>}
              </button>
@@ -3222,6 +3668,7 @@ export default function App() {
 
              <div className="text-xs text-slate-500 mt-4 mb-1 font-bold">虛擬貨幣 SMC</div>
              <button onClick={() => { window.location.hash = '#/crypto/home'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_home' || currentRoute === 'crypto_trade' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>加密市場</button>
+             <button onClick={() => { window.location.hash = '#/crypto/watchlists'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'crypto_watchlists' || currentRoute === 'crypto_watchlist_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>自選分組</button>
              <button onClick={() => { window.location.hash = '#/crypto/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold flex items-center justify-between transition-all ${currentRoute === 'crypto_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
                 持倉清單 {paperAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{paperAccount.positions.length}</span>}
              </button>
@@ -3233,15 +3680,19 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
-        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={watchlist} toggleWatchlist={toggleWatchlist} />}
+        {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} allStocks={twStocks} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
+        {currentRoute === 'tw_watchlists' && <WatchlistDashboard type="tw" />}
+        {currentRoute === 'tw_watchlist_detail' && <WatchlistDetailPage listId={currentWatchlistId} type="tw" allStocks={twStocks} toggleWatchlist={toggleWatchlist} watchlist={cloudTwWatchlist} />}
         
-        {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} />}
+        {currentRoute === 'crypto_home' && <CryptoDashboard allTickers={allTickers} fundingRates={fundingRates} loading={loadingCrypto} dashState={dashState} setDashState={setDashState} watchlist={cloudCryptoWatchlist} />}
         {currentRoute === 'crypto_positions' && <CryptoPositionsPage allTickers={allTickers} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
         {currentRoute === 'crypto_assets' && <CryptoAssetsPage paperAccount={paperAccount} resetCryptoAccount={resetCryptoAccount} />}
         {currentRoute === 'crypto_trade' && selectedCoin && <CryptoTradingWorkspace coin={selectedCoin} fundingRate={fundingRates[selectedCoin.symbol]} paperAccount={paperAccount} openPosition={openPosition} closePosition={closePosition} adjustPosition={adjustPosition} />}
+        {currentRoute === 'crypto_watchlists' && <WatchlistDashboard type="crypto" />}
+        {currentRoute === 'crypto_watchlist_detail' && <WatchlistDetailPage listId={currentWatchlistId} type="crypto" allTickers={allTickers} />}
       </main>
     </div>
   );
