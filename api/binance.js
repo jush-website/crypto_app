@@ -128,7 +128,13 @@ export default async function handler(req, res) {
     // ----------------------------------------------------
     else if (action === 'history' && symbol) {
       const queryInterval = interval || '1d';
-      const queryRange = range || (queryInterval === '1m' ? '1d' : '6mo');
+      let queryRange = range;
+      if (!queryRange) {
+          if (queryInterval === '1m') queryRange = '1d';
+          else if (queryInterval === '1wk') queryRange = '5y';
+          else if (queryInterval === '1mo') queryRange = '10y';
+          else queryRange = '6mo';
+      }
       
       let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${queryRange}&interval=${queryInterval}`);
       let data = html ? JSON.parse(html) : null;

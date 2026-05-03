@@ -1628,7 +1628,7 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
   );
 }
 
-function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
+function TwKLineChart({ klines }) {
   const containerRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
@@ -1642,8 +1642,7 @@ function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
       );
   }
 
-  const isOneMinute = isLineChart;
-  const visibleCount = isOneMinute ? klines.length : 80;
+  const visibleCount = 80;
   const visibleKlines = klines.slice(-visibleCount);
 
   const width = 800; const totalHeight = 580;
@@ -1653,16 +1652,10 @@ function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
   const volHeight = 120;
 
   const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length - 1, 1);
-  const candleWidth = (isOneMinute || isLineChart) ? 0 : Math.max(xStep * 0.6, 1);
+  const candleWidth = Math.max(xStep * 0.6, 1);
 
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n));
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
-
-  // 當日走勢圖時，將昨收價納入價格區間計算，確保平盤線在圖內
-  if (isLineChart && prevClose > 0) {
-      lows.push(prevClose);
-      highs.push(prevClose);
-  }
 
   const minPrice = lows.length ? Math.min(...lows) : 0;
   const maxPrice = highs.length ? Math.max(...highs) : 1;
@@ -1684,31 +1677,12 @@ function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
     let path = "";
     visibleKlines.forEach((k, i) => {
       if (k[maKey] != null && !isNaN(k[maKey])) {
-        const x = paddingX + i * xStep + (isLineChart ? 0 : candleWidth * 0.5);
+        const x = paddingX + i * xStep + candleWidth * 0.5;
         const y = getPriceY(k[maKey]);
         path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
       }
     });
     return path;
-  };
-
-  const getPriceLinePath = () => {
-    let path = "";
-    visibleKlines.forEach((k, i) => {
-      const x = paddingX + i * xStep;
-      const y = getPriceY(k.close);
-      path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
-    });
-    return path;
-  };
-
-  const getAreaPath = () => {
-    let path = getPriceLinePath();
-    if (!path) return "";
-    const lastX = paddingX + (visibleKlines.length - 1) * xStep;
-    const firstX = paddingX;
-    const baselineY = priceHeight - paddingY;
-    return `${path} L ${lastX} ${baselineY} L ${firstX} ${baselineY} Z`;
   };
 
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
@@ -1736,46 +1710,38 @@ function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
           <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
 
-          {/* 當日走勢參考線 (昨收/平盤線) */}
-          {isLineChart && prevClose > 0 && (
-            <g>
-              <line 
-                x1="0" y1={getPriceY(prevClose)} 
-                x2={width} y2={getPriceY(prevClose)} 
-                stroke="#475569" strokeWidth="1" strokeDasharray="5 5"
-              />
-              <text x="5" y={getPriceY(prevClose) - 5} fill="#475569" fontSize="10">昨收 {formatPrice(prevClose)}</text>
-            </g>
-          )}
+          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
+          <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
+          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
 
-          {!isLineChart && (
-            <>
-              <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-              <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
-              <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
-            </>
-          )}
+          {visibleKlines.map((k, i) => {
+            const x = paddingX + i * xStep; 
+            const isUp = k.close >= k.open; 
+            const color = isUp ? '#f6465d' : '#0ecb81'; 
 
-          {isLineChart ? (
-            <>
-              <defs>
-                <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={getAreaPath()} fill="url(#priceGradient)" />
-              <path d={getPriceLinePath()} fill="none" stroke="#3b82f6" strokeWidth="2" />
-              {visibleKlines.map((k, i) => {
-                const x = paddingX + i * xStep;
-                const volY = getVolY(k.volume || 0);
-                const isUp = k.close >= (visibleKlines[i-1]?.close || k.open);
-                return (
-                  <rect key={`vol-${i}`} x={x} y={volY} width={Math.max(xStep * 0.8, 1)} height={Math.max(1, volTop + volHeight - volY)} fill={isUp ? '#f6465d' : '#0ecb81'} opacity="0.8" />
-                );
-              })}
-            </>
-          ) : (            visibleKlines.map((k, i) => {
+            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
+            const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+            const volY = getVolY(k.volume || 0);
+
+            const midX = x + candleWidth * 0.5;
+
+            return (
+              <g key={k.time || i}>
+                <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
+                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
+                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
+              </g>
+            );
+          })}
+
+          {hoveredIndex !== null && (
+            <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+          )}
+        </svg>
+      </div>
+    </div>
+  );
+}            visibleKlines.map((k, i) => {
               const x = paddingX + i * xStep; 
               const isUp = k.close >= k.open; 
               const color = isUp ? '#f6465d' : '#0ecb81'; 
@@ -1797,7 +1763,7 @@ function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
           )}
           
           {hoveredIndex !== null && (
-            <line x1={paddingX + hoveredIndex * xStep + (isLineChart ? 0 : candleWidth * 0.5)} y1={0} x2={paddingX + hoveredIndex * xStep + (isLineChart ? 0 : candleWidth * 0.5)} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+            <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
           )}
 
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
@@ -1905,18 +1871,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
             
             const parsed = parseYahooData(historyData, stock.officialPrevClose);
             if (parsed && parsed.klines.length > 0) {
-                let displayKlines = parsed.klines;
-                
-                // 如果是 1 分盤，強制只顯示最後一個交易日 (當日) 的資料，避免跨日顯示導致視覺混亂
-                if (timeframe === '1m') {
-                    const lastK = displayKlines[displayKlines.length - 1];
-                    const lastDate = new Date(lastK.time).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
-                    displayKlines = displayKlines.filter(k => 
-                        new Date(k.time).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }) === lastDate
-                    );
-                }
-                
-                setChartData(calculateIndicators(displayKlines)); 
+                setChartData(calculateIndicators(parsed.klines)); 
                 
                 setCurrentPrice(parsed.price);
                 setCurrentChange(parsed.change.toFixed(2));
@@ -2488,10 +2443,16 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
                   日線
                 </button>
                 <button 
-                  onClick={() => setTimeframe('1m')} 
-                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1m' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                  onClick={() => setTimeframe('1wk')} 
+                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1wk' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
                 >
-                  1分盤
+                  周線
+                </button>
+                <button 
+                  onClick={() => setTimeframe('1mo')} 
+                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1mo' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  月線
                 </button>
               </div>
             </div>
@@ -2500,7 +2461,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
                 <RefreshCw className="w-8 h-8 animate-spin text-slate-600" />
               </div>
             ) : (
-              <TwKLineChart klines={chartData} isLineChart={timeframe === '1m'} prevClose={currentPrevClose} />
+              <TwKLineChart klines={chartData} />
             )}
           </div>
 
