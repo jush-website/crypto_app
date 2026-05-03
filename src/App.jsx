@@ -1632,6 +1632,9 @@ function TwKLineChart({ klines }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftState, setScrollLeftState] = useState(0);
 
   if (!klines || !Array.isArray(klines) || klines.length === 0) {
       return (
@@ -1643,11 +1646,9 @@ function TwKLineChart({ klines }) {
       );
   }
 
-  // 顯示所有數據以支援滑動
   const visibleKlines = klines;
   const dataCount = visibleKlines.length;
-
-  const width = Math.max(800, dataCount * 12); // 每根 K 棒給予固定寬度，確保可滑動
+  const width = Math.max(800, dataCount * 12); 
   const totalHeight = 580;
   const paddingX = 20; const paddingY = 20;
   const priceHeight = 400;
@@ -1659,28 +1660,50 @@ function TwKLineChart({ klines }) {
 
   const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n));
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
-
   const minPrice = lows.length ? Math.min(...lows) : 0;
   const maxPrice = highs.length ? Math.max(...highs) : 1;
   const priceRange = (maxPrice - minPrice) || 1;
   const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
 
+  // MACD 相關計算
+  const macdValues = visibleKlines.map(k => k.macd?.hist || 0).filter(n => !isNaN(n));
+  const maxMacd = macdValues.length ? Math.max(...macdValues.map(Math.abs)) : 1;
+  const macdScale = (volHeight / 2) / (maxMacd || 1);
+  const macdCenterY = volTop + volHeight / 2;
+
   const getPriceY = (p) => priceHeight - paddingY - ((p - minPrice) / priceRange) * (priceHeight - paddingY * 2.0);
   const getVolY = (v) => volTop + volHeight - (v / maxVol) * volHeight;
 
-  // 自動捲動到最右側（最新數據）
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
     }
   }, [klines]);
 
+  const onMouseDown = (e) => {
+    setIsDragging(true);
+    setStartX(e.pageX - scrollRef.current.offsetLeft);
+    setScrollLeftState(scrollRef.current.scrollLeft);
+  };
+
+  const onMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseMoveDrag = (e) => {
+    if (isDragging) {
+      e.preventDefault();
+      const x = e.pageX - scrollRef.current.offsetLeft;
+      const walk = (x - startX) * 2; 
+      scrollRef.current.scrollLeft = scrollLeftState - walk;
+    }
+  };
+
   const handleMouseMove = (e) => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || isDragging) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const scrollLeft = scrollRef.current ? scrollRef.current.scrollLeft : 0;
-    // 需要考慮捲動後的 X 座標
-    const x = (e.clientX - rect.left) + scrollLeft;
+    const currentScrollLeft = scrollRef.current ? scrollRef.current.scrollLeft : 0;
+    const x = (e.clientX - rect.left) + currentScrollLeft;
     const dataIndex = Math.floor((x - paddingX) / xStep);
     setHoveredIndex((dataIndex >= 0 && dataIndex < dataCount) ? dataIndex : null);
   };
@@ -1697,11 +1720,11 @@ function TwKLineChart({ klines }) {
     return path;
   };
 
+  const formatPrice = (p) => typeof p === 'number' ? p.toFixed(2) : '---';
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
 
   return (
-    <div className="w-full relative group h-[400px] sm:h-[580px] bg-[#0b0e14] rounded-2xl border border-[#2a2f3a] overflow-hidden">
-      {/* 浮動資訊欄 - 固定在左上角 */}
+    <div className="w-full relative group h-[400px] sm:h-[580px] bg-[#0b0e14] rounded-2xl border border-[#2a2f3a] overflow-hidden select-none">
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-20 pointer-events-none">
         {hoveredK ? (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
@@ -1712,6 +1735,7 @@ function TwKLineChart({ klines }) {
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
               <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
               <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) * 0.001).toLocaleString()} 張</span></span>
+              <span className="text-slate-500 ml-2">MACD:<span className={hoveredK.macd?.hist >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]"}>{hoveredK.macd?.hist?.toFixed(2)}</span></span>
             </div>
           </div>
         ) : (
@@ -1723,39 +1747,43 @@ function TwKLineChart({ klines }) {
 
       <div 
         ref={scrollRef} 
-        className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar" 
-        onMouseLeave={() => setHoveredIndex(null)}
+        className={`w-full h-full overflow-x-auto overflow-y-hidden cursor-${isDragging ? 'grabbing' : 'grab'} custom-scrollbar touch-pan-x`}
+        onMouseDown={onMouseDown}
+        onMouseLeave={() => { onMouseUp(); setHoveredIndex(null); }}
+        onMouseUp={onMouseUp}
+        onMouseMove={(e) => { onMouseMoveDrag(e); handleMouseMove(e); }}
       >
-        <div 
-          ref={containerRef} 
-          style={{ width: `${width}px` }} 
-          className="h-full relative cursor-crosshair"
-          onMouseMove={handleMouseMove}
-        >
+        <div ref={containerRef} style={{ width: `${width}px` }} className="h-full relative">
           <svg width={width} height={totalHeight} className="text-xs font-mono">
-            {/* 背景輔助線 */}
             <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
             <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
+            <line x1="0" y1={macdCenterY} x2={width} y2={macdCenterY} stroke="#334155" strokeWidth="1" strokeDasharray="2 2" />
 
-            <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
-            <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.5" opacity="0.8" />
+            <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.2" opacity="0.8" />
+            <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.2" opacity="0.8" />
+            <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.2" opacity="0.8" />
+            <path d={getMAPath('ma60')} fill="none" stroke="#10b981" strokeWidth="1.2" opacity="0.8" />
 
             {visibleKlines.map((k, i) => {
               const x = paddingX + i * xStep; 
               const isUp = k.close >= k.open; 
               const color = isUp ? '#f6465d' : '#0ecb81'; 
-
               const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
               const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
               const volY = getVolY(k.volume || 0);
-
               const midX = x + candleWidth * 0.5;
+
+              const macdVal = k.macd?.hist || 0;
+              const macdH = Math.abs(macdVal) * macdScale;
+              const macdY = macdVal >= 0 ? macdCenterY - macdH : macdCenterY;
+              const macdColor = macdVal >= 0 ? '#f6465d' : '#0ecb81';
 
               return (
                 <g key={k.time || i}>
                   <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
                   <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
+                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.2" />
+                  <rect x={x} y={macdY} width={candleWidth} height={Math.max(1, macdH)} fill={macdColor} opacity="0.9" />
                 </g>
               );
             })}
@@ -1767,7 +1795,6 @@ function TwKLineChart({ klines }) {
         </div>
       </div>
       
-      {/* 固定價格標籤 */}
       <div className="absolute right-0 top-0 bottom-0 w-16 bg-[#0b0e14]/80 backdrop-blur-sm border-l border-[#2a2f3a] flex flex-col justify-between py-5 px-1 pointer-events-none z-20">
           <div className="text-[10px] font-bold text-slate-400">{formatPrice(maxPrice)}</div>
           <div className="text-[10px] font-bold text-slate-400">{formatPrice((maxPrice+minPrice)/2)}</div>
