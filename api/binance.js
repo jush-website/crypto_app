@@ -127,10 +127,13 @@ export default async function handler(req, res) {
     // 3. 歷史 K 線與財經新聞
     // ----------------------------------------------------
     else if (action === 'history' && symbol) {
-      let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${range}&interval=1d`);
+      const queryInterval = interval || '1d';
+      const queryRange = range || (queryInterval === '1m' ? '1d' : '6mo');
+      
+      let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${queryRange}&interval=${queryInterval}`);
       let data = html ? JSON.parse(html) : null;
       if (!data?.chart?.result) {
-          html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=${range}&interval=1d`);
+          html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=${queryRange}&interval=${queryInterval}`);
           data = html ? JSON.parse(html) : {};
       }
       return res.status(200).json(data);

@@ -1628,7 +1628,7 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
   );
 }
 
-function TwKLineChart({ klines }) {
+function TwKLineChart({ klines, isLineChart = false }) {
   const containerRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
   
@@ -1642,7 +1642,7 @@ function TwKLineChart({ klines }) {
       );
   }
   
-  const visibleCount = 80;
+  const visibleCount = isLineChart ? 240 : 80; // 1分盤顯示更多數據點
   const visibleKlines = klines.slice(-visibleCount);
   
   const width = 800; const totalHeight = 580;
@@ -1676,12 +1676,31 @@ function TwKLineChart({ klines }) {
     let path = "";
     visibleKlines.forEach((k, i) => {
       if (k[maKey] != null && !isNaN(k[maKey])) {
-        const x = paddingX + i * xStep + candleWidth * 0.5;
+        const x = paddingX + i * xStep + (isLineChart ? 0 : candleWidth * 0.5);
         const y = getPriceY(k[maKey]);
         path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
       }
     });
     return path;
+  };
+
+  const getPriceLinePath = () => {
+    let path = "";
+    visibleKlines.forEach((k, i) => {
+      const x = paddingX + i * xStep;
+      const y = getPriceY(k.close);
+      path += (path === "" ? `M ${x} ${y} ` : `L ${x} ${y} `);
+    });
+    return path;
+  };
+
+  const getAreaPath = () => {
+    let path = getPriceLinePath();
+    if (!path) return "";
+    const lastX = paddingX + (visibleKlines.length - 1) * xStep;
+    const firstX = paddingX;
+    const baselineY = priceHeight - paddingY;
+    return `${path} L ${lastX} ${baselineY} L ${firstX} ${baselineY} Z`;
   };
 
   const hoveredK = hoveredIndex !== null && visibleKlines[hoveredIndex] ? visibleKlines[hoveredIndex] : null;
@@ -1691,12 +1710,12 @@ function TwKLineChart({ klines }) {
       <div className="absolute top-2 left-2 flex gap-3 text-[11px] font-mono z-10 pointer-events-none">
         {hoveredK && (
           <div className="flex flex-col gap-1 bg-[#0b0e14]/90 backdrop-blur p-2 rounded border border-[#2a2f3a] text-slate-300">
-            <div>DATE: {new Date(hoveredK.time).toLocaleDateString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
+            <div>DATE: {new Date(hoveredK.time).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei'})}</div>
             <div className="flex gap-2">
               <span className="text-slate-500">O:<span className="text-white ml-1">{formatPrice(hoveredK.open)}</span></span>
               <span className="text-slate-500">H:<span className="text-white ml-1">{formatPrice(hoveredK.high)}</span></span>
               <span className="text-slate-500">L:<span className="text-white ml-1">{formatPrice(hoveredK.low)}</span></span>
-              <span className="text-slate-500">C:<span className={hoveredK.close >= hoveredK.open ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
+              <span className="text-slate-500">C:<span className={hoveredK.close >= (visibleKlines[hoveredIndex-1]?.close || hoveredK.open) ? "text-[#f6465d]" : "text-[#0ecb81] ml-1"}>{formatPrice(hoveredK.close)}</span></span>
               <span className="text-slate-500 ml-2">Vol:<span className="text-blue-400 ml-1">{Math.floor((hoveredK.volume || 0) * 0.001).toLocaleString()} 張</span></span>
             </div>
           </div>
@@ -1708,31 +1727,59 @@ function TwKLineChart({ klines }) {
           <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
           
-          <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
-          <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
+          {!isLineChart && (
+            <>
+              <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
+              <path d={getMAPath('ma10')} fill="none" stroke="#8b5cf6" strokeWidth="1.5" opacity="0.8" />
+              <path d={getMAPath('ma20')} fill="none" stroke="#d946ef" strokeWidth="1.5" opacity="0.8" />
+            </>
+          )}
 
-          {visibleKlines.map((k, i) => {
-            const x = paddingX + i * xStep; 
-            const isUp = k.close >= k.open; 
-            const color = isUp ? '#f6465d' : '#0ecb81'; 
-            
-            const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
-            const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
-            const volY = getVolY(k.volume || 0);
-            
-            const midX = x + candleWidth * 0.5;
+          {isLineChart ? (
+            <>
+              <defs>
+                <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path d={getAreaPath()} fill="url(#priceGradient)" />
+              <path d={getPriceLinePath()} fill="none" stroke="#3b82f6" strokeWidth="2" />
+              {visibleKlines.map((k, i) => {
+                const x = paddingX + i * xStep;
+                const volY = getVolY(k.volume || 0);
+                const isUp = k.close >= (visibleKlines[i-1]?.close || k.open);
+                return (
+                  <rect key={`vol-${i}`} x={x} y={volY} width={Math.max(xStep * 0.8, 1)} height={Math.max(1, volTop + volHeight - volY)} fill={isUp ? '#f6465d' : '#0ecb81'} opacity="0.8" />
+                );
+              })}
+            </>
+          ) : (
+            visibleKlines.map((k, i) => {
+              const x = paddingX + i * xStep; 
+              const isUp = k.close >= k.open; 
+              const color = isUp ? '#f6465d' : '#0ecb81'; 
+              
+              const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
+              const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
+              const volY = getVolY(k.volume || 0);
+              
+              const midX = x + candleWidth * 0.5;
 
-            return (
-              <g key={k.time || i}>
-                {hoveredIndex === i && <line x1={midX} y1={0} x2={midX} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />}
-                <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
-                <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
-              </g>
-            );
-          })}
+              return (
+                <g key={k.time || i}>
+                  <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
+                  <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
+                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
+                </g>
+              );
+            })
+          )}
           
+          {hoveredIndex !== null && (
+            <line x1={paddingX + hoveredIndex * xStep + (isLineChart ? 0 : candleWidth * 0.5)} y1={0} x2={paddingX + hoveredIndex * xStep + (isLineChart ? 0 : candleWidth * 0.5)} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+          )}
+
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
           <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
           <text x={width - 5} y={volTop + 10} fill="#848e9c" textAnchor="end" fontSize="10">{Math.floor(maxVol * 0.001)}K 張</text>
@@ -1787,6 +1834,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
+  const [timeframe, setTimeframe] = useState('1d'); // 新增：時區狀態
 
   const [currentPrice, setCurrentPrice] = useState(parseFloat(stock.lastPrice) || 0);
   const [currentChange, setCurrentChange] = useState(parseFloat(stock.priceChangePercent) || 0);
@@ -1825,10 +1873,11 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
   }, [isSearchExpanded]);
 
   useEffect(() => {
-    let isMounted = true;    const fetchChart = async () => {
+    let isMounted = true;
+    const fetchChart = async () => {
         try {
             setChartLoading(true);
-            const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}`);
+            const res = await fetch(`/api/binance?action=history&symbol=${stock.symbol}&interval=${timeframe}`);
             if (!res.ok) throw new Error('History fetch failed');
             const historyData = await res.json();
 
@@ -1867,7 +1916,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
         isMounted = false; 
         fetchQuoteQueue.unsubscribe(stock.symbol, handleQuote);
     };
-  }, [stock.symbol, stock.officialPrevClose]);
+  }, [stock.symbol, stock.officialPrevClose, timeframe]);
 
   useEffect(() => {
     let isMounted = true;
@@ -2393,13 +2442,35 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
 
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
-            <div className="p-3 pb-0 flex gap-4 text-[10px] font-mono border-b border-[#2a2f3a]/50 mb-1">
-              <span className="text-amber-500 font-bold">MA5 (周線)</span>
-              <span className="text-purple-400 font-bold">MA10 (雙週線)</span>
-              <span className="text-fuchsia-400 font-bold">MA20 (月線)</span>
-              <span className="text-emerald-500 font-bold">MA60 (季線)</span>
+            <div className="p-3 flex items-center justify-between border-b border-[#2a2f3a]/50 mb-1">
+              <div className="flex gap-4 text-[10px] font-mono">
+                <span className="text-amber-500 font-bold">MA5</span>
+                <span className="text-purple-400 font-bold">MA10</span>
+                <span className="text-fuchsia-400 font-bold">MA20</span>
+                <span className="text-emerald-500 font-bold">MA60</span>
+              </div>
+              <div className="flex bg-[#0b0e14] p-1 rounded-lg border border-[#2a2f3a]">
+                <button 
+                  onClick={() => setTimeframe('1d')} 
+                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1d' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  日線
+                </button>
+                <button 
+                  onClick={() => setTimeframe('1m')} 
+                  className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${timeframe === '1m' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                >
+                  1分盤
+                </button>
+              </div>
             </div>
-            {chartLoading ? <div className="w-full h-[400px] sm:h-[580px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : <TwKLineChart klines={chartData} />}
+            {chartLoading ? (
+              <div className="w-full h-[400px] sm:h-[580px] flex items-center justify-center">
+                <RefreshCw className="w-8 h-8 animate-spin text-slate-600" />
+              </div>
+            ) : (
+              <TwKLineChart klines={chartData} isLineChart={timeframe === '1m'} />
+            )}
           </div>
 
           {recommendations && (
