@@ -1628,10 +1628,10 @@ function TwPositionCard({ pos, currentPrice: fallbackPrice, onClose }) {
   );
 }
 
-function TwKLineChart({ klines, isLineChart = false }) {
+function TwKLineChart({ klines, isLineChart = false, prevClose = 0 }) {
   const containerRef = useRef(null);
   const [hoveredIndex, setHoveredIndex] = useState(null);
-  
+
   if (!klines || !Array.isArray(klines) || klines.length === 0) {
       return (
           <div className="w-full h-[580px] flex flex-col items-center justify-center text-slate-500 bg-[#0b0e14] rounded-2xl border border-[#2a2f3a]">
@@ -1641,23 +1641,30 @@ function TwKLineChart({ klines, isLineChart = false }) {
           </div>
       );
   }
-  
+
   const isOneMinute = isLineChart;
-  const visibleCount = isOneMinute ? klines.length : 80; 
+  const visibleCount = isOneMinute ? klines.length : 80;
   const visibleKlines = klines.slice(-visibleCount);
-  
+
   const width = 800; const totalHeight = 580;
   const paddingX = 10; const paddingY = 20;
-  const priceHeight = 400; 
-  const volTop = 440;      
-  const volHeight = 120;   
-  
-  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length - 1, 1); 
-  const candleWidth = isOneMinute ? 0 : Math.max(xStep * 0.6, 1);
-  
-  const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n)); 
+  const priceHeight = 400;
+  const volTop = 440;
+  const volHeight = 120;
+
+  const xStep = (width - paddingX * 2.0) / Math.max(visibleKlines.length - 1, 1);
+  const candleWidth = (isOneMinute || isLineChart) ? 0 : Math.max(xStep * 0.6, 1);
+
+  const lows = visibleKlines.map(k => k.low).filter(n => !isNaN(n));
   const highs = visibleKlines.map(k => k.high).filter(n => !isNaN(n));
-  const minPrice = lows.length ? Math.min(...lows) : 0; 
+
+  // 當日走勢圖時，將昨收價納入價格區間計算，確保平盤線在圖內
+  if (isLineChart && prevClose > 0) {
+      lows.push(prevClose);
+      highs.push(prevClose);
+  }
+
+  const minPrice = lows.length ? Math.min(...lows) : 0;
   const maxPrice = highs.length ? Math.max(...highs) : 1;
   const priceRange = (maxPrice - minPrice) || 1;
   const maxVol = Math.max(1, ...visibleKlines.map(k => k.volume || 0));
@@ -1725,9 +1732,22 @@ function TwKLineChart({ klines, isLineChart = false }) {
 
       <div ref={containerRef} className="w-full h-full overflow-hidden cursor-crosshair" onMouseLeave={() => setHoveredIndex(null)} onMouseMove={handleMouseMove}>
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${totalHeight}`} preserveAspectRatio="none" className="text-xs font-mono">
-          <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4"/>
+          {/* 背景輔助線 */}
+          <line x1="0" y1={priceHeight * 0.5} x2={width} y2={priceHeight * 0.5} stroke="#2a2f3a" strokeWidth="1" strokeDasharray="4 4" opacity="0.5"/>
           <line x1="0" y1={volTop - 15} x2={width} y2={volTop - 15} stroke="#2a2f3a" strokeWidth="1.5" />
-          
+
+          {/* 當日走勢參考線 (昨收/平盤線) */}
+          {isLineChart && prevClose > 0 && (
+            <g>
+              <line 
+                x1="0" y1={getPriceY(prevClose)} 
+                x2={width} y2={getPriceY(prevClose)} 
+                stroke="#475569" strokeWidth="1" strokeDasharray="5 5"
+              />
+              <text x="5" y={getPriceY(prevClose) - 5} fill="#475569" fontSize="10">昨收 {formatPrice(prevClose)}</text>
+            </g>
+          )}
+
           {!isLineChart && (
             <>
               <path d={getMAPath('ma5')} fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
@@ -1755,8 +1775,7 @@ function TwKLineChart({ klines, isLineChart = false }) {
                 );
               })}
             </>
-          ) : (
-            visibleKlines.map((k, i) => {
+          ) : (            visibleKlines.map((k, i) => {
               const x = paddingX + i * xStep; 
               const isUp = k.close >= k.open; 
               const color = isUp ? '#f6465d' : '#0ecb81'; 
@@ -2481,7 +2500,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [] }) 
                 <RefreshCw className="w-8 h-8 animate-spin text-slate-600" />
               </div>
             ) : (
-              <TwKLineChart klines={chartData} isLineChart={timeframe === '1m'} />
+              <TwKLineChart klines={chartData} isLineChart={timeframe === '1m'} prevClose={currentPrevClose} />
             )}
           </div>
 
