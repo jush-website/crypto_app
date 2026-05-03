@@ -1737,34 +1737,6 @@ function TwKLineChart({ klines }) {
           {hoveredIndex !== null && (
             <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
           )}
-        </svg>
-      </div>
-    </div>
-  );
-}            visibleKlines.map((k, i) => {
-              const x = paddingX + i * xStep; 
-              const isUp = k.close >= k.open; 
-              const color = isUp ? '#f6465d' : '#0ecb81'; 
-              
-              const openY = getPriceY(k.open); const closeY = getPriceY(k.close); 
-              const highY = getPriceY(k.high); const lowY = getPriceY(k.low);
-              const volY = getVolY(k.volume || 0);
-              
-              const midX = x + candleWidth * 0.5;
-
-              return (
-                <g key={k.time || i}>
-                  <line x1={midX} y1={highY} x2={midX} y2={lowY} stroke={color} strokeWidth="1.5" />
-                  <rect x={x} y={Math.min(openY, closeY)} width={candleWidth} height={Math.max(1, Math.abs(openY - closeY))} fill={isUp ? 'transparent' : color} stroke={color} strokeWidth="1" />
-                  <rect x={x} y={volY} width={candleWidth} height={Math.max(1, volTop + volHeight - volY)} fill={color} opacity="0.8" />
-                </g>
-              );
-            })
-          )}
-          
-          {hoveredIndex !== null && (
-            <line x1={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y1={0} x2={paddingX + hoveredIndex * xStep + candleWidth * 0.5} y2={totalHeight} stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
-          )}
 
           <text x={width - 5} y={20} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(maxPrice)}</text>
           <text x={width - 5} y={priceHeight - 10} fill="#848e9c" textAnchor="end" fontSize="10">{formatPrice(minPrice)}</text>
