@@ -131,32 +131,15 @@ export default async function handler(req, res) {
       let queryRange = range;
       if (!queryRange) {
           if (queryInterval === '1m') queryRange = '1d';
-          else queryRange = '1y'; 
+          else queryRange = '5y'; // 預設抓取 5 年日線數據，確保完整涵蓋 2024 年至今的數據
       }
       
-      const isTwNum = /^\d{4,6}$/.test(symbol);
-      let data = null;
-
-      const tryFetch = async (sym) => {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${queryRange}&interval=${queryInterval}`;
-        const html = await fetchAsBrowser(url);
-        if (!html) return null;
-        try {
-          const json = JSON.parse(html);
-          if (json?.chart?.result) return json;
-          return null;
-        } catch(e) { return null; }
-      };
-
-      if (isTwNum) {
-        data = await tryFetch(`${symbol}.TW`);
-        if (!data) data = await tryFetch(`${symbol}.TWO`);
-      } else {
-        data = await tryFetch(symbol);
-        // 如果傳入 NVDA 但沒成功，嘗試補上常見後綴 (但通常美股不需要)
+      let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${queryRange}&interval=${queryInterval}`);
+      let data = html ? JSON.parse(html) : null;
+      if (!data?.chart?.result) {
+          html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=${queryRange}&interval=${queryInterval}`);
+          data = html ? JSON.parse(html) : {};
       }
-
-      if (!data) return res.status(404).json({ error: 'No data found' });
       return res.status(200).json(data);
     }
     else if (action === 'news') {
@@ -195,10 +178,9 @@ export default async function handler(req, res) {
     else if (action === 'chip' && symbol) {
       try {
         const baseSym = symbol.replace('.TW', '').replace('.TWO', '');
-        const fullSym = /^\d+$/.test(baseSym) ? `${baseSym}.TW` : baseSym;
         
-        // 同時抓取 TSE 與 OTC 多個來源，並加上 Yahoo 備援
-        const [tseInst, otcInst, tseMargin, otcMargin, tseHolding, otcHolding, tseRatio, otcRatio, yahooRatio] = await Promise.all([
+        // 同時抓取 TSE 與 OTC 多個來源
+        const [tseInst, otcInst, tseMargin, otcMargin, tseHolding, otcHolding, tseRatio, otcRatio] = await Promise.all([
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/fund/T86_ALL_7`), 
            fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/t86`),
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN`),
@@ -206,8 +188,7 @@ export default async function handler(req, res) {
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/holding/BWTLU_ALL`),
            fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/q10_f_holding`),
            fetchAsBrowser(`https://openapi.twse.com.tw/v1/exchangeReport/BWIBHT_ALL`),
-           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/t187ap14_l`),
-           fetchAsBrowser(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${fullSym}?modules=summaryDetail,defaultKeyStatistics`)
+           fetchAsBrowser(`https://www.tpex.org.tw/openapi/v1/t187ap14_l`)
         ]);
 
         const parseJSON = (txt) => { try { return txt ? JSON.parse(txt) : []; } catch(e) { return []; } };
@@ -216,7 +197,6 @@ export default async function handler(req, res) {
         const marginList = [...parseJSON(tseMargin), ...parseJSON(otcMargin)];
         const holdingList = [...parseJSON(tseHolding), ...parseJSON(otcHolding)];
         const ratioList = [...parseJSON(tseRatio), ...parseJSON(otcRatio)];
-        const yData = yahooRatio ? JSON.parse(yahooRatio)?.quoteSummary?.result?.[0] : null;
 
         const targetInst = instList.find(i => (String(i.Code || i.StkNo || '').trim()) === baseSym);
         const targetMargin = marginList.find(i => (String(i.StockCode || i.StkNo || '').trim()) === baseSym);
@@ -226,15 +206,7 @@ export default async function handler(req, res) {
         const seed = parseInt(baseSym) || 123;
         const history = [];
         
-        // 優先使用真實數據，若無則使用 Yahoo 或模擬
-        let pe = targetRatio ? parseFloat(targetRatio.PEratio || targetRatio.PeRatio || 0) : null;
-        let yld = targetRatio ? parseFloat(targetRatio.DividendYield || targetRatio.YieldRatio || 0) : null;
-        let pb = targetRatio ? parseFloat(targetRatio.PBratio || targetRatio.PbRatio || 0) : null;
-
-        if (!pe && yData?.summaryDetail?.trailingPE?.value) pe = yData.summaryDetail.trailingPE.value;
-        if (!yld && yData?.summaryDetail?.dividendYield?.value) yld = yData.summaryDetail.dividendYield.value * 100;
-        if (!pb && yData?.defaultKeyStatistics?.priceToBook?.value) pb = yData.defaultKeyStatistics.priceToBook.value;
-
+        // 預先計算買賣超數值，優先使用真實數據
         const realF = targetInst ? parseInt(String(targetInst.ForeignInvestorsBuySellDiff || targetInst.ForeignBuySettle || '0').replace(/,/g, '')) : 0;
         const realT = targetInst ? parseInt(String(targetInst.InvestmentTrustBuySellDiff || targetInst.TrustBuySettle || '0').replace(/,/g, '')) : 0;
         const realD = targetInst ? parseInt(String(targetInst.DealerBuySellDiff || targetInst.DealerBuySettle || '0').replace(/,/g, '')) : 0;
@@ -272,44 +244,13 @@ export default async function handler(req, res) {
            marginChange: mToday - mYest,
            foreignHolding: targetHolding ? parseFloat(targetHolding.ForeignInvestmentHoldingRatio || targetHolding.ForeignHoldingRatio || 0) : 0,
            foreignShares: targetHolding ? parseInt(String(targetHolding.ForeignInvestmentHoldingShares || targetHolding.ForeignHoldingVolume || '0').replace(/,/g, '')) : 0,
-           pe, yield: yld, pb,
+           pe: targetRatio ? parseFloat(targetRatio.PEratio || targetRatio.PeRatio || 0) : null,
+           yield: targetRatio ? parseFloat(targetRatio.DividendYield || targetRatio.YieldRatio || 0) : null,
+           pb: targetRatio ? parseFloat(targetRatio.PBratio || targetRatio.PbRatio || 0) : null,
            history: history
         });
       } catch(e) {
           return res.status(500).json({ error: 'Chip data error' });
-      }
-    }
-
-    // ----------------------------------------------------
-    // 5. ETF 持股動態抓取 (支援主動式 ETF 每日更新)
-    // ----------------------------------------------------
-    else if (action === 'etf_holdings' && symbol) {
-      try {
-        // 主動式 ETF 持股 (通常每日公佈於官網，此處模擬或抓取最新揭露)
-        if (symbol === '00981A') {
-          return res.status(200).json([
-            '2330', '3653', '3533', '3017', '8069', '2345', '3665', '2454', '2308', '3661',
-            '2317', '2382', '3711', '3037', '2368'
-          ]);
-        }
-        if (symbol === '00999A') {
-          return res.status(200).json([
-            '2330', '2308', '2383', '3017', '2603', '3653', '2059', '3665', '6442', '2609',
-            '2454', '2317', '3231', '3034', '3711'
-          ]);
-        }
-        
-        // 嘗試從 Yahoo 網頁抓取
-        const html = await fetchAsBrowser(`https://tw.stock.yahoo.com/quote/${symbol}/holdings`);
-        if (html) {
-           const matches = html.matchAll(/\/quote\/(\d{4})/g);
-           const found = Array.from(new Set(Array.from(matches).map(m => m[1])));
-           if (found.length > 0) return res.status(200).json(found);
-        }
-
-        return res.status(200).json([]);
-      } catch(e) {
-          return res.status(500).json({ error: 'Holdings fetch error' });
       }
     }
 

@@ -135,8 +135,6 @@ const DIVIDEND_RECOMMENDATIONS = {
   '0056': { type: '國民高息ETF', risk: '低', avgYield: '6.5%', history: ['2023年: 現金 2.20元', '2022年: 現金 2.10元', '2021年: 現金 1.80元'] },
   '00878': { type: 'ESG季配ETF', risk: '低', avgYield: '6.5%', history: ['2023年: 現金 1.24元', '2022年: 現金 1.18元', '2021年: 現金 0.98元'] },
   '00919': { type: '精選高息ETF', risk: '中低', avgYield: '9.0%', history: ['2023年: 現金 1.63元', '2022年: (近年新掛牌無完整資料)'] },
-  '00981A': { type: '主動式ETF', risk: '中高', avgYield: '-', history: ['2026年新掛牌: 統一台股增長主動式'] },
-  '00999A': { type: '主動式ETF', risk: '中', avgYield: '-', history: ['2026年新掛牌: 野村臺灣策略高息主動式'] },
   '00713': { type: '低波動高息ETF', risk: '極低', avgYield: '6.8%', history: ['2023年: 現金 3.05元', '2022年: 現金 2.90元', '2021年: 現金 3.15元'] },
   '2412': { type: '電信防禦龍頭', risk: '極低', avgYield: '4.2%', history: ['2023年: 現金 4.70元', '2022年: 現金 4.60元', '2021年: 現金 4.30元'] },
   '2892': { type: '官股金融存股', risk: '低', avgYield: '5.2%', history: ['2023年: 現 0.80元 + 股 0.30元', '2022年: 現 1.00元 + 股 0.20元', '2021年: 現 0.90元 + 股 0.10元'] },
@@ -150,60 +148,7 @@ const INDUSTRY_MAP = {
   '💰 金融保險': ['2881', '2882', '2883', '2884', '2885', '2886', '2891', '2892', '5880', '2890'],
   '📡 網通光通訊': ['3363', '4979', '3450', '2345', '3596', '3163', '2412', '3045', '3105', '6442'],
   '🏢 傳產與生技': ['1101', '1216', '1301', '1303', '2002', '1722', '4743', '1795', '6505', '9921'],
-  '📊 國民 ETF': ['0050', '0056', '00878', '00919', '00713', '00929', '006208', '00679B'],
-  '📈 成長型 ETF': ['0050', '006208', '0052', '00935', '00922', '00923', '00981A', '00999A']
-};
-
-const GROWTH_ETF_HOLDINGS = {
-  '0050': [
-    '2330', '2317', '2454', '2308', '2382', '3711', '2303', '2891', '2881', '2882',
-    '2886', '2884', '2892', '2890', '5880', '2412', '3045', '4904', '3008', '2379',
-    '3034', '2357', '3231', '2301', '2356', '2345', '2368', '3037', '2449', '2344',
-    '2408', '2337', '4938', '1301', '1303', '1326', '2002', '1216', '1102', '2610',
-    '2618', '2603', '6919', '2059', '2360', '3653', '3665', '6969', '3037', '2368'
-  ],
-  '006208': [
-    '2330', '2317', '2454', '2308', '2382', '3711', '2303', '2891', '2881', '2882',
-    '2886', '2884', '2892', '2890', '5880', '2412', '3045', '4904', '3008', '2379',
-    '3034', '2357', '3231', '2301', '2356', '2345', '2368', '3037', '2449', '2344',
-    '2408', '2337', '4938', '1301', '1303', '1326', '2002', '1216', '1102', '2610',
-    '2618', '2603', '6919', '2059', '2360', '3653', '3665', '6969', '3037', '2368'
-  ],
-  '0052': ['2330', '2454', '2317', '2303', '3711', '2382', '2357', '3034', '2379', '2301'],
-  '00935': ['2330', '2454', '2317', '3711', '2303', '2382', '3231', '3034', '2449', '2379'],
-  '00922': ['2330', '2317', '2454', '2308', '2303', '2881', '2882', '3711', '2382', '2412'],
-  '00923': ['2330', '2317', '2454', '2303', '3711', '2308', '2881', '2882', '2382', '2412'],
-  '0056': [
-    '2891', '2382', '2454', '2303', '3231', '2357', '2603', '3711', '2301', '2880',
-    '2885', '2890', '2330', '2412', '2884', '3045', '2324', '2356', '2379', '3034',
-    '2408', '2344', '2337', '2618', '2610', '2886', '2892', '5880', '1102', '1216',
-    '2002', '1301', '1303', '1326', '2345', '3037', '2449', '4938', '3008', '2360',
-    '3653', '3665', '2059', '6919', '2368', '2383', '3017', '2347', '3702'
-  ],
-  '00878': [
-    '2882', '2891', '2881', '2303', '2454', '2357', '3711', '2449', '2885', '2301',
-    '4938', '2382', '3034', '2412', '2105', '8046', '4958', '2308', '2317', '2330',
-    '2356', '2379', '2383', '2408', '2884', '2886', '2890', '2892', '3037', '3231'
-  ],
-  '00919': [
-    '2882', '2891', '2303', '2881', '2887', '2603', '2357', '3034', '2609', '3036',
-    '2385', '2474', '1477', '2371', '4763', '2439', '2458', '3211', '6412', '8070',
-    '2520', '6670', '6757', '2330', '3711', '2618', '5347', '2404', '2886', '2884'
-  ],
-  '00929': [
-    '2303', '2454', '3045', '3711', '3034', '4904', '2301', '4938', '5347', '2474',
-    '2357', '3008', '2404', '3036', '3260', '6488', '2324', '5536', '3264', '5483',
-    '3702', '2330', '2353', '6257', '4966', '3211', '3563', '3680', '2385', '6548',
-    '3005', '8422', '3227', '2347', '3044', '2449', '6239', '3017', '2383', '2368'
-  ],
-  '00981A': [
-    '2330', '3653', '3533', '3017', '8069', '2345', '3665', '2454', '2308', '3661',
-    '2317', '2382', '3711', '3037', '2368'
-  ],
-  '00999A': [
-    '2330', '2308', '2383', '3017', '2603', '3653', '2059', '3665', '6442', '2609',
-    '2454', '2317', '3231', '3034', '3711'
-  ]
+  '📊 國民 ETF': ['0050', '0056', '00878', '00919', '00713', '00929', '006208', '00679B']
 };
 
 // ==========================================
@@ -1978,539 +1923,11 @@ function TwChipChart({ history }) {
   );
 }
 
-// ==========================================
-// 3.8 成長型 ETF 追蹤分析元件
-// ==========================================
-function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
-  const [selectedEtf, setSelectedEtf] = useState('0050');
-  const [holdingsData, setHoldingsData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
-
-  const categorizedEtfs = [
-    {
-      title: '市值型 / 科技成長',
-      icon: <TrendingUp className="w-5 h-5 text-blue-400" />,
-      items: [
-        { symbol: '0050', name: '元大台灣50' },
-        { symbol: '006208', name: '富邦台50' },
-        { symbol: '0052', name: '富邦科技' },
-        { symbol: '00935', name: '野村創新科技' },
-        { symbol: '00922', name: '國泰台灣領袖50' },
-        { symbol: '00923', name: '群益ESG低碳' }
-      ]
-    },
-    {
-      title: '高股息 / 低波動',
-      icon: <Activity className="w-5 h-5 text-amber-400" />,
-      items: [
-        { symbol: '0056', name: '元大高股息' },
-        { symbol: '00878', name: '國泰永續高股息' },
-        { symbol: '00919', name: '群益台灣精選高息' }
-      ]
-    },
-    {
-      title: '主動式操盤',
-      icon: <Zap className="w-5 h-5 text-purple-400" />,
-      items: [
-        { symbol: '00981A', name: '統一台股增長主動式' },
-        { symbol: '00999A', name: '野村臺灣策略高息主動式' }
-      ]
-    }
-  ];
-
-  const etfList = categorizedEtfs.flatMap(c => c.items);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchHoldingsState = async () => {
-      setLoading(true);
-      setProgress({ current: 0, total: 0 });
-      setHoldingsData([]); // 清空舊數據
-      
-      let holdings = [];
-      try {
-        const holdingsRes = await fetch(`/api/binance?action=etf_holdings&symbol=${selectedEtf}`);
-        if (holdingsRes.ok) {
-          const dynamicHoldings = await holdingsRes.json();
-          if (Array.isArray(dynamicHoldings) && dynamicHoldings.length > 0) {
-            holdings = dynamicHoldings;
-          }
-        }
-      } catch (e) {
-        console.warn(`Dynamic holdings fetch failed for ${selectedEtf}, falling back to static list.`);
-      }
-
-      if (holdings.length === 0) {
-        holdings = GROWTH_ETF_HOLDINGS[selectedEtf] || [];
-      }
-
-      setProgress({ current: 0, total: holdings.length });
-      
-      try {
-        let completed = 0;
-        const results = await Promise.all(holdings.map(async (sym) => {
-          try {
-            const res = await fetch(`/api/binance?action=history&symbol=${sym}&interval=1d`);
-            if (!res.ok) {
-              completed++;
-              setProgress(prev => ({ ...prev, current: completed }));
-              return null;
-            }
-            const historyData = await res.json();
-            const parsed = parseYahooData(historyData);
-            
-            if (parsed && parsed.klines.length >= 10) {
-              const klines = calculateIndicators(parsed.klines);
-              const latest = klines[klines.length - 1];
-              const prev = klines[klines.length - 2];
-              const avgVol = klines.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5;
-              
-              const sixtyDayLow = Math.min(...klines.slice(-60).map(k => k.low));
-              const isBottom = latest.close <= sixtyDayLow * 1.1;
-
-              const volAn = analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
-              
-              let score = 0;
-              if (latest.close > latest.ma20) score += 2;
-              if (latest.macd?.hist > 0) score += 2;
-              if (latest.kd?.k > latest.kd?.d) score += 1;
-              if (volAn.signal === '一定進場') score += 5;
-              if (volAn.signal === '可能上漲') score += 4;
-
-              completed++;
-              setProgress(prev => ({ ...prev, current: completed }));
-
-              return {
-                symbol: sym,
-                name: allStocks.find(s => s.symbol === sym)?.name || sym,
-                price: latest.close,
-                change: parsed.change,
-                volAnalysis: volAn,
-                score: score
-              };
-            }
-          } catch (e) { console.error(`Error fetching ${sym}:`, e); }
-          completed++;
-          setProgress(prev => ({ ...prev, current: completed }));
-          return null;
-        }));
-
-        if (isMounted) {
-          const validResults = results.filter(r => r !== null);
-          setHoldingsData(validResults.sort((a, b) => b.score - a.score));
-          setLoading(false);
-        }
-      } catch (globalErr) {
-        console.error("Global fetch error:", globalErr);
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    fetchHoldingsState();
-    return () => { isMounted = false; };
-  }, [selectedEtf, allStocks]);
-
-  const aggregateScore = holdingsData.length > 0 ? holdingsData.reduce((sum, h) => sum + h.score, 0) / holdingsData.length : 0;
-  
-  let recommendation = { text: '盤整觀望', color: 'text-slate-400', desc: '持股訊號參差不齊，建議等待大盤趨勢明朗。' };
-  if (aggregateScore >= 5) recommendation = { text: '強力進場', color: 'text-[#f6465d]', desc: '多數權值持股呈現帶量轉強，為極佳的中長線佈局點。' };
-  else if (aggregateScore >= 3) recommendation = { text: '分批佈局', color: 'text-[#f6465d]', desc: '龍頭股動能緩步加溫，可採分批進場策略降低風險。' };
-  else if (aggregateScore <= 1.5) recommendation = { text: '保守觀望', color: 'text-[#0ecb81]', desc: '多數持股動能轉弱，建議先降低部位或觀望。' };
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#121620] p-5 rounded-2xl border border-[#2a2f3a] shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-5"><TrendingUp className="w-32 h-32 text-blue-500" /></div>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-600/20 rounded-2xl border border-blue-500/30 text-blue-400 shrink-0">
-              <Layers className="w-8 h-8" />
-            </div>
-            <div>
-              <h2 className="text-xl md:text-2xl font-black text-white">成長型 ETF 持股分析系統</h2>
-              <p className="text-xs md:text-sm text-slate-500 mt-1">針對 ETF 重要成分股進行「量價關係」與「技術指標」綜合評分</p>
-            </div>
-          </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {categorizedEtfs.map(category => (
-            <div key={category.title} className="bg-[#121620] p-4 rounded-2xl border border-[#2a2f3a] shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                {category.icon}
-                <span className="text-sm font-bold text-slate-300">{category.title}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {category.items.map(etf => (
-                  <button
-                    key={etf.symbol}
-                    onClick={() => setSelectedEtf(etf.symbol)}
-                    className={`flex flex-col items-start p-3 rounded-xl border transition-all ${
-                      selectedEtf === etf.symbol 
-                        ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500' 
-                        : 'bg-[#0b0e14] border-[#2a2f3a] hover:border-[#3f4654] hover:bg-[#1a1e27]'
-                    }`}
-                  >
-                    <span className={`text-xs font-black mb-0.5 ${selectedEtf === etf.symbol ? 'text-blue-400' : 'text-slate-500'}`}>{etf.symbol}</span>
-                    <span className="text-sm font-bold text-white truncate w-full text-left">{etf.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        </div>
-
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-[#121620] p-6 rounded-2xl border border-[#2a2f3a] shadow-lg">
-             <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4">當前選定 ETF 分析摘要</div>
-             <h3 className="text-3xl font-black text-white mb-2">{etfList.find(e => e.symbol === selectedEtf)?.name}</h3>
-             <div className="text-sm text-slate-400 mb-6">{etfList.find(e => e.symbol === selectedEtf)?.desc}</div>
-             
-             <div className="p-5 bg-[#0b0e14] rounded-2xl border border-[#1e2330] mb-6">
-                <div className="text-xs text-slate-500 mb-2">ETF 綜合進場信心得分 (0-10)</div>
-                <div className="flex items-end gap-2 mb-4">
-                   <div className={`text-5xl font-black ${(aggregateScore * 2).toFixed(1) >= 6 ? 'text-[#f6465d]' : 'text-amber-400'}`}>{(aggregateScore * 2).toFixed(1)}</div>
-                   <div className="text-slate-600 font-bold mb-1">/ 10.0</div>
-                </div>
-                <div className={`text-xl font-bold flex items-center gap-2 ${recommendation.color}`}>
-                   <Zap className="w-5 h-5 fill-current" /> {recommendation.text}
-                </div>
-                <p className="text-xs text-slate-500 mt-3 leading-relaxed">{recommendation.desc}</p>
-             </div>
-
-             <div className="space-y-4">
-                <div className="text-xs text-slate-500 font-bold">權值股訊號統計</div>
-                <div className="grid grid-cols-2 gap-3">
-                   <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <div className="text-[10px] text-slate-500">轉強股 (多頭)</div>
-                      <div className="text-xl font-bold text-[#f6465d]">{holdingsData.filter(h => h.score >= 5).length} <span className="text-xs font-normal text-slate-600">檔</span></div>
-                   </div>
-                   <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <div className="text-[10px] text-slate-500">轉弱股 (空頭)</div>
-                      <div className="text-xl font-bold text-[#0ecb81]">{holdingsData.filter(h => h.score <= 1.5).length} <span className="text-xs font-normal text-slate-600">檔</span></div>
-                   </div>
-                </div>
-             </div>
-          </div>
-
-          <div className="bg-amber-500/5 border border-amber-500/20 p-5 rounded-2xl">
-             <h4 className="text-amber-400 font-bold text-sm flex items-center gap-2 mb-2"><AlertCircle className="w-4 h-4" /> 分析說明</h4>
-             <p className="text-xs text-slate-400 leading-relaxed">
-               本系統模擬 ETF 成分股之即時「量價關係」與「技術指標」表現。當高比例成分股呈現「帶量上漲」或「底部縮量」時，通常代表整體 ETF 具有較強之支撐或向上動能。
-             </p>
-          </div>
-        </div>
-
-        <div className="lg:col-span-8">
-           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] shadow-lg overflow-hidden">
-              <div className="p-4 border-b border-[#2a2f3a] flex justify-between items-center bg-[#1a1e27]">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                   <List className="w-5 h-5 text-blue-400" /> ETF 成分股動態分析
-                </h3>
-                {loading && (
-                  <div className="flex items-center gap-3 text-xs text-blue-400">
-                    <div className="flex flex-col items-end">
-                      <div className="flex items-center gap-2">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> 
-                        <span>分析中 {progress.current} / {progress.total}</span>
-                      </div>
-                      <div className="w-24 h-1 bg-[#0b0e14] rounded-full mt-1 overflow-hidden border border-blue-500/20">
-                        <div 
-                          className="h-full bg-blue-500 transition-all duration-300" 
-                          style={{ width: `${(progress.current / (progress.total || 1)) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="overflow-x-auto">
-                 <table className="w-full text-sm text-left">
-                    <thead className="bg-[#0b0e14] text-slate-500">
-                       <tr>
-                          <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">標的名稱</th>
-                          <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">現價 / 漲跌</th>
-                          <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">量價分析訊號</th>
-                          <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">信心評分</th>
-                          <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-right">操作</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#2a2f3a]/50">
-                       {holdingsData.map(h => (
-                          <tr key={h.symbol} className="hover:bg-[#1a1e27] transition-all group">
-                             <td className="px-6 py-4">
-                                <div className="flex flex-col">
-                                   <span className="font-bold text-white group-hover:text-blue-400 transition-colors">{h.name}</span>
-                                   <span className="text-[10px] text-slate-500 font-mono">{h.symbol}</span>
-                                </div>
-                             </td>
-                             <td className="px-6 py-4 font-mono font-bold">
-                                <div className="text-white">{h.price.toFixed(2)}</div>
-                                <div className={h.change >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>
-                                   {h.change >= 0 ? '+' : ''}{h.change.toFixed(2)}%
-                                </div>
-                             </td>
-                             <td className="px-6 py-4">
-                                <div className={`flex flex-col ${h.volAnalysis.color}`}>
-                                   <span className="font-black flex items-center gap-1">
-                                      {h.volAnalysis.signal === '一定進場' && <Zap className="w-3 h-3" />}
-                                      {h.volAnalysis.signal}
-                                   </span>
-                                   <span className="text-[10px] opacity-70">{h.volAnalysis.rule}</span>
-                                </div>
-                             </td>
-                             <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                   <div className="w-16 h-1.5 bg-[#0b0e14] rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${h.score >= 5 ? 'bg-[#f6465d]' : h.score >= 3 ? 'bg-amber-400' : 'bg-slate-700'}`} style={{ width: `${(h.score / 10) * 100}%` }}></div>
-                                   </div>
-                                   <span className="text-xs font-mono font-bold text-slate-400">{(h.score).toFixed(1)}</span>
-                                </div>
-                             </td>
-                             <td className="px-6 py-4 text-right">
-                                <button 
-                                   onClick={() => window.location.hash = `#/tw-stocks/detail/${h.symbol}`}
-                                   className="p-2 text-slate-500 hover:text-white hover:bg-blue-600/20 rounded-lg transition-all"
-                                   title="詳細分析"
-                                >
-                                   <ChevronRight className="w-5 h-5" />
-                                </button>
-                             </td>
-                          </tr>
-                       ))}
-                       {!loading && holdingsData.length === 0 && (
-                          <tr>
-                             <td colSpan="5" className="px-6 py-20 text-center text-slate-500">
-                                暫無成分股分析數據
-                             </td>
-                          </tr>
-                       )}
-                    </tbody>
-                 </table>
-              </div>
-           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- 台股詳情頁子組件 ---
-
-function TwPriceVolTab({ volAnalysis, currentVolume, chartData, isBottom }) {
-  return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-      {volAnalysis && (
-        <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2"><BarChart2 className="w-6 h-6 text-emerald-400" /> 成交量口訣分析</h3>
-            <span className="text-[10px] px-2.5 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30 font-bold uppercase tracking-wider">量價關係實戰</span>
-          </div>
-          <div className="bg-[#0b0e14] p-6 rounded-2xl border border-[#1e2330] relative overflow-hidden mb-6">
-            <div className="absolute top-0 right-0 p-4 opacity-5"><BarChart2 className="w-32 h-32 text-emerald-500" /></div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-              <div>
-                <div className="text-sm text-slate-500 mb-1 font-bold">當前量價狀態解讀</div>
-                <div className="text-3xl font-black text-white flex items-center gap-3">
-                  {volAnalysis.rule} <span className="text-sm font-normal text-slate-400 bg-white/5 px-2 py-1 rounded">({volAnalysis.signal})</span>
-                </div>
-              </div>
-              <div className={`text-2xl font-black px-6 py-3 rounded-xl bg-white/5 border border-white/10 shadow-inner ${volAnalysis.color}`}>{volAnalysis.signal}</div>
-            </div>
-            <div className="mt-6 pt-6 border-t border-white/5">
-              <p className="text-base text-slate-300 leading-relaxed"><span className="font-bold text-emerald-400 mr-2">【深度解讀】</span>{volAnalysis.desc}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: '今日成交量', value: formatVolume(currentVolume), sub: '即時預估', color: 'text-white' },
-              { label: '5日平均量', value: formatVolume(chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5), sub: '均量參考', color: 'text-white' },
-              { label: '量比 (Vol Ratio)', value: (currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5 || 1)).toFixed(2) + 'x', sub: '>1.2 異常爆量', color: (currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5 || 1)) > 1.2 ? 'text-[#f6465d]' : 'text-white' },
-              { label: '趨勢位階', value: isBottom ? '底部區域' : '中高位階', sub: '60日位階', color: isBottom ? 'text-emerald-400' : 'text-slate-400' },
-            ].map((item, i) => (
-              <div key={i} className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330] text-center">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">{item.label}</div>
-                <div className={`text-lg font-black font-mono ${item.color}`}>{item.value}</div>
-                <div className="text-[9px] text-slate-600 mt-1">{item.sub}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TwTechnicalTab({ chartLoading, chartData, recommendations }) {
-  return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-      <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
-          <div className="p-4 flex items-center justify-between border-b border-[#2a2f3a]/50">
-             <div className="flex items-center gap-4 text-xs font-bold">
-                <span className="text-purple-400 flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-400"></div> MA10</span>
-                <span className="text-emerald-500 flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> MA60</span>
-             </div>
-             <div className="text-[10px] font-black text-blue-400 px-3 py-1 bg-blue-400/10 rounded-full border border-blue-400/20">日線模式</div>
-          </div>
-          {chartLoading ? (
-            <div className="w-full h-[500px] flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div>
-          ) : <TwKLineChart klines={chartData} />}
-      </div>
-      {recommendations && (
-        <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><Crosshair className="w-6 h-6 text-blue-500" /> 趨勢分析與操作建議</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] hover:border-blue-500/30 transition-all"><div className="text-xs text-slate-500 font-bold uppercase mb-3">短期 (1-2週)</div><div className={`text-2xl font-black mb-2 ${recommendations.shortTerm.color}`}>{recommendations.shortTerm.action}</div><p className="text-xs text-slate-400 leading-relaxed">{recommendations.shortTerm.desc}</p></div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] hover:border-blue-500/30 transition-all"><div className="text-xs text-slate-500 font-bold uppercase mb-3">中期 (1-3月)</div><div className={`text-2xl font-black mb-2 ${recommendations.midTerm.color}`}>{recommendations.midTerm.action}</div><p className="text-xs text-slate-400 leading-relaxed">{recommendations.midTerm.desc}</p></div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] hover:border-blue-500/30 transition-all"><div className="text-xs text-slate-500 font-bold uppercase mb-3">長期 (一季+)</div><div className={`text-2xl font-black mb-2 ${recommendations.longTerm.color}`}>{recommendations.longTerm.action}</div><p className="text-xs text-slate-400 leading-relaxed">{recommendations.longTerm.desc}</p></div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TwChipsTab({ chipData, branchData }) {
-  return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-      <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="text-xl font-bold text-white flex items-center gap-2"><ShieldAlert className="w-6 h-6 text-amber-500" /> 籌碼趨勢分析</h3>
-             <span className="text-[10px] px-2 py-1 bg-blue-600/20 text-blue-400 rounded-lg border border-blue-500/30 font-bold">盤後數據</span>
-          </div>
-          {!chipData.loading && chipData.history.length > 0 && <TwChipChart history={chipData.history} />}
-          {chipData.loading ? <div className="flex justify-center py-10"><RefreshCw className="w-8 h-8 animate-spin text-slate-600" /></div> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-               <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330]">
-                  <div className="text-sm text-slate-400 font-bold mb-4">三大法人合計動態</div>
-                  <div className="space-y-4 text-sm font-bold">
-                     <div className="flex justify-between items-center"><span className="text-slate-500">外資</span><span className={chipData.foreign > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign || '--'} 張</span></div>
-                     <div className="flex justify-between items-center"><span className="text-slate-500">投信</span><span className={chipData.trust > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{chipData.trust > 0 ? '+' : ''}{chipData.trust || '--'} 張</span></div>
-                     <div className="flex justify-between items-center"><span className="text-slate-500">自營商</span><span className={chipData.dealer > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer || '--'} 張</span></div>
-                  </div>
-               </div>
-               <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330]">
-                  <div className="text-sm text-slate-400 font-bold mb-4">融資與外資比</div>
-                  <div className="space-y-4 text-sm font-bold">
-                     <div className="flex justify-between items-center"><span className="text-slate-500">融資餘額</span><span className="text-white">{chipData.marginToday || '--'} 張</span></div>
-                     <div className="flex justify-between items-center"><span className="text-slate-500">外資比率</span><span className="text-amber-400">{chipData.foreignHolding?.toFixed(2)} %</span></div>
-                  </div>
-               </div>
-            </div>
-          )}
-      </div>
-      {branchData && (
-        <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-6 shadow-lg">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><PieChart className="w-6 h-6 text-blue-400" /> 主力分點 (AI)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               <div>
-                  <div className="text-xs font-bold text-[#f6465d] bg-[#f6465d]/10 py-1.5 rounded-lg mb-4 text-center">買超前五</div>
-                  {branchData.buyers.slice(0, 5).map((b, i) => (
-                    <div key={i} className="flex justify-between p-2 bg-[#0b0e14] rounded border border-[#1e2330] mb-1"><span className="text-xs text-white">{b.name}</span><span className="text-[#f6465d] text-xs font-bold">+{Math.floor(b.vol * 0.001)}</span></div>
-                  ))}
-               </div>
-               <div>
-                  <div className="text-xs font-bold text-[#0ecb81] bg-[#0ecb81]/10 py-1.5 rounded-lg mb-4 text-center">賣超前五</div>
-                  {branchData.sellers.slice(0, 5).map((b, i) => (
-                    <div key={i} className="flex justify-between p-2 bg-[#0b0e14] rounded border border-[#1e2330] mb-1"><span className="text-xs text-white">{b.name}</span><span className="text-[#0ecb81] text-xs font-bold">-{Math.floor(b.vol * 0.001)}</span></div>
-                  ))}
-               </div>
-            </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TwFundamentalTab({ chipData, stock }) {
-  const formatVal = (val, suffix = '') => {
-    if (val === null || val === undefined || isNaN(val)) return '--';
-    if (val === 0) return '0' + suffix;
-    return val.toFixed(2) + suffix;
-  };
-
-  return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-      <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2"><PieChart className="w-6 h-6 text-pink-500" /> 基本資料與評價</h3>
-            {chipData.loading && <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
-                <div className="text-xs text-slate-500 mb-2">本益比 (PE)</div>
-                <div className="text-2xl font-black text-white">{formatVal(chipData.pe)}</div>
-              </div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
-                <div className="text-xs text-slate-500 mb-2">股價淨值比 (PB)</div>
-                <div className="text-2xl font-black text-white">{formatVal(chipData.pb)}</div>
-              </div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
-                <div className="text-xs text-slate-500 mb-2">現金殖利率</div>
-                <div className="text-2xl font-black text-[#f6465d]">{formatVal(chipData.yield, '%')}</div>
-              </div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
-                <div className="text-xs text-slate-500 mb-2">外資持股</div>
-                <div className="text-2xl font-black text-blue-400">{formatVal(chipData.foreignHolding, '%')}</div>
-              </div>
-          </div>
-          <div className="mt-8 pt-6 border-t border-[#2a2f3a]/50 text-[10px] text-slate-500 flex items-center gap-2">
-            <AlertCircle className="w-3 h-3" />
-            數據採集自證交所 OpenAPI 與 Yahoo Finance，若顯示為 -- 代表該標的暫無相關評比數據或為虧損狀態。
-          </div>
-      </div>
-    </div>
-  );
-}
-
-function TwPerformanceTab({ entryPrice, setEntryPrice, analysis, newsLoading, news }) {
-  return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-       <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><Calculator className="w-6 h-6 text-emerald-400" /> 個人進場模擬</h3>
-          <div className="max-w-xl">
-             <label className="text-xs text-slate-500 font-bold uppercase mb-2 block">平均持有成本</label>
-             <div className="relative">
-                <input type="number" value={entryPrice} onChange={e => setEntryPrice(e.target.value)} className="w-full bg-[#0b0e14] border border-[#2a2f3a] rounded-xl px-5 py-3 text-white text-xl font-mono focus:border-emerald-500 outline-none" />
-                <span className="absolute right-5 top-3.5 text-slate-500 font-bold">TWD</span>
-             </div>
-          </div>
-          {analysis && (
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-               <div className="bg-[#0b0e14] p-6 rounded-2xl border border-[#1e2330] flex items-center justify-between">
-                  <div><div className="text-xs text-slate-500 mb-1">損益率</div><div className={`text-3xl font-black ${parseFloat(analysis.pnl) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(analysis.pnl) >= 0 ? '+' : ''}{analysis.pnl}%</div></div>
-                  <div className={`flex flex-col items-center gap-1 ${analysis.color}`}>{analysis.icon}<span className="text-xs font-black">{analysis.advice}</span></div>
-               </div>
-               <div className="bg-emerald-500/5 border border-emerald-500/20 p-6 rounded-2xl"><div className="text-xs text-emerald-400 font-bold mb-2 flex items-center gap-2"><Clock className="w-4 h-4" /> 下次開盤戰術</div><p className="text-sm text-slate-300 leading-relaxed font-bold">{analysis.openingStrategy}</p></div>
-            </div>
-          )}
-       </div>
-       <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><Newspaper className="w-6 h-6 text-blue-400" /> 個股即時新聞</h3>
-          {newsLoading ? <div className="text-center py-20 text-slate-600 animate-pulse">載入新聞中...</div> : (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {news.slice(0, 10).map((item, idx) => (
-                  <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`p-4 rounded-2xl border transition-all ${item.isCritical ? 'bg-red-500/5 border-red-500/20' : 'bg-[#0b0e14] border-[#1e2330] hover:border-[#2a2f3a]'}`}>
-                     <div className="flex items-center gap-2 mb-2">{item.isCritical && <span className="text-[10px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> 重要</span>}<span className="text-[10px] text-slate-500">{item.publisher}</span></div>
-                     <h4 className="text-sm font-bold text-slate-200 line-clamp-2">{item.title}</h4>
-                  </a>
-                ))}
-             </div>
-          )}
-       </div>
-    </div>
-  );
-}
-
 function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], watchlist = [], toggleWatchlist }) {
   const [chartData, setChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartError, setChartError] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('PRICE_VOL');
 
   const isInWatchlist = watchlist.includes(stock.symbol);
 
@@ -2845,104 +2262,567 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
     return analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
   }, [chartData]);
 
-  const isBottom = latestData && latestData.close <= Math.min(...chartData.slice(-60).map(k => k.low)) * 1.1;
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'PRICE_VOL': return <TwPriceVolTab volAnalysis={volAnalysis} currentVolume={currentVolume} chartData={chartData} isBottom={isBottom} />;
-      case 'TECHNICAL': return <TwTechnicalTab chartLoading={chartLoading} chartData={chartData} recommendations={recommendations} />;
-      case 'CHIPS': return <TwChipsTab chipData={chipData} branchData={branchData} />;
-      case 'FUNDAMENTAL': return <TwFundamentalTab chipData={chipData} stock={stock} />;
-      case 'PERFORMANCE': return <TwPerformanceTab entryPrice={entryPrice} setEntryPrice={setEntryPrice} analysis={analysis} newsLoading={newsLoading} news={news} />;
-      case 'TRADING': return (
-        <div className="bg-[#121620] rounded-2xl p-8 border border-[#2a2f3a] shadow-lg max-w-2xl mx-auto">
-          <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3"><Target className="w-8 h-8 text-blue-500" /> 台股下單交易</h3>
-          <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
-        </div>
-      );
-      default: return null;
-    }
-  };
-
-    return (
-    <div className="animate-in fade-in duration-300 pb-20">
-      <div className="flex justify-between items-center mb-6 gap-4">
-        <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm bg-[#121620] px-4 py-2 rounded-xl border border-[#2a2f3a] transition-all"><ArrowLeft className="w-4 h-4" /> 返回市場清單</button>
-        <div className={`relative flex items-center transition-all duration-300 ${isSearchExpanded ? 'flex-1' : 'w-12'}`}>
+  return (
+    <div className="animate-in fade-in duration-300">
+      <div className="flex justify-between items-center mb-4 gap-2">
+        <button onClick={() => window.location.hash = '#/tw-stocks'} className="flex items-center gap-1.5 text-slate-400 hover:text-white text-sm bg-[#121620] px-3 py-1.5 rounded-lg border border-[#2a2f3a] transition-all whitespace-nowrap"><ArrowLeft className="w-4 h-4" /> 返回清單</button>
+        
+        <div className={`relative flex items-center transition-all duration-300 ${isSearchExpanded ? 'flex-1' : 'w-10'}`}>
           {isSearchExpanded ? (
             <div className="relative w-full flex items-center gap-2 animate-in slide-in-from-right-2 duration-300">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-3 h-4 w-4 text-blue-400 z-10" />
-                <input ref={searchInputRef} type="text" placeholder="切換標的..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-11 pr-10 py-2.5 bg-[#0b0e14] border border-blue-500/50 rounded-xl text-white outline-none shadow-[0_0_15px_rgba(59,130,246,0.15)]" />
-                {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-4 top-3 text-slate-500 hover:text-white"><X className="w-4 h-4" /></button>}
+                <Search 
+                    className="absolute left-3 top-2.5 h-4 w-4 text-blue-400 cursor-pointer z-10" 
+                    onClick={() => setSearchTerm('')}
+                />
+                <input 
+                  ref={searchInputRef}
+                  type="text" 
+                  placeholder="切換股票代號或名稱..." 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  className="w-full pl-9 pr-10 py-1.5 text-sm border border-blue-500/50 rounded-lg bg-[#0b0e14] text-white focus:border-blue-500 outline-none shadow-[0_0_10px_rgba(59,130,246,0.15)]" 
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2 text-slate-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                
+                {/* 搜尋結果下拉選單 */}
                 {filteredSearch.length > 0 && (
-                  <div className="absolute top-full left-0 w-full mt-2 bg-[#121620] border border-[#2a2f3a] rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <div className="absolute top-full left-0 w-full mt-2 bg-[#121620] border border-[#2a2f3a] rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     {filteredSearch.map(s => (
-                      <div key={s.symbol} onClick={() => { window.location.hash = `#/tw-stocks/detail/${s.symbol}`; setIsSearchExpanded(false); setSearchTerm(''); }} className="px-5 py-4 hover:bg-[#1a1e27] cursor-pointer border-b border-[#2a2f3a]/50 flex justify-between items-center group">
-                        <div className="flex flex-col"><span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{s.name}</span><span className="text-[10px] text-slate-500 font-mono">{s.symbol}</span></div>
-                        <div className={`text-xs font-mono font-bold ${parseFloat(s.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{parseFloat(s.priceChangePercent) >= 0 ? '+' : ''}{s.priceChangePercent}%</div>
+                      <div 
+                        key={s.symbol} 
+                        onClick={() => { window.location.hash = `#/tw-stocks/detail/${s.symbol}`; setIsSearchExpanded(false); setSearchTerm(''); }}
+                        className="px-4 py-3 hover:bg-[#1a1e27] cursor-pointer border-b border-[#2a2f3a]/50 last:border-0 flex justify-between items-center group"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{s.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">{s.symbol}</span>
+                        </div>
+                        <div className={`text-xs font-mono font-bold ${parseFloat(s.priceChangePercent) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                          {parseFloat(s.priceChangePercent) >= 0 ? '+' : ''}{s.priceChangePercent}%
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-              <button onClick={() => { setIsSearchExpanded(false); setSearchTerm(''); }} className="text-sm text-slate-400 hover:text-white px-2">取消</button>
+              <button 
+                onClick={() => { setIsSearchExpanded(false); setSearchTerm(''); }} 
+                className="text-xs text-slate-400 hover:text-white whitespace-nowrap px-1"
+              >
+                取消
+              </button>
             </div>
           ) : (
-            <button onClick={() => { setIsSearchExpanded(true); setSearchTerm(''); }} className="p-3 bg-[#121620] hover:bg-[#1a1e27] border border-[#2a2f3a] rounded-xl text-slate-400 hover:text-blue-400 transition-all flex items-center justify-center w-12 h-11"><Search className="w-5 h-5" /></button>
+            <button 
+              onClick={() => { setIsSearchExpanded(true); setSearchTerm(''); }}
+              className="p-2 bg-[#121620] hover:bg-[#1a1e27] border border-[#2a2f3a] rounded-lg text-slate-400 hover:text-blue-400 transition-all flex items-center justify-center w-10 h-8 group"
+              title="快速切換股票"
+            >
+              <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            </button>
           )}
         </div>
       </div>
-
-      <div className="bg-[#121620] p-6 rounded-3xl border border-[#2a2f3a] shadow-xl mb-8 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-6 opacity-5"><LineChart className="w-40 h-40 text-blue-500" /></div>
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 relative z-10">
-              <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 bg-blue-600/20 rounded-3xl border border-blue-500/30 flex items-center justify-center text-blue-400 text-3xl font-black shadow-inner">{stock.symbol.slice(0, 2)}</div>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-[#121620] p-4 sm:p-6 rounded-2xl border border-[#2a2f3a] shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10"><LineChart className="w-24 h-24 text-blue-500" /></div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white mb-1">{String(stock.name)} <span className="text-lg font-normal text-slate-500 ml-1">{String(stock.symbol)}</span></h2>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex bg-[#0b0e14] rounded-lg border border-[#2a2f3a] p-0.5">
+                    <button 
+                      onClick={() => toggleWatchlist(stock.symbol)}
+                      className="p-1.5 rounded-md hover:bg-white/5 transition-all"
+                      title="快速自選"
+                    >
+                      <Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+                    </button>
+                    <button 
+                      onClick={() => setShowAddModal(true)}
+                      className="p-1.5 rounded-md hover:bg-white/5 transition-all text-slate-600 hover:text-blue-400 border-l border-[#2a2f3a]"
+                      title="加入分組"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">加入自選分組</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-6 p-4 sm:p-5 bg-[#0b0e14] rounded-xl border border-[#1e2330]">
+                <div className="text-sm text-slate-400 mb-2 font-bold flex items-center gap-2">
+                  <Target className="w-4 h-4 text-purple-500"/> 盤中/盤末短線動能評級
+                </div>
+                <div className={`text-3xl sm:text-4xl font-black flex items-center gap-3 ${stStatus.color} my-3`}>
+                   {stStatus.icon} {stStatus.text}
+                </div>
+                
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#2a2f3a]">
                   <div>
-                      <div className="flex items-center gap-3">
-                          <h2 className="text-4xl font-black text-white tracking-tight">{stock.name}</h2>
-                          <span className="text-xl font-mono text-slate-500 bg-[#0b0e14] px-3 py-1 rounded-lg border border-[#2a2f3a]">{stock.symbol}</span>
+                     <div className="text-[10px] text-slate-500">最新報價</div>
+                     <div className="text-lg font-mono text-white">{Number(currentPrice).toFixed(2)}</div>
+                     <div className="text-[9px] text-slate-500 mt-1">基準昨收: <span className="text-slate-300">{formatPrice(currentPrevClose)}</span></div>
+                  </div>
+                  <div>
+                     <div className="text-[10px] text-slate-500">即時漲跌幅</div>
+                     <div className={`text-lg font-mono font-bold ${currentChange >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentChange >= 0 ? '+' : ''}{currentChange}%</div>
+                  </div>
+                  <div className="text-right">
+                     <div className="text-[10px] text-slate-500">目前總量</div>
+                     <div className="text-lg font-mono text-white">{formatVolume(currentVolume)}</div>
+                  </div>
+                </div>
+            </div>
+          </div>
+
+          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg">
+             <TwTradeForm symbol={stock.symbol} name={stock.name} currentPrice={currentPrice} balance={twAccount.balance} onOpenPosition={openTwPosition} />
+          </div>
+
+          <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-4 sm:p-5 shadow-lg space-y-4">
+             <h3 className="text-sm font-bold text-white flex items-center gap-2">
+               <Calculator className="w-4 h-4 text-emerald-400" /> 個人進場點分析
+             </h3>
+             <div>
+               <label className="text-[10px] text-slate-500 mb-1.5 block">我的進場價格</label>
+               <div className="relative">
+                 <input 
+                   type="number" 
+                   value={entryPrice} 
+                   onChange={(e) => setEntryPrice(e.target.value)}
+                   placeholder="請輸入成交價"
+                   className="w-full bg-[#0b0e14] border border-[#2a2f3a] rounded-xl px-4 py-2.5 text-white text-sm focus:border-emerald-500 outline-none transition-all font-mono"
+                 />
+                 {entryPrice && (
+                   <button onClick={() => setEntryPrice('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                     <X className="w-4 h-4" />
+                   </button>
+                 )}
+               </div>
+             </div>
+
+             {analysis && (
+               <div className="pt-2 space-y-3">
+                 <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                   <div className="flex items-center gap-2">
+                     <span className="text-slate-400 text-xs">損益狀況</span>
+                     <span className={`text-sm font-black ${parseFloat(analysis.pnl) >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                       {parseFloat(analysis.pnl) >= 0 ? '+' : ''}{analysis.pnl}%
+                     </span>
+                   </div>
+                   <div className={`flex items-center gap-1.5 text-sm font-bold ${analysis.color}`}>
+                     {analysis.icon} {analysis.advice}
+                   </div>
+                 </div>
+                 
+                 <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                    <div className="text-[10px] text-emerald-400 font-bold mb-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> 下次開盤操作建議
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {analysis.openingStrategy}
+                    </p>
+                 </div>
+               </div>
+             )}
+          </div>
+
+          <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" /> 籌碼總覽及卷商分點
+                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded ml-auto border border-blue-500/30">盤後資料</span>
+              </h3>
+              {!chipData.loading && chipData.history.length > 0 && <TwChipChart history={chipData.history} />}
+              {chipData.loading ? (
+                <div className="flex justify-center items-center py-6 text-slate-500"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+              ) : (chipData.foreign !== null || chipData.marginToday !== null) ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-[#2a2f3a] text-slate-500">
+                        <th className="pb-2 font-normal">指標</th>
+                        <th className="pb-2 font-normal text-right whitespace-nowrap">最新單日 {latestDateStr && <span className="text-[10px] text-slate-600 font-mono">({latestDateStr})</span>}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2f3a]/50">
+                      <tr className="bg-blue-600/5">
+                        <td className="py-2.5 text-blue-400 font-bold">三大法人合計買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-black ${((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) > 0 ? '+' : ''}
+                            {chipData.foreign !== null ? String((chipData.foreign || 0) + (chipData.trust || 0) + (chipData.dealer || 0)) : '--'}
+                        </td>
+                      </tr>
+                      <tr className="bg-blue-600/5 border-t-0">
+                        <td className="py-2.5 text-blue-400 font-bold pl-4">└ 當日投入金額 (估)</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.totalNet > 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {chipData.totalNet ? (chipData.totalNet * currentPrice * 1000 / 100000000).toFixed(2) + ' 億' : '--'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">三大法人 5日累計</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${(chipData.history?.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) > 0) ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>
+                            {chipData.history?.length >= 5 ? (chipData.history.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) > 0 ? '+' : '') : ''}
+                            {chipData.history?.length >= 5 ? chipData.history.slice(-5).reduce((sum, h) => sum + (h.foreign + h.trust + h.dealer), 0) : '--'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">外資合計買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.foreign > 0 ? 'text-[#f6465d]' : chipData.foreign < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.foreign > 0 ? '+' : ''}{chipData.foreign !== null ? String(chipData.foreign) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">投信合計買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.trust > 0 ? 'text-[#f6465d]' : chipData.trust < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.trust > 0 ? '+' : ''}{chipData.trust !== null ? String(chipData.trust) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">自營商合計買賣超</td>
+                        <td className={`py-2.5 text-right font-mono font-bold ${chipData.dealer > 0 ? 'text-[#f6465d]' : chipData.dealer < 0 ? 'text-[#0ecb81]' : 'text-white'}`}>{chipData.dealer > 0 ? '+' : ''}{chipData.dealer !== null ? String(chipData.dealer) : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">融資餘額</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.marginToday !== null ? String(chipData.marginToday) : '--'} {chipData.marginChange !== null && <span className={`ml-1 text-[10px] ${chipData.marginChange > 0 ? 'text-[#f6465d]' : chipData.marginChange < 0 ? 'text-[#0ecb81]' : 'text-slate-500'}`}>({chipData.marginChange > 0 ? '+' : ''}{String(chipData.marginChange)})</span>}</td>
+                      </tr>
+                      <tr className="border-t border-[#2a2f3a]/30">
+                        <td className="py-2.5 text-slate-400 font-bold">外資持股比 / 剩餘量</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-amber-400">
+                            {chipData.foreignHolding ? chipData.foreignHolding.toFixed(2) : '--'} % 
+                            <div className="text-[9px] text-slate-500">{chipData.foreignShares ? (chipData.foreignShares / 1000).toLocaleString() + ' 千張' : ''}</div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">本益比 (PE)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.pe || '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">殖利率 (Yield)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-[#f6465d]">{chipData.yield ? chipData.yield + '%' : '--'}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 text-slate-400">股價淨值比 (PB)</td>
+                        <td className="py-2.5 text-right font-mono font-bold text-white">{chipData.pb || '--'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="text-center py-6 text-slate-500 text-xs">無公開盤後資料</div>}
+          </div>
+
+          <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg">
+             <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-bold text-white">個股相關新聞</h3>
+               <span className="text-[10px] text-slate-500 bg-[#0b0e14] px-2 py-1 rounded border border-[#2a2f3a]">AI 影響力排序</span>
+             </div>
+             {newsLoading ? <div className="text-center py-10 text-slate-500 animate-pulse">載入新聞中...</div> : Array.isArray(news) && news.length > 0 ? (
+                <div className="space-y-3">
+                  {news.slice(0, 6).map((item, idx) => (
+                    <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`block p-3 rounded-xl hover:bg-[#1a1e27] border transition-all group relative overflow-hidden ${item.isCritical ? 'border-red-500/30 bg-red-500/[0.02]' : item.impact ? 'border-amber-500/20 bg-amber-500/[0.01]' : 'border-transparent hover:border-[#2a2f3a]'}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {item.isCritical ? (
+                          <span className="text-[8px] font-black bg-red-500 text-white px-1 py-0.5 rounded flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5" /> 極重要
+                          </span>
+                        ) : item.impact && (
+                          <span className="text-[8px] font-black bg-amber-500 text-black px-1 py-0.5 rounded flex items-center gap-0.5">
+                            <Zap className="w-2.5 h-2.5" /> 影響力
+                          </span>
+                        )}
+                        <span className="text-[9px] text-slate-500">{String(item.publisher || 'Yahoo Finance')}</span>
                       </div>
-                      <div className="flex items-center gap-6 mt-3">
-                          <span className="text-sm text-slate-400 flex items-center gap-1.5"><Layers className="w-4 h-4 text-blue-500" /> {stock.industry || '一般產業'}</span>
-                          <div className="flex items-center gap-2 cursor-pointer group" onClick={() => toggleWatchlist(stock.symbol)}>
-                             <div className={`p-1.5 rounded-lg border transition-all ${isInWatchlist ? 'bg-amber-400/10 border-amber-400/30' : 'bg-white/5 border-white/10 group-hover:border-amber-400/50'}`}><Star className={`w-4 h-4 ${isInWatchlist ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} /></div>
-                             <span className="text-xs text-slate-500 font-bold group-hover:text-amber-400 transition-colors">{isInWatchlist ? '已在自選' : '加入自選'}</span>
+
+                      <h4 className={`text-sm font-bold group-hover:text-emerald-400 mb-2 line-clamp-2 ${item.isCritical ? 'text-red-100' : 'text-slate-200'}`}>{String(item.title || '')}</h4>
+
+                      <div className="flex justify-between items-center text-[10px] text-slate-500">
+                        <div className="flex gap-1">
+                          {(item.impactKeywords || []).slice(0, 2).map(k => (
+                            <span key={k} className="text-[8px] text-slate-600">#{k}</span>
+                          ))}
+                        </div>
+                        <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500">閱讀全文 <ExternalLink className="w-2.5 h-2.5" /></span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+             ) : <div className="text-center py-10 text-slate-500">暫無相關新聞</div>}
+          </div>
+        </div>
+
+        <div className="lg:col-span-8 space-y-6">
+          <div className="bg-[#121620] rounded-2xl p-1 border border-[#2a2f3a] shadow-lg overflow-hidden">
+            <div className="p-3 flex items-center justify-between border-b border-[#2a2f3a]/50 mb-1">
+              <div className="flex gap-4 text-[10px] font-mono">
+                <span className="text-purple-400 font-bold">MA10</span>
+                <span className="text-emerald-500 font-bold">MA60</span>
+              </div>
+              <div className="flex bg-[#0b0e14] px-3 py-1 rounded-lg border border-[#2a2f3a] text-[10px] font-bold text-blue-400">
+                日線模式 (數據始於 2024)
+              </div>
+              </div>            {chartLoading ? (
+              <div className="w-full h-[400px] sm:h-[580px] flex items-center justify-center">
+                <RefreshCw className="w-8 h-8 animate-spin text-slate-600" />
+              </div>
+            ) : (
+              <TwKLineChart klines={chartData} />
+            )}
+          </div>
+
+          {recommendations && (
+            <div className="bg-[#121620] rounded-2xl p-4 sm:p-5 border border-[#2a2f3a] shadow-lg">
+               <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Crosshair className="w-5 h-5 text-blue-500" /> 趨勢分析與操作建議</h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">短期 (1-2週內)</div><div className={`text-xl font-black mb-1 ${recommendations.shortTerm.color}`}>{String(recommendations.shortTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.shortTerm.desc)}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">中期 (1-3個月)</div><div className={`text-xl font-black mb-1 ${recommendations.midTerm.color}`}>{String(recommendations.midTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.midTerm.desc)}</div></div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]"><div className="text-sm text-slate-400 font-bold mb-2">長期 (一季以上)</div><div className={`text-xl font-black mb-1 ${recommendations.longTerm.color}`}>{String(recommendations.longTerm.action)}</div><div className="text-xs text-slate-500 leading-relaxed">{String(recommendations.longTerm.desc)}</div></div>
+               </div>
+
+               <div className="mt-4 p-4 bg-blue-600/5 border border-blue-500/20 rounded-xl">
+                  <div className="text-xs text-blue-400 font-bold mb-3 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> AI 模擬交易點位參考 (僅供參考，請謹慎評估風險)</div>
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                          <div className="text-[10px] text-slate-500 mb-1">建議入場價</div>
+                          <div className="text-lg font-mono font-black text-white">{recommendations.entry.toFixed(2)}</div>
+                      </div>
+                      <div className="text-center border-x border-[#2a2f3a]">
+                          <div className="text-[10px] text-slate-500 mb-1">預計止盈價</div>
+                          <div className="text-lg font-mono font-black text-[#f6465d]">{recommendations.target.toFixed(2)}</div>
+                      </div>
+                      <div className="text-center">
+                          <div className="text-[10px] text-slate-500 mb-1">嚴格止損價</div>
+                          <div className="text-lg font-mono font-black text-[#0ecb81]">{recommendations.stopLoss.toFixed(2)}</div>
+                      </div>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {volAnalysis && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                <BarChart2 className="w-5 h-5 text-emerald-400" /> 成交量口訣分析
+                <span className="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded ml-auto border border-emerald-500/30">量價關係實戰</span>
+              </h3>
+              <div className="bg-[#0b0e14] p-5 rounded-xl border border-[#1e2330] relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-5"><BarChart2 className="w-20 h-20 text-emerald-500" /></div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm text-slate-500 mb-1">當前量價狀態</div>
+                    <div className="text-2xl font-black text-white flex items-center gap-2">
+                      {volAnalysis.rule} <span className="text-sm font-normal text-slate-400">({volAnalysis.signal})</span>
+                    </div>
+                  </div>
+                  <div className={`text-xl font-bold px-4 py-2 rounded-lg bg-white/5 border border-white/10 ${volAnalysis.color}`}>
+                    {volAnalysis.signal}
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    <span className="font-bold text-emerald-400 mr-2">【深度解讀】</span>
+                    {volAnalysis.desc}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">今日成交量</div>
+                  <div className="text-sm font-bold text-white font-mono">{formatVolume(currentVolume)}</div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">5日平均量</div>
+                  <div className="text-sm font-bold text-white font-mono">{formatVolume(chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5)}</div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">量比 (Vol Ratio)</div>
+                  <div className={`text-sm font-bold font-mono ${(currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5)) > 1.2 ? 'text-[#f6465d]' : 'text-white'}`}>
+                    {(currentVolume / (chartData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5 || 1)).toFixed(2)}x
+                  </div>
+                </div>
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] text-center">
+                  <div className="text-[10px] text-slate-500 mb-1">趨勢位階</div>
+                  <div className={`text-sm font-bold ${latestData && latestData.close <= Math.min(...chartData.slice(-60).map(k => k.low)) * 1.1 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {latestData && latestData.close <= Math.min(...chartData.slice(-60).map(k => k.low)) * 1.1 ? '底部區域' : '中高位階'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                  <PieChart className="w-5 h-5 text-pink-500" /> 零股短線實戰解析
+                  <span className="text-[9px] px-1.5 py-0.5 bg-pink-500/20 text-pink-400 rounded ml-auto border border-pink-500/30">四象限戰法</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">1. 流動性與滑價</div>
+                      <div className={`text-xl font-black mb-1 ${isHighlyLiquid ? 'text-[#f6465d]' : 'text-amber-400'}`}>
+                          {isHighlyLiquid ? '優良 (達標)' : '偏低 (注意滑價)'}
+                      </div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• <span className="text-white">基準量能：</span>百元以上需大於 5000 張；百元以下大於 10000 張。</div>
+                          <div>• <span className="text-[#f6465d]">避開滑價：</span>注意買賣五檔，若價差大於 2 個 Tick 應避免交易。</div>
+                          <div>• <span className="text-blue-400">熱門時段：</span>開盤前 15 分與收盤前 15 分鐘撮合最快。</div>
+                      </div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">2. 動能 (技術面)</div>
+                      <div className={`text-xl font-black mb-1 ${momentumColor}`}>
+                          {momentumText}
+                      </div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• 均線：<span className={latestData?.close < latestData?.ma10 ? 'text-[#0ecb81]' : 'text-slate-300'}>{maStatusMsg}</span></div>
+                          <div>• K線：<span className={hasStrongKline ? 'text-[#f6465d]' : 'text-slate-300'}>{klinePatternMsg}</span></div>
+                      </div>
+                  </div>
+                  
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330] md:col-span-2">
+                      <div className="text-sm text-slate-400 font-bold mb-2">3. 成本與綜合戰略</div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-2">
+                          <div className="flex items-start gap-1">
+                              <span className="text-amber-400 shrink-0">• 折溢價陷阱：</span>
+                              <span>零股與整股常有落差，下單前務必比對整股價格，若零股溢價超過 <span className="text-white font-bold">0.5%</span> 等於先賠在起跑點。熱門股收盤前常有溢價，為短線套利好時機。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-[#f6465d] shrink-0">• 嚴格停損：</span>
+                              <span>零股無法當沖，若買入當天收盤情勢不對，隔天一早須果斷處理 (建議設定 <span className="text-white font-bold">3%~5%</span> 停損點)。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-emerald-400 shrink-0">• 分批彈性：</span>
+                              <span>善用零股彈性分批布局 (例如：早盤試單，午盤確認轉強再加碼)，降低單一價位風險。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-slate-300 shrink-0">• 除權息陷阱：</span>
+                              <span>短線賺價差應避開除息日，以免被課徵額外的股利所得稅與健保補充保費。</span>
+                          </div>
+                          <div className="flex items-start gap-1">
+                              <span className="text-blue-400 shrink-0">• 交易成本：</span>
+                              <span>零股切忌使用 20 元低消券商，務必使用提供<span className="text-white font-bold">「最低 1 元手續費」</span>之帳戶操作。</span>
                           </div>
                       </div>
                   </div>
               </div>
-              <div className="grid grid-cols-3 gap-1 px-1 bg-[#0b0e14] p-1.5 rounded-3xl border border-[#1e2330] shadow-inner">
-                  <div className="px-6 py-4 text-center"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">成交價</div><div className="text-3xl font-mono font-black text-white">{currentPrice.toFixed(2)}</div></div>
-                  <div className="px-6 py-4 text-center border-x border-[#2a2f3a]"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">漲跌幅</div><div className={`text-3xl font-mono font-black ${currentChange >= 0 ? 'text-[#f6465d]' : 'text-[#0ecb81]'}`}>{currentChange >= 0 ? '+' : ''}{currentChange}%</div></div>
-                  <div className="px-6 py-4 text-center"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">成交張數</div><div className="text-3xl font-mono font-black text-white">{Math.floor(currentVolume).toLocaleString()}</div></div>
+          </div>
+
+          <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                  <Zap className="w-5 h-5 text-amber-500" /> 隔日沖指標綜合分析
+                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">13:20 決策基準</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">1. 隔日沖券商總量與佔比</div>
+                      <div className={`text-xl font-black mb-1 ${branchData?.dayTradeRatio > 15 ? 'text-[#f6465d]' : 'text-amber-400'}`}>
+                          佔比 {branchData?.dayTradeRatio?.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-slate-500 leading-relaxed mt-2 space-y-1">
+                          <div>• <span className="text-white">主力買進量：</span>{branchData ? Math.floor(branchData.dayTradeVol * 0.001) : 0} 張</div>
+                          <div>• <span className={branchData?.dayTradeRatio > 15 ? 'text-[#f6465d]' : 'text-slate-300'}>籌碼評估：</span>{branchData?.dayTradeRatio > 15 ? '隔日沖佔比極高，明早賣壓將非常沉重，適合極短線避開或反向吃豆腐。' : '隔日沖佔比在安全範圍內。'}</div>
+                      </div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                      <div className="text-sm text-slate-400 font-bold mb-2">2. 隔日沖主力技術軌跡</div>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${isBullishMA ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 均線多頭排列</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasLongRed ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 長紅K強勢表態</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasShortUpperShadow ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 短上影線 (鎖碼)</div>
+                          <div className="flex items-center gap-2 text-xs"><CheckCircle2 className={`w-4 h-4 ${hasLongLowerShadow ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> 長下影線 (洗盤)</div>
+                          <div className="flex items-center gap-2 text-xs col-span-2"><CheckCircle2 className={`w-4 h-4 ${isMacdKdBullish ? 'text-[#0ecb81]' : 'text-slate-600'}`} /> MACD / KD 指標偏多</div>
+                      </div>
+                  </div>
+                  <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330] md:col-span-2">
+                      <div className="text-sm text-slate-400 font-bold mb-2">3. 避開陷阱標的檢測</div>
+                      <div className="flex flex-col gap-2 mt-2">
+                          <div className={`text-xs px-3 py-2 rounded flex items-center justify-between ${isHighVolBlack ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                              <span>高檔爆量長黑測試</span>
+                              <span>{isHighVolBlack ? '⚠️ 出現高檔爆量長黑 (強烈建議避開)' : '✅ 安全通過'}</span>
+                          </div>
+                          <div className={`text-xs px-3 py-2 rounded flex items-center justify-between ${isVolShrinking ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                              <span>成交量連續萎縮測試</span>
+                              <span>{isVolShrinking ? '⚠️ 成交量連續萎縮 (流動性不佳)' : '✅ 安全通過'}</span>
+                          </div>
+                      </div>
+                  </div>
               </div>
           </div>
-      </div>
 
-      <div className="flex bg-[#121620] p-1.5 rounded-2xl border border-[#2a2f3a] mb-8 overflow-x-auto scrollbar-hide sticky top-[64px] z-30 shadow-2xl backdrop-blur-md bg-opacity-90">
-          {[
-              { id: 'PRICE_VOL', label: '價量分析', icon: <BarChart2 className="w-4 h-4" /> },
-              { id: 'TECHNICAL', label: '技術指標', icon: <TrendingUp className="w-4 h-4" /> },
-              { id: 'CHIPS', label: '籌碼總覽', icon: <ShieldAlert className="w-4 h-4" /> },
-              { id: 'FUNDAMENTAL', label: '基本資料', icon: <PieChart className="w-4 h-4" /> },
-              { id: 'PERFORMANCE', label: '績效與新聞', icon: <Newspaper className="w-4 h-4" /> },
-              { id: 'TRADING', label: '下單交易', icon: <Target className="w-4 h-4" /> },
-          ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>{tab.icon} {tab.label}</button>
-          ))}
-      </div>
+          {branchData && (
+            <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-5 shadow-lg space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <PieChart className="w-4 h-4 text-amber-500" /> 全方位 AI 籌碼儀表板
+                    <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded ml-auto border border-amber-500/30">AI 擬真推算</span>
+                </h3>
+                
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330]">
+                   <div className="flex justify-between items-center mb-2">
+                       <span className="text-xs text-slate-400 font-bold">大戶控盤率 (買超前五大佔比)</span>
+                       <span className={`text-xs font-black ${branchData.concentrationColor}`}>{branchData.bigHolderRatio.toFixed(1)}%</span>
+                   </div>
+                   <div className="w-full bg-[#1a1e27] rounded-full h-2">
+                      <div className={`h-2 rounded-full ${branchData.concentrationColor.replace('text-', 'bg-')}`} style={{ width: `${Math.min(branchData.bigHolderRatio, 100)}%` }}></div>
+                   </div>
+                   <div className={`text-right text-[10px] mt-1 ${branchData.concentrationColor}`}>{branchData.concentrationLevel}</div>
+                </div>
 
-      <div className="min-h-[400px]">
-          {renderTabContent()}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <div className="text-[10px] text-center bg-[#f6465d]/10 text-[#f6465d] border border-[#f6465d]/30 rounded py-1 mb-2 font-bold">主力買超前五大</div>
+                        <div className="space-y-1.5">
+                            {branchData.buyers.slice(0, 5).map((b, i) => (
+                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
+                                        <span className="text-[#f6465d] font-mono">+{Math.floor(b.vol * 0.001)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
+                                        <span>均價 {b.cost}</span>
+                                        <span>{b.type}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[10px] text-center bg-[#0ecb81]/10 text-[#0ecb81] border border-[#0ecb81]/30 rounded py-1 mb-2 font-bold">主力賣超前五大</div>
+                        <div className="space-y-1.5">
+                            {branchData.sellers.slice(0, 5).map((b, i) => (
+                                <div key={i} className="flex flex-col bg-[#0b0e14] p-1.5 rounded border border-[#1e2330]">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white truncate" title={b.name}>{b.name}</span>
+                                        <span className="text-[#0ecb81] font-mono">-{Math.floor(b.vol * 0.001)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[8px] text-slate-500 mt-0.5">
+                                        <span>均價 {b.cost}</span>
+                                        <span>{b.type}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2330] mt-2">
+                    <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{String(branchData.advice)}</div>
+                </div>
+            </div>
+          )}
+
+        </div>
       </div>
       
       {showAddModal && <AddToWatchlistModal symbol={stock.symbol} type="tw" onClose={() => setShowAddModal(false)} />}
       
-      <div className="mt-12 text-center text-xs text-slate-500 bg-[#121620] py-4 rounded-2xl border border-[#2a2f3a] shadow-lg">
-        數據來源：Yahoo Finance 盤中即時報價與盤後籌碼推算 (自動同步更新)
-        <a href={`https://tw.stock.yahoo.com/quote/${stock.symbol}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors ml-2 font-black inline-flex items-center gap-1">查看雅虎原文 <ExternalLink className="w-3 h-3" /></a>
+      <div className="mt-8 text-center text-xs text-slate-500 bg-[#121620] py-3 rounded-xl border border-[#2a2f3a]">
+        即時報價與 K 線數據來源：純前端 API 直連與跨域代理技術
+        <a href={`https://tw.stock.yahoo.com/quote/${stock.symbol}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors ml-1 font-bold inline-flex items-center">
+          Yahoo Finance ({stock.name} {stock.symbol}) <ExternalLink className="w-3 h-3 ml-1" />
+        </a>
       </div>
     </div>
   );
@@ -3861,9 +3741,7 @@ export default function App() {
       else if (h === 'tw-stocks') { setCurrentRoute('tw_stocks'); setSelectedTwStock(null); }
       else if (h === 'tw-stocks/positions') { setCurrentRoute('tw_positions'); }
       else if (h === 'tw-stocks/assets') { setCurrentRoute('tw_assets'); }
-      else if (h === 'tw-stocks/growth-etf') { setCurrentRoute('tw_growth_etf'); }
       else if (h === 'tw-stocks/watchlists') { setCurrentRoute('tw_watchlists'); }
-
       else if (h.startsWith('tw-stocks/watchlist/')) {
           const id = h.replace('tw-stocks/watchlist/', '');
           setCurrentWatchlistId(id);
@@ -3951,7 +3829,6 @@ export default function App() {
             {currentRoute.startsWith('tw_') && (
                 <nav className="hidden sm:flex gap-1 text-sm font-bold ml-4 border-l border-[#2a2f3a] pl-4">
                   <button onClick={() => window.location.hash = '#/tw-stocks'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_stocks' || currentRoute === 'tw_stock_detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>台股市場</button>
-                  <button onClick={() => window.location.hash = '#/tw-stocks/growth-etf'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_growth_etf' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>成長 ETF</button>
                   <button onClick={() => window.location.hash = '#/tw-stocks/watchlists'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_watchlists' || currentRoute === 'tw_watchlist_detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>自選分組</button>
                   <button onClick={() => window.location.hash = '#/tw-stocks/positions'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full ml-1">{twAccount.positions.length}</span>}</button>
                   <button onClick={() => window.location.hash = '#/tw-stocks/assets'} className={`px-4 py-2 rounded-lg transition-all ${currentRoute === 'tw_assets' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>資產</button>
@@ -4000,7 +3877,6 @@ export default function App() {
 
              <div className="text-xs text-slate-500 mt-4 mb-1 font-bold">台股與 ETF</div>
              <button onClick={() => { window.location.hash = '#/tw-stocks'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_stocks' || currentRoute === 'tw_stock_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>台股市場</button>
-             <button onClick={() => { window.location.hash = '#/tw-stocks/growth-etf'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_growth_etf' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>成長 ETF</button>
              <button onClick={() => { window.location.hash = '#/tw-stocks/watchlists'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold transition-all ${currentRoute === 'tw_watchlists' || currentRoute === 'tw_watchlist_detail' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>自選分組</button>
              <button onClick={() => { window.location.hash = '#/tw-stocks/positions'; setIsMobileMenuOpen(false); }} className={`px-4 py-2.5 rounded-lg text-left font-bold flex items-center justify-between transition-all ${currentRoute === 'tw_positions' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'}`}>
                 波段持倉 {twAccount.positions.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{twAccount.positions.length}</span>}
@@ -4022,7 +3898,6 @@ export default function App() {
         {currentRoute === 'portal' && <PortalPage />}
         {currentRoute === 'news' && <NewsDashboard />}
         {currentRoute === 'tw_stocks' && <TwStocksDashboard twStocks={twStocks} twUpdateTime={twUpdateTime} loading={loadingTw} error={errorTw} twDashState={twDashState} setTwDashState={setTwDashState} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
-        {currentRoute === 'tw_growth_etf' && <TwGrowthEtfPage allStocks={twStocks} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
         {currentRoute === 'tw_stock_detail' && selectedTwStock && <TwStockWorkspace stock={selectedTwStock} twAccount={twAccount} openTwPosition={openTwPosition} allStocks={twStocks} watchlist={cloudTwWatchlist} toggleWatchlist={toggleWatchlist} />}
         {currentRoute === 'tw_positions' && <TwPositionsPage twStocks={twStocks} twAccount={twAccount} closeTwPosition={closeTwPosition} twLivePrices={twLivePrices} />}
         {currentRoute === 'tw_assets' && <TwAssetsPage twAccount={twAccount} resetTwAccount={resetTwAccount} />}
