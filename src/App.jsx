@@ -2105,7 +2105,11 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
 
     // 3. 基本面得分 (Fundamental Score)
     let fundScore = 0;
-    if (chipData.pe && chipData.pe < 15) fundScore += 2;
+    if (chipData.pe) {
+      if (chipData.pe <= 10) fundScore += 4; // 極具吸引力
+      else if (chipData.pe <= 15) fundScore += 2; // 具吸引力
+      else if (chipData.pe <= 25) fundScore += 1; // 合理範圍
+    }
     if (chipData.yield && chipData.yield > 4) fundScore += 2;
     if (chipData.pb && chipData.pb < 1.5) fundScore += 1;
 
@@ -2217,7 +2221,6 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
     let openingStrategy = "";
 
     const latest = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-    const ma20 = latest?.ma20 || currentPrice * 0.95;
 
     if (pnl <= -7) {
       advice = "強制止損";
@@ -2261,6 +2264,35 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
 
     return analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
   }, [chartData]);
+
+  const peAnalysis = useMemo(() => {
+    if (!chipData || !chipData.pe) return null;
+    const pe = chipData.pe;
+    
+    let status = "合理價格";
+    let color = "text-slate-400";
+    let desc = "目前本益比處於市場平均水準 (約 25)。";
+    let type = "FAIR";
+
+    if (pe <= 10) {
+      status = "極度划算";
+      color = "text-[#f6465d]";
+      desc = "本益比極低，投資回本時間極短，具備極高投資價值。";
+      type = "BEST";
+    } else if (pe <= 15) {
+      status = "具投資價值";
+      color = "text-amber-400";
+      desc = "本益比低於平均，屬於划算的優質標的。";
+      type = "GOOD";
+    } else if (pe >= 40) {
+      status = "溢價過高";
+      color = "text-[#0ecb81]";
+      desc = "本益比遠高於市場平均，投資回本時間長，需留意追高風險。";
+      type = "HIGH";
+    }
+
+    return { status, color, desc, pe: pe.toFixed(2), type, paybackYears: Math.ceil(pe) };
+  }, [chipData.pe]);
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -2391,7 +2423,7 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
 
           <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] p-4 sm:p-5 shadow-lg space-y-4">
              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-               <Calculator className="w-4 h-4 text-emerald-400" /> 個人進場點分析
+               <Calculator className="w-4 h-4 text-emerald-400" /> 個人進場點 analysis
              </h3>
              <div>
                <label className="text-[10px] text-slate-500 mb-1.5 block">我的進場價格</label>
@@ -2600,6 +2632,52 @@ function TwStockWorkspace({ stock, twAccount, openTwPosition, allStocks = [], wa
                       </div>
                   </div>
                </div>
+            </div>
+          )}
+
+          {peAnalysis && (
+            <div className="bg-[#121620] rounded-2xl p-5 border border-[#2a2f3a] shadow-lg">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+                <PieChart className="w-5 h-5 text-blue-400" /> 台股核心本益比 (PE) 分析
+                <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded ml-auto border border-blue-500/30">划算標的篩選</span>
+              </h3>
+              <div className="bg-[#0b0e14] p-5 rounded-xl border border-[#1e2330] relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-5"><PieChart className="w-20 h-20 text-blue-500" /></div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm text-slate-500 mb-1">本益比估值狀態</div>
+                    <div className="text-2xl font-black text-white flex items-center gap-2">
+                      PE {peAnalysis.pe} <span className="text-sm font-normal text-slate-400">({peAnalysis.status})</span>
+                    </div>
+                  </div>
+                  <div className={`text-xl font-bold px-4 py-2 rounded-lg bg-white/5 border border-white/10 ${peAnalysis.color}`}>
+                    {peAnalysis.status}
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    <span className="font-bold text-blue-400 mr-2">【策略分析】</span>
+                    {peAnalysis.desc}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                  <div className="text-[10px] text-slate-500 mb-1 font-bold">預估投資回本時間</div>
+                  <div className="text-xl font-black text-white font-mono">{peAnalysis.paybackYears} <span className="text-xs font-normal text-slate-500 ml-1">年</span></div>
+                  <div className="text-[9px] text-slate-500 mt-1">※ 基於當前 EPS 恆定推算</div>
+                </div>
+                <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                  <div className="text-[10px] text-slate-500 mb-1 font-bold">台股合理均值</div>
+                  <div className="text-xl font-black text-slate-300 font-mono">25.0 <span className="text-xs font-normal text-slate-500 ml-1">倍</span></div>
+                  <div className="text-[9px] text-slate-500 mt-1">※ 市場長期認可之合理水位</div>
+                </div>
+                <div className="bg-[#0b0e14] p-4 rounded-xl border border-[#1e2330]">
+                  <div className="text-[10px] text-slate-500 mb-1 font-bold">本月選股策略</div>
+                  <div className={`text-xl font-black font-mono ${peAnalysis.type === 'BEST' ? 'text-[#f6465d]' : 'text-slate-400'}`}>PE ≤ 10</div>
+                  <div className="text-[9px] text-slate-500 mt-1">※ 挑選本益比極低之優質標的</div>
+                </div>
+              </div>
             </div>
           )}
 

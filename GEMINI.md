@@ -23,6 +23,17 @@ When analyzing stock or crypto trends, always consider the relationship between 
 | **量減價跌** | 天天要跌 | 無量陰跌，市場如死水 |
 | **底部縮量** | 可能上漲 | 籌碼沉澱，醞釀反彈 |
 
-### 2. Implementation
-- Use the `analyzeVolumePrice` function in `src/App.jsx` to automate this analysis.
+### 2. P/E Ratio Rules (本益比分析)
+Taiwan stock market (台股) investment strategy based on P/E ratios:
+
+| 本益比區間 | 評級 | 解讀 |
+| :--- | :--- | :--- |
+| **PE <= 10** | 極度划算 | 投資回本時間短，具備極高投資價值。本月策略主推標的。 |
+| **10 < PE <= 15** | 具投資價值 | 價格低於市場平均，屬優質划算標的。 |
+| **15 < PE <= 25** | 合理價格 | 處於市場平均水準 (台股均值約 25)。 |
+| **PE >= 40** | 溢價過高 | 回本時間長，需留意追高風險。 |
+
+### 3. Implementation
+- Use the `analyzeVolumePrice` function in `src/App.jsx` for volume-price analysis.
+- Use the `peAnalysis` logic in `TwStockWorkspace` to automate P/E ratio assessment.
 - Display these insights in the stock detail workspace.
