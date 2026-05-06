@@ -95,24 +95,51 @@ function parseYahooData(data, officialPrevClose) {
 
   const timestamps = result.timestamp || [];
   const quote = result.indicators?.quote?.[0] || {};
+  const adjClose = result.indicators?.adjclose?.[0]?.adjclose || [];
 
   let validKlines = [];
   for (let i = 0; i < timestamps.length; i++) {
-      if (quote.close && quote.close[i] != null) {
+      const close = quote.close?.[i] ?? adjClose?.[i];
+      if (close != null) {
           validKlines.push({
               time: timestamps[i] * 1000,
-              open: Number(quote.open[i]),
-              high: Number(quote.high[i]),
-              low: Number(quote.low[i]),
-              close: Number(quote.close[i]),
-              volume: Number(quote.volume[i] || 0)
+              open: Number(quote.open?.[i] ?? close),
+              high: Number(quote.high?.[i] ?? close),
+              low: Number(quote.low?.[i] ?? close),
+              close: Number(close),
+              volume: Number(quote.volume?.[i] || 0)
           });
       }
   }
 
+  // 1. 獲取當前市價與最新時間
   const lastK = validKlines.length > 0 ? validKlines[validKlines.length - 1] : null;
   const todayPrice = (meta.regularMarketPrice > 0) ? meta.regularMarketPrice : (lastK ? lastK.close : 0);
   const vol = (meta.regularMarketVolume > 0) ? meta.regularMarketVolume : (lastK ? lastK.volume : 0);
+  const marketTime = meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now();
+
+  // 2. 強制檢查並補齊最新一天的 K 線 (解決「少一天」問題)
+  if (meta.regularMarketPrice > 0) {
+    const isNewDay = !lastK || (new Date(marketTime).toDateString() !== new Date(lastK.time).toDateString());
+    
+    if (isNewDay) {
+        // 如果是新的一天，且 timestamps 沒包含，則手動新增一支即時 K 線
+        validKlines.push({
+            time: marketTime,
+            open: meta.regularMarketPrice, // 開盤價若無可用 meta，暫以市價代替
+            high: Math.max(meta.regularMarketPrice, meta.dayHigh || 0),
+            low: Math.min(meta.regularMarketPrice, meta.dayLow || meta.regularMarketPrice),
+            close: meta.regularMarketPrice,
+            volume: meta.regularMarketVolume || 0
+        });
+    } else if (lastK) {
+        // 同一天，更新最後一支 K 線為最新即時數據
+        lastK.close = meta.regularMarketPrice;
+        lastK.high = Math.max(lastK.high, meta.dayHigh || 0);
+        lastK.low = Math.min(lastK.low, meta.dayLow || lastK.low);
+        lastK.volume = Math.max(lastK.volume, meta.regularMarketVolume || 0);
+    }
+  }
 
   // 優先順序：1. 官方傳入昨收 2. Yahoo Metadata 昨收 3. K線倒數第二支收盤
   let yesterdayClose = (officialPrevClose && officialPrevClose > 0) ? Number(officialPrevClose) : (meta.previousClose || meta.chartPreviousClose || 0);

@@ -131,13 +131,14 @@ export default async function handler(req, res) {
       let queryRange = range;
       if (!queryRange) {
           if (queryInterval === '1m') queryRange = '1d';
-          else queryRange = '5y'; // 預設抓取 5 年日線數據，確保完整涵蓋 2024 年至今的數據
+          else queryRange = '5y'; 
       }
       
-      let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TW?range=${queryRange}&interval=${queryInterval}`);
+      const baseSym = symbol.replace('.TW', '').replace('.TWO', '');
+      let html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${baseSym}.TW?range=${queryRange}&interval=${queryInterval}`);
       let data = html ? JSON.parse(html) : null;
       if (!data?.chart?.result) {
-          html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.TWO?range=${queryRange}&interval=${queryInterval}`);
+          html = await fetchAsBrowser(`https://query1.finance.yahoo.com/v8/finance/chart/${baseSym}.TWO?range=${queryRange}&interval=${queryInterval}`);
           data = html ? JSON.parse(html) : {};
       }
       return res.status(200).json(data);
