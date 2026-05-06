@@ -155,17 +155,55 @@ const INDUSTRY_MAP = {
 };
 
 const GROWTH_ETF_HOLDINGS = {
-  '0050': ['2330', '2317', '2454', '2308', '2303', '2881', '2882', '3711', '2382', '2412'],
-  '006208': ['2330', '2317', '2454', '2308', '2303', '2881', '2882', '3711', '2382', '2412'],
+  '0050': [
+    '2330', '2317', '2454', '2308', '2382', '3711', '2303', '2891', '2881', '2882',
+    '2886', '2884', '2892', '2890', '5880', '2412', '3045', '4904', '3008', '2379',
+    '3034', '2357', '3231', '2301', '2356', '2345', '2368', '3037', '2449', '2344',
+    '2408', '2337', '4938', '1301', '1303', '1326', '2002', '1216', '1102', '2610',
+    '2618', '2603', '6919', '2059', '2360', '3653', '3665', '6969', '3037', '2368'
+  ],
+  '006208': [
+    '2330', '2317', '2454', '2308', '2382', '3711', '2303', '2891', '2881', '2882',
+    '2886', '2884', '2892', '2890', '5880', '2412', '3045', '4904', '3008', '2379',
+    '3034', '2357', '3231', '2301', '2356', '2345', '2368', '3037', '2449', '2344',
+    '2408', '2337', '4938', '1301', '1303', '1326', '2002', '1216', '1102', '2610',
+    '2618', '2603', '6919', '2059', '2360', '3653', '3665', '6969', '3037', '2368'
+  ],
   '0052': ['2330', '2454', '2317', '2303', '3711', '2382', '2357', '3034', '2379', '2301'],
   '00935': ['2330', '2454', '2317', '3711', '2303', '2382', '3231', '3034', '2449', '2379'],
   '00922': ['2330', '2317', '2454', '2308', '2303', '2881', '2882', '3711', '2382', '2412'],
   '00923': ['2330', '2317', '2454', '2303', '3711', '2308', '2881', '2882', '2382', '2412'],
-  '0056': ['2382', '3231', '2356', '2357', '2376', '2441', '3711', '2603', '3034', '1513'],
-  '00878': ['2317', '2454', '3231', '2382', '2301', '2891', '2881', '2886', '2882', '2357'],
-  '00919': ['2603', '2454', '2317', '3231', '2330', '2379', '2376', '3034', '3711', '6138'],
-  '00981A': ['NVDA', 'TSM', 'AVGO', 'ASML', 'ADI', 'MU', 'AMD', 'QCOM', 'AMAT', 'LRCX'],
-  '00999A': ['META', 'GOOGL', 'NFLX', 'DIS', 'TMUS', 'VZ', 'CMCSA', 'ATVI', 'CHTR', 'T']
+  '0056': [
+    '2891', '2382', '2454', '2303', '3231', '2357', '2603', '3711', '2301', '2880',
+    '2885', '2890', '2330', '2412', '2884', '3045', '2324', '2356', '2379', '3034',
+    '2408', '2344', '2337', '2618', '2610', '2886', '2892', '5880', '1102', '1216',
+    '2002', '1301', '1303', '1326', '2345', '3037', '2449', '4938', '3008', '2360',
+    '3653', '3665', '2059', '6919', '2368', '2383', '3017', '2347', '3702'
+  ],
+  '00878': [
+    '2882', '2891', '2881', '2303', '2454', '2357', '3711', '2449', '2885', '2301',
+    '4938', '2382', '3034', '2412', '2105', '8046', '4958', '2308', '2317', '2330',
+    '2356', '2379', '2383', '2408', '2884', '2886', '2890', '2892', '3037', '3231'
+  ],
+  '00919': [
+    '2882', '2891', '2303', '2881', '2887', '2603', '2357', '3034', '2609', '3036',
+    '2385', '2474', '1477', '2371', '4763', '2439', '2458', '3211', '6412', '8070',
+    '2520', '6670', '6757', '2330', '3711', '2618', '5347', '2404', '2886', '2884'
+  ],
+  '00929': [
+    '2303', '2454', '3045', '3711', '3034', '4904', '2301', '4938', '5347', '2474',
+    '2357', '3008', '2404', '3036', '3260', '6488', '2324', '5536', '3264', '5483',
+    '3702', '2330', '2353', '6257', '4966', '3211', '3563', '3680', '2385', '6548',
+    '3005', '8422', '3227', '2347', '3044', '2449', '6239', '3017', '2383', '2368'
+  ],
+  '00981A': [
+    '2330', '3653', '3533', '3017', '8069', '2345', '3665', '2454', '2308', '3661',
+    '2317', '2382', '3711', '3037', '2368'
+  ],
+  '00999A': [
+    '2330', '2308', '2383', '3017', '2603', '3653', '2059', '3665', '6442', '2609',
+    '2454', '2317', '3231', '3034', '3711'
+  ]
 };
 
 // ==========================================
@@ -1947,68 +1985,125 @@ function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
   const [selectedEtf, setSelectedEtf] = useState('0050');
   const [holdingsData, setHoldingsData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
 
-  const etfList = [
-    { symbol: '0050', name: '元大台灣50', desc: '台灣市值前50大企業' },
-    { symbol: '006208', name: '富邦台50', desc: '低費率市值型首選' },
-    { symbol: '0052', name: '富邦科技', desc: '高含積量科技龍頭' },
-    { symbol: '00935', name: '野村創新科技', desc: '追蹤創新科技趨勢' },
-    { symbol: '00922', name: '國泰台灣領袖50', desc: '低碳領袖企業' },
-    { symbol: '00923', name: '群益ESG低碳', desc: 'ESG與低碳雙指標' },
-    { symbol: '0056', name: '元大高股息', desc: '國民高股息標配' },
-    { symbol: '00878', name: '國泰永續高股息', desc: 'ESG高股息代表' },
-    { symbol: '00919', name: '群益台灣精選高息', desc: '超高息收人氣王' },
-    { symbol: '00981A', name: '統一台股增長主動式ETF', desc: '統一投信主動式操盤' },
-    { symbol: '00999A', name: '野村臺灣策略高息主動式ETF', desc: '野村投信高息策略主動型' }
+  const categorizedEtfs = [
+    {
+      title: '市值型 / 科技成長',
+      icon: <TrendingUp className="w-5 h-5 text-blue-400" />,
+      items: [
+        { symbol: '0050', name: '元大台灣50' },
+        { symbol: '006208', name: '富邦台50' },
+        { symbol: '0052', name: '富邦科技' },
+        { symbol: '00935', name: '野村創新科技' },
+        { symbol: '00922', name: '國泰台灣領袖50' },
+        { symbol: '00923', name: '群益ESG低碳' }
+      ]
+    },
+    {
+      title: '高股息 / 低波動',
+      icon: <Activity className="w-5 h-5 text-amber-400" />,
+      items: [
+        { symbol: '0056', name: '元大高股息' },
+        { symbol: '00878', name: '國泰永續高股息' },
+        { symbol: '00919', name: '群益台灣精選高息' }
+      ]
+    },
+    {
+      title: '主動式操盤',
+      icon: <Zap className="w-5 h-5 text-purple-400" />,
+      items: [
+        { symbol: '00981A', name: '統一台股增長主動式' },
+        { symbol: '00999A', name: '野村臺灣策略高息主動式' }
+      ]
+    }
   ];
+
+  const etfList = categorizedEtfs.flatMap(c => c.items);
 
   useEffect(() => {
     let isMounted = true;
     const fetchHoldingsState = async () => {
       setLoading(true);
-      const holdings = GROWTH_ETF_HOLDINGS[selectedEtf] || [];
-      const results = [];
-
-      for (const sym of holdings) {
-        try {
-          const res = await fetch(`/api/binance?action=history&symbol=${sym}&interval=1d`);
-          if (!res.ok) continue;
-          const historyData = await res.json();
-          const parsed = parseYahooData(historyData);
-          
-          if (parsed && parsed.klines.length >= 10) {
-            const klines = calculateIndicators(parsed.klines);
-            const latest = klines[klines.length - 1];
-            const prev = klines[klines.length - 2];
-            const avgVol = klines.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5;
-            
-            const sixtyDayLow = Math.min(...klines.slice(-60).map(k => k.low));
-            const isBottom = latest.close <= sixtyDayLow * 1.1;
-
-            const volAn = analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
-            
-            let score = 0;
-            if (latest.close > latest.ma20) score += 2;
-            if (latest.macd?.hist > 0) score += 2;
-            if (latest.kd?.k > latest.kd?.d) score += 1;
-            if (volAn.signal === '一定進場') score += 5;
-            if (volAn.signal === '可能上漲') score += 4;
-
-            results.push({
-              symbol: sym,
-              name: allStocks.find(s => s.symbol === sym)?.name || sym,
-              price: latest.close,
-              change: parsed.change,
-              volAnalysis: volAn,
-              score: score
-            });
+      setProgress({ current: 0, total: 0 });
+      setHoldingsData([]); // 清空舊數據
+      
+      let holdings = [];
+      try {
+        const holdingsRes = await fetch(`/api/binance?action=etf_holdings&symbol=${selectedEtf}`);
+        if (holdingsRes.ok) {
+          const dynamicHoldings = await holdingsRes.json();
+          if (Array.isArray(dynamicHoldings) && dynamicHoldings.length > 0) {
+            holdings = dynamicHoldings;
           }
-        } catch (e) { console.error(e); }
+        }
+      } catch (e) {
+        console.warn(`Dynamic holdings fetch failed for ${selectedEtf}, falling back to static list.`);
       }
 
-      if (isMounted) {
-        setHoldingsData(results.sort((a, b) => b.score - a.score));
-        setLoading(false);
+      if (holdings.length === 0) {
+        holdings = GROWTH_ETF_HOLDINGS[selectedEtf] || [];
+      }
+
+      setProgress({ current: 0, total: holdings.length });
+      
+      try {
+        let completed = 0;
+        const results = await Promise.all(holdings.map(async (sym) => {
+          try {
+            const res = await fetch(`/api/binance?action=history&symbol=${sym}&interval=1d`);
+            if (!res.ok) {
+              completed++;
+              setProgress(prev => ({ ...prev, current: completed }));
+              return null;
+            }
+            const historyData = await res.json();
+            const parsed = parseYahooData(historyData);
+            
+            if (parsed && parsed.klines.length >= 10) {
+              const klines = calculateIndicators(parsed.klines);
+              const latest = klines[klines.length - 1];
+              const prev = klines[klines.length - 2];
+              const avgVol = klines.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5;
+              
+              const sixtyDayLow = Math.min(...klines.slice(-60).map(k => k.low));
+              const isBottom = latest.close <= sixtyDayLow * 1.1;
+
+              const volAn = analyzeVolumePrice(latest.close, prev.close, latest.volume, avgVol, isBottom);
+              
+              let score = 0;
+              if (latest.close > latest.ma20) score += 2;
+              if (latest.macd?.hist > 0) score += 2;
+              if (latest.kd?.k > latest.kd?.d) score += 1;
+              if (volAn.signal === '一定進場') score += 5;
+              if (volAn.signal === '可能上漲') score += 4;
+
+              completed++;
+              setProgress(prev => ({ ...prev, current: completed }));
+
+              return {
+                symbol: sym,
+                name: allStocks.find(s => s.symbol === sym)?.name || sym,
+                price: latest.close,
+                change: parsed.change,
+                volAnalysis: volAn,
+                score: score
+              };
+            }
+          } catch (e) { console.error(`Error fetching ${sym}:`, e); }
+          completed++;
+          setProgress(prev => ({ ...prev, current: completed }));
+          return null;
+        }));
+
+        if (isMounted) {
+          const validResults = results.filter(r => r !== null);
+          setHoldingsData(validResults.sort((a, b) => b.score - a.score));
+          setLoading(false);
+        }
+      } catch (globalErr) {
+        console.error("Global fetch error:", globalErr);
+        if (isMounted) setLoading(false);
       }
     };
 
@@ -2037,19 +2132,32 @@ function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
               <p className="text-xs md:text-sm text-slate-500 mt-1">針對 ETF 重要成分股進行「量價關係」與「技術指標」綜合評分</p>
             </div>
           </div>
-          <div className="flex bg-[#0b0e14] p-1 rounded-xl border border-[#2a2f3a] overflow-x-auto max-w-full no-scrollbar">
-            <div className="flex gap-1 min-w-max">
-              {etfList.map(etf => (
-                <button
-                  key={etf.symbol}
-                  onClick={() => setSelectedEtf(etf.symbol)}
-                  className={`px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all whitespace-nowrap ${selectedEtf === etf.symbol ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                >
-                  {etf.symbol}
-                </button>
-              ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {categorizedEtfs.map(category => (
+            <div key={category.title} className="bg-[#121620] p-4 rounded-2xl border border-[#2a2f3a] shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                {category.icon}
+                <span className="text-sm font-bold text-slate-300">{category.title}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {category.items.map(etf => (
+                  <button
+                    key={etf.symbol}
+                    onClick={() => setSelectedEtf(etf.symbol)}
+                    className={`flex flex-col items-start p-3 rounded-xl border transition-all ${
+                      selectedEtf === etf.symbol 
+                        ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500' 
+                        : 'bg-[#0b0e14] border-[#2a2f3a] hover:border-[#3f4654] hover:bg-[#1a1e27]'
+                    }`}
+                  >
+                    <span className={`text-xs font-black mb-0.5 ${selectedEtf === etf.symbol ? 'text-blue-400' : 'text-slate-500'}`}>{etf.symbol}</span>
+                    <span className="text-sm font-bold text-white truncate w-full text-left">{etf.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
         </div>
 
       </div>
@@ -2102,7 +2210,22 @@ function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                    <List className="w-5 h-5 text-blue-400" /> ETF 成分股動態分析
                 </h3>
-                {loading && <div className="flex items-center gap-2 text-xs text-blue-400"><RefreshCw className="w-3 h-3 animate-spin" /> 資料計算中...</div>}
+                {loading && (
+                  <div className="flex items-center gap-3 text-xs text-blue-400">
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> 
+                        <span>分析中 {progress.current} / {progress.total}</span>
+                      </div>
+                      <div className="w-24 h-1 bg-[#0b0e14] rounded-full mt-1 overflow-hidden border border-blue-500/20">
+                        <div 
+                          className="h-full bg-blue-500 transition-all duration-300" 
+                          style={{ width: `${(progress.current / (progress.total || 1)) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="overflow-x-auto">
                  <table className="w-full text-sm text-left">
@@ -2303,15 +2426,40 @@ function TwChipsTab({ chipData, branchData }) {
 }
 
 function TwFundamentalTab({ chipData, stock }) {
+  const formatVal = (val, suffix = '') => {
+    if (val === null || val === undefined || isNaN(val)) return '--';
+    if (val === 0) return '0' + suffix;
+    return val.toFixed(2) + suffix;
+  };
+
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
       <div className="bg-[#121620] rounded-2xl p-6 border border-[#2a2f3a] shadow-lg">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><PieChart className="w-6 h-6 text-pink-500" /> 基本資料與評價</h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2"><PieChart className="w-6 h-6 text-pink-500" /> 基本資料與評價</h3>
+            {chipData.loading && <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center"><div className="text-xs text-slate-500 mb-2">本益比 (PE)</div><div className="text-2xl font-black text-white">{chipData.pe || '--'}</div></div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center"><div className="text-xs text-slate-500 mb-2">股價淨值比 (PB)</div><div className="text-2xl font-black text-white">{chipData.pb || '--'}</div></div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center"><div className="text-xs text-slate-500 mb-2">現金殖利率</div><div className="text-2xl font-black text-[#f6465d]">{chipData.yield ? chipData.yield + '%' : '--'}</div></div>
-              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center"><div className="text-xs text-slate-500 mb-2">外資持股</div><div className="text-2xl font-black text-blue-400">{chipData.foreignHolding?.toFixed(2)}%</div></div>
+              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
+                <div className="text-xs text-slate-500 mb-2">本益比 (PE)</div>
+                <div className="text-2xl font-black text-white">{formatVal(chipData.pe)}</div>
+              </div>
+              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
+                <div className="text-xs text-slate-500 mb-2">股價淨值比 (PB)</div>
+                <div className="text-2xl font-black text-white">{formatVal(chipData.pb)}</div>
+              </div>
+              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
+                <div className="text-xs text-slate-500 mb-2">現金殖利率</div>
+                <div className="text-2xl font-black text-[#f6465d]">{formatVal(chipData.yield, '%')}</div>
+              </div>
+              <div className="bg-[#0b0e14] p-5 rounded-2xl border border-[#1e2330] text-center">
+                <div className="text-xs text-slate-500 mb-2">外資持股</div>
+                <div className="text-2xl font-black text-blue-400">{formatVal(chipData.foreignHolding, '%')}</div>
+              </div>
+          </div>
+          <div className="mt-8 pt-6 border-t border-[#2a2f3a]/50 text-[10px] text-slate-500 flex items-center gap-2">
+            <AlertCircle className="w-3 h-3" />
+            數據採集自證交所 OpenAPI 與 Yahoo Finance，若顯示為 -- 代表該標的暫無相關評比數據或為虧損狀態。
           </div>
       </div>
     </div>
