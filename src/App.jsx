@@ -2027,26 +2027,31 @@ function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#121620] p-5 rounded-2xl border border-[#2a2f3a] shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5"><TrendingUp className="w-32 h-32 text-blue-500" /></div>
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-blue-600/20 rounded-2xl border border-blue-500/30 text-blue-400">
-            <Layers className="w-8 h-8" />
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-600/20 rounded-2xl border border-blue-500/30 text-blue-400 shrink-0">
+              <Layers className="w-8 h-8" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-black text-white">成長型 ETF 持股分析系統</h2>
+              <p className="text-xs md:text-sm text-slate-500 mt-1">針對 ETF 重要成分股進行「量價關係」與「技術指標」綜合評分</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-black text-white">成長型 ETF 持股分析系統</h2>
-            <p className="text-sm text-slate-500 mt-1">針對 ETF 前十大權值股進行「量價關係」與「技術指標」綜合評分</p>
+          <div className="flex bg-[#0b0e14] p-1 rounded-xl border border-[#2a2f3a] overflow-x-auto max-w-full no-scrollbar">
+            <div className="flex gap-1 min-w-max">
+              {etfList.map(etf => (
+                <button
+                  key={etf.symbol}
+                  onClick={() => setSelectedEtf(etf.symbol)}
+                  className={`px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all whitespace-nowrap ${selectedEtf === etf.symbol ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  {etf.symbol}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="flex bg-[#0b0e14] p-1 rounded-xl border border-[#2a2f3a] overflow-x-auto max-w-full scrollbar-hide">
-          {etfList.map(etf => (
-            <button 
-              key={etf.symbol}
-              onClick={() => setSelectedEtf(etf.symbol)}
-              className={`px-4 py-2 text-sm font-bold rounded-lg transition-all whitespace-nowrap ${selectedEtf === etf.symbol ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              {etf.symbol} {etf.name}
-            </button>
-          ))}
-        </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -2095,7 +2100,7 @@ function TwGrowthEtfPage({ allStocks = [], watchlist = [], toggleWatchlist }) {
            <div className="bg-[#121620] rounded-2xl border border-[#2a2f3a] shadow-lg overflow-hidden">
               <div className="p-4 border-b border-[#2a2f3a] flex justify-between items-center bg-[#1a1e27]">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                   <List className="w-5 h-5 text-blue-400" /> 十大權值股動態分析
+                   <List className="w-5 h-5 text-blue-400" /> ETF 成分股動態分析
                 </h3>
                 {loading && <div className="flex items-center gap-2 text-xs text-blue-400"><RefreshCw className="w-3 h-3 animate-spin" /> 資料計算中...</div>}
               </div>
